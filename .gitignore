@@ -1,0 +1,13 @@
+.env
+*.env.local
+
+# Go
+api/bin/
+
+# Node/Bun
+web/node_modules/
+web/build/
+web/.svelte-kit/
+
+# OS
+.DS_Store
