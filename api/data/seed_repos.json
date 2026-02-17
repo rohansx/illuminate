@@ -8,7 +8,7 @@
   {"owner": "microsoft", "name": "TypeScript"},
   {"owner": "vercel", "name": "next.js"},
   {"owner": "remix-run", "name": "remix"},
-  {"owner": "astro-build", "name": "astro"},
+  {"owner": "withastro", "name": "astro"},
   {"owner": "vitejs", "name": "vite"},
   {"owner": "tailwindlabs", "name": "tailwindcss"},
   {"owner": "prisma", "name": "prisma"},

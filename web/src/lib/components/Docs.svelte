@@ -118,7 +118,7 @@
 	}
 
 	.doc-card:hover {
-		border-color: rgba(245, 158, 11, 0.25);
+		border-color: rgba(115, 226, 167, 0.25);
 		background: var(--bg-raised);
 		transform: translateY(-2px);
 	}

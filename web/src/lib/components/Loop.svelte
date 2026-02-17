@@ -96,9 +96,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border: 1px solid rgba(245, 158, 11, 0.25);
+		border: 1px solid rgba(115, 226, 167, 0.25);
 		border-radius: 50%;
-		background: rgba(245, 158, 11, 0.05);
+		background: rgba(115, 226, 167, 0.05);
 		flex-shrink: 0;
 	}
 

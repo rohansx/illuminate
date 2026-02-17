@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: illuminate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-illuminate}
+      POSTGRES_DB: illuminate
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U illuminate"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://illuminate:${POSTGRES_PASSWORD:-illuminate}@postgres:5432/illuminate?sslmode=disable
+      ILLUMINATE_DATABASE_URL: postgres://illuminate:${POSTGRES_PASSWORD:-illuminate}@postgres:5432/illuminate?sslmode=disable
+      ILLUMINATE_REDIS_URL: redis://redis:6379
+      ILLUMINATE_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      ILLUMINATE_GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      ILLUMINATE_ENCRYPT_KEY: ${ENCRYPT_KEY}
+      ILLUMINATE_JWT_SECRET: ${JWT_SECRET}
+      ILLUMINATE_FRONTEND_URL: ${FRONTEND_URL:-https://illuminate.sh}
+      ILLUMINATE_BACKEND_URL: ${BACKEND_URL:-https://illuminate.sh}
+      ILLUMINATE_COOKIE_DOMAIN: ${COOKIE_DOMAIN:-illuminate.sh}
+      ILLUMINATE_ENV: production
+      ILLUMINATE_PORT: "8080"
+      ILLUMINATE_ADMIN_GITHUB_USERNAME: ${ADMIN_GITHUB_USERNAME:-}
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { api, type User } from '$lib/api';
 	import { onMount } from 'svelte';
+	import { initTheme } from '$lib/theme';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let { children } = $props();
 	let user = $state<User | null>(null);
@@ -8,6 +10,7 @@
 	let error = $state('');
 
 	onMount(async () => {
+		initTheme();
 		try {
 			user = await api.getMe();
 			if (!user.onboarding_done && !window.location.pathname.includes('/onboarding')) {
@@ -16,7 +19,7 @@
 			}
 		} catch (e: any) {
 			if (e.status === 401) {
-				window.location.href = api.loginURL;
+				window.location.href = '/login';
 				return;
 			}
 			error = e.message;
@@ -42,8 +45,14 @@
 			<a href="/app/feed" class="nav-logo">illuminate<span class="cursor">_</span></a>
 			<div class="nav-links">
 				<a href="/app/feed" class="nav-link">feed</a>
+				<a href="/app/saved" class="nav-link">saved</a>
+				<a href="/app/profile" class="nav-link">profile</a>
+				{#if user.role === 'admin'}
+					<a href="/app/admin" class="nav-link admin-link">admin</a>
+				{/if}
 			</div>
 			<div class="nav-user">
+				<ThemeToggle />
 				<img src={user.avatar_url} alt={user.github_username} class="avatar" />
 				<span class="username">{user.github_username}</span>
 				<button class="logout-btn" onclick={() => { api.logout(); window.location.href = '/'; }}>
@@ -144,6 +153,7 @@
 	}
 
 	.nav-link:hover { color: var(--text-bright); }
+	.admin-link { color: var(--amber); }
 
 	.nav-user {
 		display: flex;
@@ -182,9 +192,9 @@
 
 	.app-main {
 		flex: 1;
-		max-width: var(--content-width);
+		max-width: 1280px;
 		width: 100%;
 		margin: 0 auto;
-		padding: 2rem 1.5rem;
+		padding: 2rem 2rem;
 	}
 </style>

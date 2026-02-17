@@ -18,6 +18,8 @@ type Config struct {
 	BackendURL         string `envconfig:"BACKEND_URL" default:"http://localhost:8080"`
 	CookieDomain       string `envconfig:"COOKIE_DOMAIN" default:"localhost"`
 	Env                string `envconfig:"ENV" default:"development"`
+	AdminGitHubUsername string `envconfig:"ADMIN_GITHUB_USERNAME" default:""`
+	GLMAPIKey           string `envconfig:"GLM_API_KEY" default:""`
 }
 
 func (c *Config) IsProd() bool {

@@ -119,8 +119,8 @@
 		height: 500px;
 		background: radial-gradient(
 			ellipse at center,
-			rgba(245, 158, 11, 0.06) 0%,
-			rgba(245, 158, 11, 0.02) 40%,
+			rgba(115, 226, 167, 0.06) 0%,
+			rgba(115, 226, 167, 0.02) 40%,
 			transparent 70%
 		);
 		pointer-events: none;
@@ -155,7 +155,7 @@
 		overflow: hidden;
 		background: var(--bg-raised);
 		box-shadow:
-			0 0 60px rgba(245, 158, 11, 0.06),
+			0 0 60px rgba(115, 226, 167, 0.06),
 			0 25px 50px rgba(0, 0, 0, 0.4);
 	}
 

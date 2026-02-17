@@ -83,10 +83,10 @@
 	}
 
 	.tier-pro {
-		border-color: rgba(245, 158, 11, 0.3);
+		border-color: rgba(115, 226, 167, 0.3);
 		background: linear-gradient(
 			135deg,
-			rgba(245, 158, 11, 0.03) 0%,
+			rgba(115, 226, 167, 0.03) 0%,
 			var(--bg) 50%
 		);
 	}

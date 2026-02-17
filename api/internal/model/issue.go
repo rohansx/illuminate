@@ -26,6 +26,7 @@ type Issue struct {
 	Skills         []IssueSkill `json:"skills,omitempty"`
 	MatchScore     float64      `json:"match_score,omitempty"`
 	MatchReasons   []string     `json:"match_reasons,omitempty"`
+	IsSaved        bool         `json:"is_saved,omitempty"`
 }
 
 type IssueSkill struct {
@@ -38,4 +39,10 @@ type IssueFeed struct {
 	TotalCount int     `json:"total_count"`
 	Page       int     `json:"page"`
 	PerPage    int     `json:"per_page"`
+}
+
+type FeedFilter struct {
+	Languages  []string
+	Difficulty int    // 0 = any, 1 = beginner, 2 = intermediate, 3 = advanced
+	Category   string // category slug, empty = any
 }

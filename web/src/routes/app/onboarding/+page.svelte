@@ -137,7 +137,7 @@
 	}
 
 	.dot.red { background: #f87171; }
-	.dot.yellow { background: #fbbf24; }
+	.dot.yellow { background: #95EDBE; }
 	.dot.green { background: #4ade80; }
 
 	.title {

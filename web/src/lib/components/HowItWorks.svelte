@@ -75,9 +75,9 @@
 		font-size: 0.72rem;
 		font-weight: 700;
 		color: var(--amber);
-		border: 1px solid rgba(245, 158, 11, 0.25);
+		border: 1px solid rgba(115, 226, 167, 0.25);
 		border-radius: 50%;
-		background: rgba(245, 158, 11, 0.06);
+		background: rgba(115, 226, 167, 0.06);
 		margin-bottom: 1.25rem;
 	}
 

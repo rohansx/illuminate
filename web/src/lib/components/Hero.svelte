@@ -133,8 +133,8 @@
 		height: 700px;
 		background: radial-gradient(
 			ellipse at center,
-			rgba(245, 158, 11, 0.07) 0%,
-			rgba(245, 158, 11, 0.03) 30%,
+			rgba(115, 226, 167, 0.07) 0%,
+			rgba(115, 226, 167, 0.03) 30%,
 			transparent 70%
 		);
 		pointer-events: none;
@@ -178,8 +178,8 @@
 	.glow {
 		color: var(--amber-bright);
 		text-shadow:
-			0 0 30px rgba(251, 191, 36, 0.35),
-			0 0 80px rgba(251, 191, 36, 0.15);
+			0 0 30px rgba(149, 237, 190, 0.35),
+			0 0 80px rgba(149, 237, 190, 0.15);
 	}
 
 	.hero-desc {
@@ -329,9 +329,9 @@
 		padding: 0 0.4rem;
 		font-size: 0.68rem;
 		border-radius: 3px;
-		background: rgba(245, 158, 11, 0.1);
+		background: rgba(115, 226, 167, 0.1);
 		color: var(--amber);
-		border: 1px solid rgba(245, 158, 11, 0.2);
+		border: 1px solid rgba(115, 226, 167, 0.2);
 		margin-right: 0.3rem;
 	}
 

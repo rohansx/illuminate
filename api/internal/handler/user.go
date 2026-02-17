@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/rohansx/illuminate/api/internal/middleware"
 	"github.com/rohansx/illuminate/api/internal/model"
@@ -10,11 +11,17 @@ import (
 )
 
 type UserHandler struct {
-	userService *service.UserService
+	userService  *service.UserService
+	github       *service.GitHubService
+	savedService *service.SavedIssueService
 }
 
-func NewUserHandler(userService *service.UserService) *UserHandler {
-	return &UserHandler{userService: userService}
+func NewUserHandler(userService *service.UserService, github *service.GitHubService, savedService *service.SavedIssueService) *UserHandler {
+	return &UserHandler{
+		userService:  userService,
+		github:       github,
+		savedService: savedService,
+	}
 }
 
 func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
@@ -44,4 +51,82 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	user, err := h.userService.GetProfile(r.Context(), userID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to get profile")
+		return
+	}
+
+	// Fetch PR counts from GitHub in parallel
+	type prResult struct {
+		merged *service.GitHubSearchResult
+		open   *service.GitHubSearchResult
+	}
+	ch := make(chan prResult, 1)
+	go func() {
+		var res prResult
+		res.merged, _ = h.github.GetUserPRs(r.Context(), user.GitHubUsername, true, 1, 1)
+		res.open, _ = h.github.GetUserPRs(r.Context(), user.GitHubUsername, false, 1, 1)
+		ch <- res
+	}()
+
+	// Get saved issues count
+	savedFeed, _ := h.savedService.GetSaved(r.Context(), userID, 1, 1)
+	savedCount := 0
+	if savedFeed != nil {
+		savedCount = savedFeed.TotalCount
+	}
+
+	prs := <-ch
+
+	mergedCount := 0
+	openCount := 0
+	if prs.merged != nil {
+		mergedCount = prs.merged.TotalCount
+	}
+	if prs.open != nil {
+		openCount = prs.open.TotalCount
+	}
+
+	profile := map[string]any{
+		"user":            user,
+		"merged_pr_count": mergedCount,
+		"open_pr_count":   openCount,
+		"saved_count":     savedCount,
+	}
+
+	JSON(w, http.StatusOK, profile)
+}
+
+func (h *UserHandler) GetPRs(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	user, err := h.userService.GetProfile(r.Context(), userID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to get user")
+		return
+	}
+
+	merged := r.URL.Query().Get("type") == "merged"
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 30 {
+		perPage = 20
+	}
+
+	result, err := h.github.GetUserPRs(r.Context(), user.GitHubUsername, merged, page, perPage)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to fetch PRs")
+		return
+	}
+
+	JSON(w, http.StatusOK, result)
 }

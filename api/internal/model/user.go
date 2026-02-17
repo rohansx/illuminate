@@ -12,6 +12,7 @@ type User struct {
 	GitHubUsername string      `json:"github_username"`
 	AvatarURL      string      `json:"avatar_url"`
 	Bio            string      `json:"bio"`
+	Role           string      `json:"role"`
 	ComfortLevel   string      `json:"comfort_level"`
 	TimeCommitment string      `json:"time_commitment"`
 	Goals          []string    `json:"goals"`

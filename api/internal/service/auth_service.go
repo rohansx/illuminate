@@ -20,11 +20,12 @@ type AuthResult struct {
 }
 
 type AuthService struct {
-	github    *GitHubService
-	userRepo  repository.UserRepo
-	tokenRepo repository.TokenRepo
-	encryptor *crypto.Encryptor
-	jwt       *crypto.JWTManager
+	github        *GitHubService
+	userRepo      repository.UserRepo
+	tokenRepo     repository.TokenRepo
+	encryptor     *crypto.Encryptor
+	jwt           *crypto.JWTManager
+	adminUsername string
 }
 
 func NewAuthService(
@@ -33,13 +34,15 @@ func NewAuthService(
 	tokenRepo repository.TokenRepo,
 	encryptor *crypto.Encryptor,
 	jwt *crypto.JWTManager,
+	adminUsername string,
 ) *AuthService {
 	return &AuthService{
-		github:    github,
-		userRepo:  userRepo,
-		tokenRepo: tokenRepo,
-		encryptor: encryptor,
-		jwt:       jwt,
+		github:        github,
+		userRepo:      userRepo,
+		tokenRepo:     tokenRepo,
+		encryptor:     encryptor,
+		jwt:           jwt,
+		adminUsername: adminUsername,
 	}
 }
 
@@ -69,6 +72,24 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string) (*AuthRes
 	user, err = s.userRepo.Upsert(ctx, user, tokenEnc)
 	if err != nil {
 		return nil, fmt.Errorf("upserting user: %w", err)
+	}
+
+	// Auto-promote to admin
+	if s.adminUsername != "" && user.GitHubUsername == s.adminUsername && user.Role != "admin" {
+		if err := s.userRepo.UpdateRole(ctx, user.ID, "admin"); err != nil {
+			slog.Warn("failed to auto-promote admin", "error", err)
+		} else {
+			user.Role = "admin"
+		}
+	} else if s.adminUsername == "" && user.Role != "admin" {
+		count, err := s.userRepo.Count(ctx)
+		if err == nil && count == 1 {
+			if err := s.userRepo.UpdateRole(ctx, user.ID, "admin"); err != nil {
+				slog.Warn("failed to auto-promote first user", "error", err)
+			} else {
+				user.Role = "admin"
+			}
+		}
 	}
 
 	accessToken, err := s.jwt.Generate(user.ID)

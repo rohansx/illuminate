@@ -19,6 +19,18 @@ type Repository struct {
 	HealthScore     float32    `json:"health_score"`
 	LastCommitAt    *time.Time `json:"last_commit_at"`
 	IndexedAt       time.Time  `json:"indexed_at"`
+	Tags            []string   `json:"tags"`
+	DifficultyLevel string     `json:"difficulty_level"`
+	ActivityStatus  string     `json:"activity_status"`
+	Categories      []Category `json:"categories,omitempty"`
+}
+
+type Category struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	Description string    `json:"description"`
+	Icon        string    `json:"icon"`
 }
 
 func (r *Repository) FullName() string {

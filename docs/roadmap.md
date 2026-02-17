@@ -25,14 +25,14 @@
 - [x] SEO-optimized README
 - [x] Contributing guide
 - [x] Landing page (illuminate.sh)
-- [ ] Go API scaffold (`/api` directory)
-- [ ] PostgreSQL schema + migrations
+- [x] Go API scaffold (`/api` directory)
+- [x] PostgreSQL schema + migrations
 - [ ] Redis integration
-- [ ] GitHub OAuth integration
-- [ ] Skill profile analysis engine
-- [ ] Basic issue indexing pipeline (~500 curated repos)
-- [ ] Issue matching algorithm v1 (language + label-based)
-- [ ] Minimal web app UI: onboarding flow, issue feed, issue detail page
+- [x] GitHub OAuth integration
+- [x] Skill profile analysis engine
+- [x] Basic issue indexing pipeline (~500 curated repos)
+- [x] Issue matching algorithm v1 (language + label-based)
+- [x] Minimal web app UI: onboarding flow, issue feed, issue detail page
 
 **Milestone:** A user can sign in with GitHub, see a personalized issue feed, and click into an issue.
 
@@ -42,8 +42,8 @@
 
 **Goal:** AI guidance, contribution tracking, and public portfolios.
 
-- [ ] AI deep dive generation (all 5 sections via Claude API)
-- [ ] Deep dive caching layer
+- [~] AI deep dive generation (all 5 sections via Zhipu GLM API)
+- [~] Deep dive caching layer
 - [ ] Contribution auto-detection via GitHub Search API
 - [ ] Portfolio page: timeline view
 - [ ] Portfolio page: project view
@@ -52,6 +52,8 @@
 - [ ] Watchlist (save issues)
 - [ ] Basic notifications (in-app)
 - [ ] Repo health scoring system
+- [ ] Import repo — user submits a repo URL, system indexes its issues and applies all existing features (matching, deep dive, etc.)
+- [ ] Open source hiring tab — discover open source projects that are also hiring contributors
 
 **Milestone:** A user can get AI guidance on an issue, contribute, and see it on their public portfolio.
 
@@ -117,7 +119,7 @@
 | Feb 2026 | SvelteKit for frontend | Smallest bundle size, fastest compilation, Vite-powered |
 | Feb 2026 | Go for backend API | High concurrency for background workers, low memory, fast cold starts |
 | Feb 2026 | PostgreSQL over MongoDB | Relational data with strong consistency; JSON columns for flexible fields |
-| Feb 2026 | Claude API for AI | Best quality for structured generation tasks (deep dives, skill extraction) |
+| Feb 2026 | Zhipu GLM API for AI | Free tier with glm-4-flash, OpenAI-compatible format, good structured generation |
 | Feb 2026 | Fly.io for hosting | Simple Go deployment, built-in PostgreSQL and Redis, global edge |
 | Feb 2026 | Static landing page first | Validate positioning and collect interest before building the full app |
 

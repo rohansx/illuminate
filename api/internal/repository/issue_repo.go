@@ -13,10 +13,11 @@ import (
 
 type IssueRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Issue, error)
-	GetFeed(ctx context.Context, languages []string, limit, offset int) ([]model.Issue, int, error)
+	GetFeed(ctx context.Context, filter model.FeedFilter, limit, offset int) ([]model.Issue, int, error)
 	Search(ctx context.Context, query string, limit, offset int) ([]model.Issue, int, error)
 	Upsert(ctx context.Context, issue *model.Issue) (*model.Issue, error)
 	SetSkills(ctx context.Context, issueID uuid.UUID, skills []model.IssueSkill) error
+	Count(ctx context.Context) (int, error)
 }
 
 type issueRepo struct {
@@ -64,39 +65,59 @@ func (r *issueRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Issue, er
 	return issue, nil
 }
 
-func (r *issueRepo) GetFeed(ctx context.Context, languages []string, limit, offset int) ([]model.Issue, int, error) {
+func (r *issueRepo) GetFeed(ctx context.Context, filter model.FeedFilter, limit, offset int) ([]model.Issue, int, error) {
 	var totalCount int
 	var args []any
-	var where string
+	var joins []string
+	var conditions []string
+	argN := 1
 
-	if len(languages) > 0 {
-		where = ` WHERE i.status = 'open' AND EXISTS (
-			SELECT 1 FROM issue_skills s WHERE s.issue_id = i.id AND s.language = ANY($1)
-		)`
-		args = append(args, languages)
-	} else {
-		where = ` WHERE i.status = 'open'`
+	conditions = append(conditions, "i.status = 'open'")
+
+	if len(filter.Languages) > 0 {
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM issue_skills s WHERE s.issue_id = i.id AND s.language = ANY($%d)
+		)`, argN))
+		args = append(args, filter.Languages)
+		argN++
 	}
 
-	countQuery := `SELECT COUNT(*) FROM issues i` + where
+	if filter.Difficulty > 0 {
+		conditions = append(conditions, fmt.Sprintf("i.difficulty = $%d", argN))
+		args = append(args, filter.Difficulty)
+		argN++
+	}
+
+	if filter.Category != "" {
+		joins = append(joins, "JOIN repo_categories rc ON rc.repo_id = r.id")
+		joins = append(joins, "JOIN categories c ON c.id = rc.category_id")
+		conditions = append(conditions, fmt.Sprintf("c.slug = $%d", argN))
+		args = append(args, filter.Category)
+		argN++
+	}
+
+	joinClause := strings.Join(joins, "\n\t\t")
+	whereClause := " WHERE " + strings.Join(conditions, " AND ")
+
+	countQuery := `SELECT COUNT(DISTINCT i.id) FROM issues i
+		JOIN repositories r ON r.id = i.repo_id
+		` + joinClause + whereClause
 	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&totalCount); err != nil {
 		return nil, 0, fmt.Errorf("counting issues: %w", err)
 	}
 
-	query := `
-		SELECT i.id, i.github_id, i.repo_id, i.number, i.title, i.body, i.summary,
+	query := fmt.Sprintf(`
+		SELECT DISTINCT i.id, i.github_id, i.repo_id, i.number, i.title, i.body, i.summary,
 			i.labels, i.difficulty, i.time_estimate, i.status, i.comment_count,
 			i.freshness_score, i.created_at, i.indexed_at,
 			r.id, r.github_id, r.owner, r.name, r.description, r.stars,
 			r.primary_language, r.topics, r.has_contributing, r.health_score,
 			r.last_commit_at, r.indexed_at
 		FROM issues i
-		JOIN repositories r ON r.id = i.repo_id` + where + `
+		JOIN repositories r ON r.id = i.repo_id
+		%s%s
 		ORDER BY i.freshness_score DESC, i.created_at DESC
-		LIMIT $%d OFFSET $%d`
-
-	argOffset := len(args) + 1
-	query = fmt.Sprintf(query, argOffset, argOffset+1)
+		LIMIT $%d OFFSET $%d`, joinClause, whereClause, argN, argN+1)
 	args = append(args, limit, offset)
 
 	rows, err := r.pool.Query(ctx, query, args...)
@@ -184,7 +205,7 @@ func (r *issueRepo) Upsert(ctx context.Context, issue *model.Issue) (*model.Issu
 		INSERT INTO issues (github_id, repo_id, number, title, body, summary,
 			labels, difficulty, time_estimate, status, comment_count, freshness_score, indexed_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
-		ON CONFLICT (github_id) DO UPDATE SET
+		ON CONFLICT (github_id, repo_id) DO UPDATE SET
 			title = EXCLUDED.title,
 			body = EXCLUDED.body,
 			summary = EXCLUDED.summary,
@@ -257,4 +278,13 @@ func (r *issueRepo) getSkills(ctx context.Context, issueID uuid.UUID) ([]model.I
 		skills = append(skills, s)
 	}
 	return skills, nil
+}
+
+func (r *issueRepo) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM issues`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting issues: %w", err)
+	}
+	return count, nil
 }

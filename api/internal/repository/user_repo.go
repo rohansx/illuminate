@@ -17,6 +17,10 @@ type UserRepo interface {
 	UpdateProfile(ctx context.Context, id uuid.UUID, profile model.UserProfile) error
 	SetSkills(ctx context.Context, userID uuid.UUID, skills []model.UserSkill) error
 	GetAccessToken(ctx context.Context, userID uuid.UUID) ([]byte, error)
+	GetRole(ctx context.Context, id uuid.UUID) (string, error)
+	UpdateRole(ctx context.Context, id uuid.UUID, role string) error
+	ListAll(ctx context.Context, limit, offset int) ([]model.UserListItem, int, error)
+	Count(ctx context.Context) (int, error)
 }
 
 type userRepo struct {
@@ -30,11 +34,11 @@ func NewUserRepo(pool *pgxpool.Pool) UserRepo {
 func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	u := &model.User{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, github_id, github_username, avatar_url, bio,
+		SELECT id, github_id, github_username, avatar_url, bio, role,
 			comfort_level, time_commitment, goals, onboarding_done, created_at, updated_at
 		FROM users WHERE id = $1`, id,
 	).Scan(
-		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.AvatarURL, &u.Bio,
+		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.AvatarURL, &u.Bio, &u.Role,
 		&u.ComfortLevel, &u.TimeCommitment, &u.Goals, &u.OnboardingDone, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -56,11 +60,11 @@ func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.User, erro
 func (r *userRepo) GetByGitHubID(ctx context.Context, githubID int64) (*model.User, error) {
 	u := &model.User{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, github_id, github_username, avatar_url, bio,
+		SELECT id, github_id, github_username, avatar_url, bio, role,
 			comfort_level, time_commitment, goals, onboarding_done, created_at, updated_at
 		FROM users WHERE github_id = $1`, githubID,
 	).Scan(
-		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.AvatarURL, &u.Bio,
+		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.AvatarURL, &u.Bio, &u.Role,
 		&u.ComfortLevel, &u.TimeCommitment, &u.Goals, &u.OnboardingDone, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -82,11 +86,11 @@ func (r *userRepo) Upsert(ctx context.Context, user *model.User, tokenEnc []byte
 			bio = EXCLUDED.bio,
 			access_token_enc = EXCLUDED.access_token_enc,
 			updated_at = NOW()
-		RETURNING id, github_id, github_username, avatar_url, bio,
+		RETURNING id, github_id, github_username, avatar_url, bio, role,
 			comfort_level, time_commitment, goals, onboarding_done, created_at, updated_at`,
 		user.GitHubID, user.GitHubUsername, user.AvatarURL, user.Bio, tokenEnc,
 	).Scan(
-		&user.ID, &user.GitHubID, &user.GitHubUsername, &user.AvatarURL, &user.Bio,
+		&user.ID, &user.GitHubID, &user.GitHubUsername, &user.AvatarURL, &user.Bio, &user.Role,
 		&user.ComfortLevel, &user.TimeCommitment, &user.Goals, &user.OnboardingDone, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
@@ -145,6 +149,59 @@ func (r *userRepo) GetAccessToken(ctx context.Context, userID uuid.UUID) ([]byte
 		return nil, fmt.Errorf("getting access token: %w", err)
 	}
 	return tokenEnc, nil
+}
+
+func (r *userRepo) GetRole(ctx context.Context, id uuid.UUID) (string, error) {
+	var role string
+	err := r.pool.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, id).Scan(&role)
+	if err != nil {
+		return "", fmt.Errorf("getting user role: %w", err)
+	}
+	return role, nil
+}
+
+func (r *userRepo) UpdateRole(ctx context.Context, id uuid.UUID, role string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1`, id, role)
+	if err != nil {
+		return fmt.Errorf("updating role: %w", err)
+	}
+	return nil
+}
+
+func (r *userRepo) ListAll(ctx context.Context, limit, offset int) ([]model.UserListItem, int, error) {
+	var totalCount int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("counting users: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, github_username, avatar_url, role, onboarding_done, created_at
+		FROM users ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2`, limit, offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []model.UserListItem
+	for rows.Next() {
+		var u model.UserListItem
+		if err := rows.Scan(&u.ID, &u.GitHubUsername, &u.AvatarURL, &u.Role, &u.OnboardingDone, &u.CreatedAt); err != nil {
+			return nil, 0, fmt.Errorf("scanning user: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, totalCount, nil
+}
+
+func (r *userRepo) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting users: %w", err)
+	}
+	return count, nil
 }
 
 func (r *userRepo) getSkills(ctx context.Context, userID uuid.UUID) ([]model.UserSkill, error) {

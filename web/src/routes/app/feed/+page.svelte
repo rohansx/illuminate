@@ -1,22 +1,59 @@
 <script lang="ts">
-	import { api, type Issue, type IssueFeed } from '$lib/api';
+	import { api, type Issue, type IssueFeed, type Category } from '$lib/api';
 	import { onMount } from 'svelte';
 
 	let feed = $state<IssueFeed | null>(null);
+	let categories = $state<Category[]>([]);
 	let loading = $state(true);
 	let searchQuery = $state('');
 	let page = $state(1);
+	let isSearching = $state(false);
 
-	onMount(() => loadFeed());
+	// Filters
+	let selectedCategory = $state('');
+	let selectedDifficulty = $state(0);
+
+	const hasActiveFilters = $derived(selectedCategory !== '' || selectedDifficulty !== 0);
+
+	onMount(async () => {
+		// Load categories and feed in parallel
+		const [, cats] = await Promise.all([
+			loadFeed(),
+			api.getCategories().catch(() => [] as Category[])
+		]);
+		categories = cats;
+	});
 
 	async function loadFeed() {
 		loading = true;
+		isSearching = false;
 		try {
-			feed = await api.getFeed(page);
+			feed = await api.getFeed(page, 20, {
+				difficulty: selectedDifficulty || undefined,
+				category: selectedCategory || undefined
+			});
 		} catch (e) {
 			console.error('Failed to load feed:', e);
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function toggleSave(issueId: string) {
+		if (!feed) return;
+		const issue = feed.issues.find(i => i.id === issueId);
+		if (!issue) return;
+		try {
+			if (issue.is_saved) {
+				await api.unsaveIssue(issueId);
+				issue.is_saved = false;
+			} else {
+				await api.saveIssue(issueId);
+				issue.is_saved = true;
+			}
+			feed = { ...feed, issues: [...feed.issues] };
+		} catch (e) {
+			console.error('Save toggle failed:', e);
 		}
 	}
 
@@ -26,6 +63,7 @@
 			return;
 		}
 		loading = true;
+		isSearching = true;
 		try {
 			feed = await api.searchIssues(searchQuery, 1);
 		} catch (e) {
@@ -33,6 +71,31 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		page = 1;
+		loadFeed();
+	}
+
+	function toggleCategory(slug: string) {
+		selectedCategory = selectedCategory === slug ? '' : slug;
+		page = 1;
+		loadFeed();
+	}
+
+	function toggleDifficulty(d: number) {
+		selectedDifficulty = selectedDifficulty === d ? 0 : d;
+		page = 1;
+		loadFeed();
+	}
+
+	function clearFilters() {
+		selectedCategory = '';
+		selectedDifficulty = 0;
+		page = 1;
+		loadFeed();
 	}
 
 	function difficultyLabel(d: number): string {
@@ -46,86 +109,244 @@
 		if (d === 3) return 'var(--red)';
 		return 'var(--amber)';
 	}
+
+	function matchGrade(score: number): string {
+		if (score >= 0.8) return 'A';
+		if (score >= 0.6) return 'B';
+		if (score >= 0.4) return 'C';
+		return 'D';
+	}
+
+	const totalPages = $derived(feed ? Math.ceil(feed.total_count / feed.per_page) : 0);
 </script>
 
 <div class="feed-page">
-	<header class="feed-header">
-		<h1>your feed<span class="cursor">_</span></h1>
-		<p class="subtitle">issues matched to your skills and goals</p>
+	<!-- Header -->
+	<header class="header">
+		<div class="header-top">
+			<div class="header-text">
+				<h1>your feed<span class="cursor">_</span></h1>
+				<p class="subtitle">issues matched to your skills and goals</p>
+			</div>
+			{#if feed && !loading}
+				<div class="header-stats">
+					<div class="stat-pill">
+						<span class="stat-num">{feed.total_count}</span>
+						<span class="stat-label">issues</span>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Search -->
+		<div class="search-row">
+			<div class="search-field">
+				<span class="search-icon">&#8981;</span>
+				<input
+					type="text"
+					placeholder="search by keyword, repo, or language..."
+					bind:value={searchQuery}
+					onkeydown={(e) => e.key === 'Enter' && search()}
+				/>
+				{#if searchQuery}
+					<button class="search-clear" onclick={clearSearch}>&times;</button>
+				{/if}
+			</div>
+			<button class="search-btn" onclick={search}>search</button>
+		</div>
+
+		{#if isSearching && !loading}
+			<div class="search-status">
+				showing results for "<span class="search-term">{searchQuery}</span>"
+				<button class="clear-link" onclick={clearSearch}>clear</button>
+			</div>
+		{/if}
 	</header>
 
-	<div class="search-bar">
-		<input
-			type="text"
-			placeholder="search issues..."
-			bind:value={searchQuery}
-			onkeydown={(e) => e.key === 'Enter' && search()}
-		/>
-		<button onclick={search}>search</button>
-	</div>
+	<!-- Filters -->
+	{#if categories.length > 0}
+		<div class="filters">
+			<div class="filter-group">
+				<span class="filter-label">category</span>
+				<div class="filter-chips">
+					{#each categories as cat}
+						<button
+							class="chip"
+							class:chip-active={selectedCategory === cat.slug}
+							onclick={() => toggleCategory(cat.slug)}
+						>
+							{#if cat.icon}<span class="chip-icon">{cat.icon}</span>{/if}
+							{cat.name}
+						</button>
+					{/each}
+				</div>
+			</div>
 
-	{#if loading}
-		<div class="loading">
-			<div class="spinner"></div>
-		</div>
-	{:else if feed && feed.issues.length > 0}
-		<div class="issue-list">
-			{#each feed.issues as issue (issue.id)}
-				<a href="/app/issues/{issue.id}" class="issue-card">
-					<div class="issue-top">
-						<span class="repo-name">{issue.repo?.owner}/{issue.repo?.name}</span>
-						<span class="issue-number">#{issue.number}</span>
+			<div class="filter-row-bottom">
+				<div class="filter-group">
+					<span class="filter-label">difficulty</span>
+					<div class="filter-chips">
+						<button class="chip chip-green" class:chip-active={selectedDifficulty === 1} onclick={() => toggleDifficulty(1)}>beginner</button>
+						<button class="chip chip-amber" class:chip-active={selectedDifficulty === 2} onclick={() => toggleDifficulty(2)}>intermediate</button>
+						<button class="chip chip-red" class:chip-active={selectedDifficulty === 3} onclick={() => toggleDifficulty(3)}>advanced</button>
 					</div>
-					<h3 class="issue-title">{issue.title}</h3>
-					<div class="issue-meta">
-						<span class="difficulty" style="color: {difficultyColor(issue.difficulty)}">
+				</div>
+
+				{#if hasActiveFilters}
+					<button class="clear-filters" onclick={clearFilters}>clear filters</button>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Feed -->
+	{#if loading}
+		<div class="loading-state">
+			<div class="loading-grid">
+				{#each Array(6) as _, i}
+					<div class="skeleton-card" style="animation-delay: {i * 80}ms"></div>
+				{/each}
+			</div>
+		</div>
+	{:else if feed?.issues?.length}
+		<div class="issue-grid">
+			{#each feed.issues as issue, i (issue.id)}
+				<a href="/app/issues/{issue.id}" class="card" style="animation-delay: {i * 40}ms">
+					<!-- Save button -->
+					<button
+						class="save-icon"
+						class:save-icon-active={issue.is_saved}
+						onclick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSave(issue.id); }}
+						title={issue.is_saved ? 'unsave' : 'save'}
+					>
+						{issue.is_saved ? '\u2605' : '\u2606'}
+					</button>
+
+					<!-- Top bar: repo + number -->
+					<div class="card-top">
+						<span class="card-repo">{issue.repo?.owner}/{issue.repo?.name}</span>
+						<span class="card-num">#{issue.number}</span>
+					</div>
+
+					<!-- Title -->
+					<h3 class="card-title">{issue.title}</h3>
+
+					<!-- Summary if available -->
+					{#if issue.summary}
+						<p class="card-summary">{issue.summary}</p>
+					{/if}
+
+					<!-- Meta row -->
+					<div class="card-meta">
+						<span class="meta-difficulty" style="color: {difficultyColor(issue.difficulty)}">
+							<span class="meta-dot" style="background: {difficultyColor(issue.difficulty)}"></span>
 							{difficultyLabel(issue.difficulty)}
 						</span>
-						<span class="time">{issue.time_estimate}</span>
-						<span class="comments">{issue.comment_count} comments</span>
-						{#if issue.match_score}
-							<span class="score">{Math.round(issue.match_score * 100)}% match</span>
-						{/if}
+						<span class="meta-item">{issue.time_estimate}</span>
+						<span class="meta-item">{issue.comment_count} comments</span>
 					</div>
-					<div class="issue-labels">
-						{#each issue.labels?.slice(0, 4) ?? [] as label}
-							<span class="label">{label}</span>
-						{/each}
-					</div>
-					{#if issue.match_reasons?.length}
-						<div class="match-reasons">
-							{#each issue.match_reasons as reason}
-								<span class="reason">{reason}</span>
+
+					<!-- Labels -->
+					{#if issue.labels?.length}
+						<div class="card-labels">
+							{#each issue.labels.slice(0, 5) as label}
+								<span class="label">{label}</span>
 							{/each}
+							{#if issue.labels.length > 5}
+								<span class="label label-more">+{issue.labels.length - 5}</span>
+							{/if}
 						</div>
 					{/if}
+
+					<!-- Footer: match score + reasons -->
+					<div class="card-footer">
+						{#if issue.match_score}
+							<div class="match-badge" class:match-high={issue.match_score >= 0.7} class:match-mid={issue.match_score >= 0.4 && issue.match_score < 0.7}>
+								<span class="match-grade">{matchGrade(issue.match_score)}</span>
+								<span class="match-pct">{Math.round(issue.match_score * 100)}%</span>
+							</div>
+						{/if}
+						{#if issue.match_reasons?.length}
+							<div class="card-reasons">
+								{#each issue.match_reasons.slice(0, 3) as reason}
+									<span class="reason">{reason}</span>
+								{/each}
+							</div>
+						{/if}
+					</div>
 				</a>
 			{/each}
 		</div>
 
-		{#if feed.total_count > feed.per_page}
-			<div class="pagination">
-				<button disabled={page <= 1} onclick={() => { page--; loadFeed(); }}>prev</button>
-				<span class="page-info">page {feed.page} of {Math.ceil(feed.total_count / feed.per_page)}</span>
-				<button disabled={page * feed.per_page >= feed.total_count} onclick={() => { page++; loadFeed(); }}>next</button>
-			</div>
+		<!-- Pagination -->
+		{#if totalPages > 1}
+			<nav class="pagination">
+				<button
+					class="page-btn"
+					disabled={page <= 1}
+					onclick={() => { page--; loadFeed(); }}
+				>
+					&larr; prev
+				</button>
+
+				<div class="page-dots">
+					{#each Array(Math.min(totalPages, 7)) as _, i}
+						{@const p = totalPages <= 7 ? i + 1 : (page <= 4 ? i + 1 : (page >= totalPages - 3 ? totalPages - 6 + i : page - 3 + i))}
+						<button
+							class="page-dot"
+							class:page-dot-active={p === page}
+							onclick={() => { page = p; loadFeed(); }}
+						>
+							{p}
+						</button>
+					{/each}
+				</div>
+
+				<button
+					class="page-btn"
+					disabled={page >= totalPages}
+					onclick={() => { page++; loadFeed(); }}
+				>
+					next &rarr;
+				</button>
+			</nav>
 		{/if}
 	{:else}
-		<div class="empty">
-			<p>no issues found. try adjusting your skills or check back later.</p>
+		<div class="empty-state">
+			<div class="empty-icon">&#9675;</div>
+			<p class="empty-title">no issues found</p>
+			<p class="empty-sub">try adjusting your skills in onboarding or check back later</p>
+			{#if isSearching}
+				<button class="btn-ghost" onclick={clearSearch}>clear search</button>
+			{/if}
 		</div>
 	{/if}
 </div>
 
 <style>
-	.feed-page { max-width: 800px; }
+	/* ── Page ── */
+	.feed-page {
+		max-width: 1200px;
+		margin: 0 auto;
+	}
 
-	.feed-header { margin-bottom: 2rem; }
+	/* ── Header ── */
+	.header {
+		margin-bottom: 1.75rem;
+	}
 
-	.feed-header h1 {
-		font-size: 1.5rem;
+	.header-top {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		margin-bottom: 1.25rem;
+	}
+
+	.header-text h1 {
+		font-size: 1.4rem;
 		color: var(--text-bright);
 		font-weight: 600;
+		line-height: 1;
 	}
 
 	.cursor { animation: blink 1s step-end infinite; color: var(--amber); }
@@ -133,182 +354,613 @@
 
 	.subtitle {
 		color: var(--text-muted);
-		font-size: 0.85rem;
-		margin-top: 0.25rem;
+		font-size: 0.8rem;
+		margin-top: 0.35rem;
 	}
 
-	.search-bar {
+	.header-stats {
 		display: flex;
 		gap: 0.5rem;
-		margin-bottom: 1.5rem;
 	}
 
-	.search-bar input {
+	.stat-pill {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		border-radius: 20px;
+		padding: 0.3rem 0.75rem;
+		font-size: 0.7rem;
+	}
+
+	.stat-num {
+		color: var(--amber);
+		font-weight: 700;
+	}
+
+	.stat-label {
+		color: var(--text-dim);
+	}
+
+	/* ── Search ── */
+	.search-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.search-field {
 		flex: 1;
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+
+	.search-icon {
+		position: absolute;
+		left: 0.75rem;
+		font-size: 0.9rem;
+		color: var(--text-dim);
+		pointer-events: none;
+	}
+
+	.search-field input {
+		width: 100%;
 		background: var(--bg-raised);
 		border: 1px solid var(--border);
 		color: var(--text);
 		font-family: var(--font-mono);
-		font-size: 0.85rem;
-		padding: 0.5rem 0.75rem;
+		font-size: 0.8rem;
+		padding: 0.6rem 2rem 0.6rem 2.25rem;
 		border-radius: 4px;
 		outline: none;
 		transition: border-color 0.15s;
 	}
 
-	.search-bar input:focus { border-color: var(--amber); }
+	.search-field input::placeholder {
+		color: var(--text-dim);
+	}
 
-	.search-bar button {
+	.search-field input:focus {
+		border-color: var(--amber-dim);
+	}
+
+	.search-clear {
+		position: absolute;
+		right: 0.5rem;
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		font-size: 1.1rem;
+		cursor: pointer;
+		padding: 0.2rem 0.4rem;
+		line-height: 1;
+		transition: color 0.15s;
+	}
+
+	.search-clear:hover { color: var(--text); }
+
+	.search-btn {
 		background: var(--bg-card);
 		border: 1px solid var(--border);
 		color: var(--amber);
 		font-family: var(--font-mono);
-		font-size: 0.85rem;
-		padding: 0.5rem 1rem;
+		font-size: 0.8rem;
+		font-weight: 500;
+		padding: 0.6rem 1.25rem;
 		cursor: pointer;
 		border-radius: 4px;
 		transition: all 0.15s;
+		white-space: nowrap;
 	}
 
-	.search-bar button:hover { background: var(--amber-glow); }
-
-	.loading {
-		display: flex;
-		justify-content: center;
-		padding: 3rem;
+	.search-btn:hover {
+		background: var(--amber-glow);
+		border-color: var(--amber-dim);
 	}
 
-	.spinner {
-		width: 24px;
-		height: 24px;
-		border: 2px solid var(--border);
-		border-top-color: var(--amber);
-		border-radius: 50%;
-		animation: spin 0.6s linear infinite;
+	.search-status {
+		margin-top: 0.75rem;
+		font-size: 0.75rem;
+		color: var(--text-muted);
 	}
 
-	@keyframes spin { to { transform: rotate(360deg); } }
+	.search-term {
+		color: var(--amber);
+	}
 
-	.issue-list {
+	.clear-link {
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		cursor: pointer;
+		text-decoration: underline;
+		margin-left: 0.5rem;
+	}
+
+	.clear-link:hover { color: var(--text); }
+
+	/* ── Filters ── */
+	.filters {
+		margin-bottom: 1.5rem;
+		padding: 1rem;
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		border-radius: 6px;
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 	}
 
-	.issue-card {
-		display: block;
+	.filter-group {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.filter-label {
+		font-size: 0.65rem;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--text-dim);
+		font-weight: 500;
+		flex-shrink: 0;
+		min-width: 60px;
+	}
+
+	.filter-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+
+	.filter-row-bottom {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.chip {
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		padding: 0.2rem 0.55rem;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--text-muted);
+		border-radius: 3px;
+		cursor: pointer;
+		transition: all 0.15s;
+		white-space: nowrap;
+	}
+
+	.chip:hover {
+		border-color: var(--amber-dim);
+		color: var(--text);
+	}
+
+	.chip-active {
+		background: var(--amber-glow);
+		border-color: var(--amber-dim);
+		color: var(--amber);
+		font-weight: 500;
+	}
+
+	.chip-icon {
+		margin-right: 0.2rem;
+	}
+
+	.chip-green.chip-active {
+		background: rgba(74, 222, 128, 0.1);
+		border-color: rgba(74, 222, 128, 0.3);
+		color: var(--green);
+	}
+
+	.chip-amber.chip-active {
+		background: var(--amber-glow);
+		border-color: var(--amber-dim);
+		color: var(--amber);
+	}
+
+	.chip-red.chip-active {
+		background: rgba(248, 113, 113, 0.1);
+		border-color: rgba(248, 113, 113, 0.3);
+		color: var(--red);
+	}
+
+	.clear-filters {
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		cursor: pointer;
+		text-decoration: underline;
+		transition: color 0.15s;
+	}
+
+	.clear-filters:hover { color: var(--text); }
+
+	/* ── Loading skeleton ── */
+	.loading-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.75rem;
+	}
+
+	@media (max-width: 700px) {
+		.loading-grid { grid-template-columns: 1fr; }
+	}
+
+	.skeleton-card {
+		height: 180px;
 		background: var(--bg-raised);
 		border: 1px solid var(--border);
 		border-radius: 6px;
-		padding: 1rem 1.25rem;
-		text-decoration: none;
-		transition: all 0.15s;
+		animation: pulse 1.5s ease-in-out infinite;
 	}
 
-	.issue-card:hover {
+	@keyframes pulse {
+		0%, 100% { opacity: 0.4; }
+		50% { opacity: 0.8; }
+	}
+
+	/* ── Issue Grid ── */
+	.issue-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.75rem;
+	}
+
+	@media (max-width: 700px) {
+		.issue-grid { grid-template-columns: 1fr; }
+	}
+
+	/* ── Card ── */
+	.card {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 1.15rem 1.25rem;
+		text-decoration: none;
+		transition: all 0.2s;
+		animation: cardIn 0.35s ease both;
+		position: relative;
+	}
+
+	@keyframes cardIn {
+		from { opacity: 0; transform: translateY(8px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	.card:hover {
 		border-color: var(--amber-dim);
 		background: var(--bg-card);
+		transform: translateY(-1px);
 	}
 
-	.issue-top {
+	.card:hover .card-title {
+		color: var(--amber);
+	}
+
+	/* ── Save Icon ── */
+	.save-icon {
+		position: absolute;
+		top: 0.6rem;
+		right: 0.6rem;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--text-dim);
+		font-size: 0.9rem;
+		width: 26px;
+		height: 26px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s;
+		z-index: 2;
+		opacity: 0;
+	}
+
+	.card:hover .save-icon,
+	.save-icon-active {
+		opacity: 1;
+	}
+
+	.save-icon:hover {
+		border-color: var(--amber-dim);
+		color: var(--amber);
+		background: var(--amber-glow);
+	}
+
+	.save-icon-active {
+		color: var(--amber);
+		border-color: var(--amber-dim);
+		background: var(--amber-glow);
+	}
+
+	.save-icon-active:hover {
+		color: var(--red);
+		border-color: var(--red);
+		background: rgba(248, 113, 113, 0.08);
+	}
+
+	/* ── Card Top ── */
+	.card-top {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 0.5rem;
 	}
 
-	.repo-name {
-		font-size: 0.75rem;
+	.card-repo {
+		font-size: 0.7rem;
 		color: var(--text-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
-	.issue-number {
-		font-size: 0.75rem;
+	.card-num {
+		font-size: 0.7rem;
 		color: var(--text-dim);
+		flex-shrink: 0;
+		margin-left: 0.5rem;
 	}
 
-	.issue-title {
-		font-size: 0.95rem;
-		font-weight: 500;
-		color: var(--text-bright);
-		margin-bottom: 0.5rem;
-		line-height: 1.4;
-	}
-
-	.issue-meta {
-		display: flex;
-		gap: 1rem;
-		font-size: 0.75rem;
-		color: var(--text-muted);
-		margin-bottom: 0.5rem;
-	}
-
-	.score {
-		color: var(--amber);
+	/* ── Card Title ── */
+	.card-title {
+		font-size: 0.9rem;
 		font-weight: 600;
+		color: var(--text-bright);
+		line-height: 1.45;
+		margin-bottom: 0.4rem;
+		transition: color 0.15s;
+		/* Clamp to 2 lines */
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
-	.issue-labels {
+	/* ── Card Summary ── */
+	.card-summary {
+		font-size: 0.72rem;
+		color: var(--text-muted);
+		line-height: 1.6;
+		margin-bottom: 0.5rem;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	/* ── Card Meta ── */
+	.card-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-size: 0.7rem;
+		color: var(--text-muted);
+		margin-bottom: 0.6rem;
+	}
+
+	.meta-difficulty {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-weight: 500;
+	}
+
+	.meta-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.meta-item {
+		white-space: nowrap;
+	}
+
+	/* ── Card Labels ── */
+	.card-labels {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.375rem;
+		gap: 0.3rem;
+		margin-bottom: 0.6rem;
 	}
 
 	.label {
-		font-size: 0.7rem;
-		padding: 0.125rem 0.5rem;
+		font-size: 0.65rem;
+		padding: 0.125rem 0.45rem;
 		background: var(--amber-glow);
 		color: var(--amber);
 		border-radius: 3px;
+		white-space: nowrap;
 	}
 
-	.match-reasons {
+	.label-more {
+		background: var(--bg-card);
+		color: var(--text-dim);
+		border: 1px solid var(--border);
+	}
+
+	/* ── Card Footer ── */
+	.card-footer {
+		margin-top: auto;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding-top: 0.6rem;
+		border-top: 1px solid var(--border);
+	}
+
+	.match-badge {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		border-radius: 3px;
+		padding: 0.15rem 0.45rem;
+		flex-shrink: 0;
+	}
+
+	.match-high {
+		border-color: var(--amber-dim);
+		background: var(--amber-glow);
+	}
+
+	.match-grade {
+		font-size: 0.65rem;
+		font-weight: 700;
+		color: var(--text-dim);
+	}
+
+	.match-high .match-grade { color: var(--amber); }
+	.match-mid .match-grade { color: var(--text-muted); }
+
+	.match-pct {
+		font-size: 0.65rem;
+		font-weight: 600;
+		color: var(--text-muted);
+	}
+
+	.match-high .match-pct { color: var(--amber); }
+
+	.card-reasons {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.375rem;
-		margin-top: 0.5rem;
+		gap: 0.25rem;
+		min-width: 0;
 	}
 
 	.reason {
-		font-size: 0.7rem;
-		padding: 0.125rem 0.5rem;
-		background: rgba(74, 222, 128, 0.1);
+		font-size: 0.6rem;
+		padding: 0.1rem 0.4rem;
+		background: rgba(74, 222, 128, 0.08);
 		color: var(--green);
-		border-radius: 3px;
+		border-radius: 2px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 140px;
 	}
 
+	/* ── Pagination ── */
 	.pagination {
 		display: flex;
 		justify-content: center;
 		align-items: center;
-		gap: 1rem;
+		gap: 0.5rem;
 		margin-top: 2rem;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--border);
 	}
 
-	.pagination button {
+	.page-btn {
 		background: var(--bg-card);
 		border: 1px solid var(--border);
 		color: var(--text);
 		font-family: var(--font-mono);
-		font-size: 0.8rem;
-		padding: 0.375rem 0.75rem;
+		font-size: 0.75rem;
+		padding: 0.35rem 0.75rem;
 		cursor: pointer;
 		border-radius: 4px;
+		transition: all 0.15s;
 	}
 
-	.pagination button:disabled {
-		opacity: 0.3;
+	.page-btn:hover:not(:disabled) {
+		border-color: var(--amber-dim);
+		color: var(--amber);
+	}
+
+	.page-btn:disabled {
+		opacity: 0.25;
 		cursor: not-allowed;
 	}
 
-	.page-info {
-		font-size: 0.8rem;
-		color: var(--text-muted);
+	.page-dots {
+		display: flex;
+		gap: 0.25rem;
 	}
 
-	.empty {
+	.page-dot {
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: none;
+		border: 1px solid transparent;
+		color: var(--text-dim);
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: all 0.15s;
+	}
+
+	.page-dot:hover {
+		color: var(--text);
+		border-color: var(--border);
+	}
+
+	.page-dot-active {
+		color: var(--amber);
+		background: var(--amber-glow);
+		border-color: var(--amber-dim);
+		font-weight: 600;
+	}
+
+	/* ── Empty State ── */
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 4rem 2rem;
 		text-align: center;
-		padding: 3rem;
+	}
+
+	.empty-icon {
+		font-size: 2rem;
+		color: var(--text-dim);
+		margin-bottom: 0.25rem;
+	}
+
+	.empty-title {
+		font-size: 0.9rem;
 		color: var(--text-muted);
+		font-weight: 500;
+	}
+
+	.empty-sub {
+		font-size: 0.75rem;
+		color: var(--text-dim);
+	}
+
+	.btn-ghost {
+		margin-top: 0.5rem;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		padding: 0.35rem 0.75rem;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: all 0.15s;
+	}
+
+	.btn-ghost:hover {
+		border-color: var(--amber-dim);
+		color: var(--amber);
 	}
 </style>

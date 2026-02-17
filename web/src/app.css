@@ -7,24 +7,24 @@
 }
 
 :root {
-	--bg: #09090b;
-	--bg-raised: #111114;
-	--bg-card: #16161a;
-	--border: #23232a;
-	--border-bright: #2e2e38;
+	--bg: #0a1610;
+	--bg-raised: #0f2318;
+	--bg-card: #142c1e;
+	--border: #1e3a28;
+	--border-bright: #2a4e35;
 
-	--text: #d4d4d8;
-	--text-bright: #fafafa;
-	--text-muted: #71717a;
-	--text-dim: #3f3f46;
+	--text: #c8e6b8;
+	--text-bright: #DEF4C6;
+	--text-muted: #6b9a7e;
+	--text-dim: #3d6b4f;
 
-	--amber: #f59e0b;
-	--amber-bright: #fbbf24;
-	--amber-dim: #92400e;
-	--amber-glow: rgba(245, 158, 11, 0.12);
-	--amber-glow-strong: rgba(245, 158, 11, 0.25);
+	--amber: #73E2A7;
+	--amber-bright: #95EDBE;
+	--amber-dim: #1C7C54;
+	--amber-glow: rgba(115, 226, 167, 0.12);
+	--amber-glow-strong: rgba(115, 226, 167, 0.25);
 
-	--green: #4ade80;
+	--green: #DEF4C6;
 	--red: #f87171;
 
 	--font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
@@ -75,8 +75,8 @@ a:hover {
 }
 
 ::selection {
-	background: var(--amber);
-	color: var(--bg);
+	background: var(--amber-dim);
+	color: var(--text-bright);
 }
 
 /* Scroll reveal */
@@ -151,6 +151,131 @@ section {
 		opacity: 1;
 		transform: translateY(0);
 	}
+}
+
+/* ═══════════════════════════════════════════ */
+/*  THEME: Sunset (Ivory Mist + Sunset Ember) */
+/* ═══════════════════════════════════════════ */
+[data-theme="sunset"] {
+	--bg: #12100a;
+	--bg-raised: #1e1810;
+	--bg-card: #2a2018;
+	--border: #3d3020;
+	--border-bright: #4e3e2a;
+
+	--text: #e6d5b8;
+	--text-bright: #FFF8F0;
+	--text-muted: #9a8468;
+	--text-dim: #6b5a3f;
+
+	--amber: #FF8811;
+	--amber-bright: #ffa040;
+	--amber-dim: #b35f0c;
+	--amber-glow: rgba(255, 136, 17, 0.12);
+	--amber-glow-strong: rgba(255, 136, 17, 0.25);
+
+	--green: #9DD9D2;
+	--red: #f87171;
+}
+
+/* ═══════════════════════════════════════════ */
+/*  THEME: Orchid (Petal Blush + Royal Orchid) */
+/* ═══════════════════════════════════════════ */
+[data-theme="orchid"] {
+	--bg: #110a14;
+	--bg-raised: #1c1020;
+	--bg-card: #28182e;
+	--border: #3a2542;
+	--border-bright: #4e3558;
+
+	--text: #d8c0d0;
+	--text-bright: #EEABC4;
+	--text-muted: #9a7090;
+	--text-dim: #6b4a62;
+
+	--amber: #E15A97;
+	--amber-bright: #ee7db0;
+	--amber-dim: #861388;
+	--amber-glow: rgba(225, 90, 151, 0.12);
+	--amber-glow-strong: rgba(225, 90, 151, 0.25);
+
+	--green: #EEABC4;
+	--red: #f87171;
+}
+
+/* ═══════════════════════════════════════════ */
+/*  THEME: Crimson (Vanilla Veil + Crimson)   */
+/* ═══════════════════════════════════════════ */
+[data-theme="crimson"] {
+	--bg: #0f0808;
+	--bg-raised: #1c0f0f;
+	--bg-card: #2a1618;
+	--border: #3d2025;
+	--border-bright: #502a30;
+
+	--text: #d8c4b0;
+	--text-bright: #F1F0CC;
+	--text-muted: #8a6e60;
+	--text-dim: #5c3f35;
+
+	--amber: #c93040;
+	--amber-bright: #e04050;
+	--amber-dim: #7a1520;
+	--amber-glow: rgba(167, 29, 49, 0.12);
+	--amber-glow-strong: rgba(167, 29, 49, 0.25);
+
+	--green: #D5BF86;
+	--red: #f87171;
+}
+
+/* ═══════════════════════════════════════════ */
+/*  THEME: Glacier (Arctic Glow + Lagoon)     */
+/* ═══════════════════════════════════════════ */
+[data-theme="glacier"] {
+	--bg: #0a1214;
+	--bg-raised: #0f1c1e;
+	--bg-card: #14282c;
+	--border: #1e3a3e;
+	--border-bright: #2a4e52;
+
+	--text: #b8d8d5;
+	--text-bright: #DAFFEF;
+	--text-muted: #6b9a96;
+	--text-dim: #3f6b68;
+
+	--amber: #64B6AC;
+	--amber-bright: #82cec4;
+	--amber-dim: #3d7a74;
+	--amber-glow: rgba(100, 182, 172, 0.12);
+	--amber-glow-strong: rgba(100, 182, 172, 0.25);
+
+	--green: #C0FDFB;
+	--red: #f87171;
+}
+
+/* ═══════════════════════════════════════════ */
+/*  THEME: Mono (Grayscale)                   */
+/* ═══════════════════════════════════════════ */
+[data-theme="mono"] {
+	--bg: #0a0a0a;
+	--bg-raised: #141414;
+	--bg-card: #1e1e1e;
+	--border: #2a2a2a;
+	--border-bright: #3a3a3a;
+
+	--text: #b0b0b0;
+	--text-bright: #e8e8e8;
+	--text-muted: #707070;
+	--text-dim: #484848;
+
+	--amber: #e0e0e0;
+	--amber-bright: #ffffff;
+	--amber-dim: #808080;
+	--amber-glow: rgba(255, 255, 255, 0.08);
+	--amber-glow-strong: rgba(255, 255, 255, 0.16);
+
+	--green: #d0d0d0;
+	--red: #f87171;
 }
 
 /* Scrollbar */

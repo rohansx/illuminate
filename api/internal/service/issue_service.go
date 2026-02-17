@@ -39,7 +39,7 @@ func (s *IssueService) GetByID(ctx context.Context, id uuid.UUID) (*model.Issue,
 	return issue, nil
 }
 
-func (s *IssueService) GetFeed(ctx context.Context, languages []string, page, perPage int) (*model.IssueFeed, error) {
+func (s *IssueService) GetFeed(ctx context.Context, filter model.FeedFilter, page, perPage int) (*model.IssueFeed, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -48,7 +48,7 @@ func (s *IssueService) GetFeed(ctx context.Context, languages []string, page, pe
 	}
 	offset := (page - 1) * perPage
 
-	issues, totalCount, err := s.issueRepo.GetFeed(ctx, languages, perPage, offset)
+	issues, totalCount, err := s.issueRepo.GetFeed(ctx, filter, perPage, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting feed: %w", err)
 	}
@@ -59,6 +59,10 @@ func (s *IssueService) GetFeed(ctx context.Context, languages []string, page, pe
 		Page:       page,
 		PerPage:    perPage,
 	}, nil
+}
+
+func (s *IssueService) GetCategories(ctx context.Context) ([]model.Category, error) {
+	return s.repoRepo.GetCategories(ctx)
 }
 
 func (s *IssueService) Search(ctx context.Context, query string, page, perPage int) (*model.IssueFeed, error) {
@@ -81,6 +85,17 @@ func (s *IssueService) Search(ctx context.Context, query string, page, perPage i
 		Page:       page,
 		PerPage:    perPage,
 	}, nil
+}
+
+func (s *IssueService) GetComments(ctx context.Context, issueID uuid.UUID) ([]GitHubComment, error) {
+	issue, err := s.issueRepo.GetByID(ctx, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("getting issue: %w", err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("issue not found")
+	}
+	return s.github.GetPublicIssueComments(ctx, issue.Repo.Owner, issue.Repo.Name, issue.Number)
 }
 
 func (s *IssueService) IndexRepository(ctx context.Context, owner, name string) error {
