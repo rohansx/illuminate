@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/kelseyhightower/envconfig"
 )
@@ -20,6 +21,8 @@ type Config struct {
 	Env                string `envconfig:"ENV" default:"development"`
 	AdminGitHubUsername string `envconfig:"ADMIN_GITHUB_USERNAME" default:""`
 	GLMAPIKey           string `envconfig:"GLM_API_KEY" default:""`
+	DiscoveryEnabled   bool          `envconfig:"DISCOVERY_ENABLED" default:"true"`
+	DiscoveryInterval  time.Duration `envconfig:"DISCOVERY_INTERVAL" default:"1h"`
 }
 
 func (c *Config) IsProd() bool {

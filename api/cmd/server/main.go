@@ -81,9 +81,10 @@ func main() {
 	deepDiveService := service.NewDeepDiveService(deepDiveRepo, issueRepo, repoRepo, userRepo, githubService, glmService)
 	savedIssueService := service.NewSavedIssueService(savedIssueRepo, issueRepo)
 
-	// Admin
+	// Admin + Discovery
 	jobManager := service.NewJobManager()
-	adminService := service.NewAdminService(userRepo, repoRepo, issueRepo, issueService, githubService, jobManager)
+	discoveryService := service.NewDiscoveryService(repoRepo, issueService, githubService, jobManager)
+	adminService := service.NewAdminService(userRepo, repoRepo, issueRepo, issueService, githubService, jobManager, discoveryService)
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authService, githubService, cfg.FrontendURL, cfg.CookieDomain, cfg.IsProd())
@@ -134,6 +135,7 @@ func main() {
 		r.Patch("/admin/users/{id}/role", adminHandler.UpdateUserRole)
 		r.Post("/admin/seed", adminHandler.TriggerSeed)
 		r.Post("/admin/index", adminHandler.TriggerIndex)
+		r.Post("/admin/discover", adminHandler.TriggerDiscover)
 		r.Get("/admin/jobs", adminHandler.GetJobs)
 		r.Get("/admin/repos", adminHandler.ListRepos)
 		r.Delete("/admin/repos/{id}", adminHandler.DeleteRepo)
@@ -160,6 +162,15 @@ func main() {
 		})
 	}
 
+	// Discovery scheduler
+	var scheduler *service.Scheduler
+	if cfg.DiscoveryEnabled {
+		scheduler = service.NewScheduler(discoveryService, cfg.DiscoveryInterval)
+		scheduler.Start()
+	} else {
+		slog.Info("auto-discovery disabled")
+	}
+
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      r,
@@ -181,6 +192,9 @@ func main() {
 	<-quit
 
 	slog.Info("shutting down server")
+	if scheduler != nil {
+		scheduler.Stop()
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

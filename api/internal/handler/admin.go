@@ -82,6 +82,15 @@ func (h *AdminHandler) TriggerIndex(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusAccepted, job)
 }
 
+func (h *AdminHandler) TriggerDiscover(w http.ResponseWriter, r *http.Request) {
+	job, err := h.adminService.TriggerDiscover(r.Context())
+	if err != nil {
+		Error(w, http.StatusConflict, err.Error())
+		return
+	}
+	JSON(w, http.StatusAccepted, job)
+}
+
 func (h *AdminHandler) GetJobs(w http.ResponseWriter, r *http.Request) {
 	jobs := h.adminService.GetJobs()
 	if jobs == nil {

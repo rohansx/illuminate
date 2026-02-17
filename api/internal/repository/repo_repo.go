@@ -15,6 +15,7 @@ type RepoRepo interface {
 	GetByGitHubID(ctx context.Context, githubID int64) (*model.Repository, error)
 	Upsert(ctx context.Context, repo *model.Repository) (*model.Repository, error)
 	GetAll(ctx context.Context) ([]model.Repository, error)
+	GetAllGitHubIDs(ctx context.Context) ([]int64, error)
 	Count(ctx context.Context) (int, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	ListWithIssueCounts(ctx context.Context, limit, offset int) ([]model.RepoListItem, int, error)
@@ -147,6 +148,24 @@ func (r *repoRepo) GetAll(ctx context.Context) ([]model.Repository, error) {
 		repos = append(repos, repo)
 	}
 	return repos, nil
+}
+
+func (r *repoRepo) GetAllGitHubIDs(ctx context.Context) ([]int64, error) {
+	rows, err := r.pool.Query(ctx, `SELECT github_id FROM repositories`)
+	if err != nil {
+		return nil, fmt.Errorf("querying github ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning github id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func (r *repoRepo) Count(ctx context.Context) (int, error) {

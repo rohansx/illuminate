@@ -14,12 +14,13 @@ import (
 )
 
 type AdminService struct {
-	userRepo      repository.UserRepo
-	repoRepo      repository.RepoRepo
-	issueRepo     repository.IssueRepo
-	issueService  *IssueService
-	githubService *GitHubService
-	jobManager    *JobManager
+	userRepo         repository.UserRepo
+	repoRepo         repository.RepoRepo
+	issueRepo        repository.IssueRepo
+	issueService     *IssueService
+	githubService    *GitHubService
+	jobManager       *JobManager
+	discoveryService *DiscoveryService
 }
 
 func NewAdminService(
@@ -29,14 +30,16 @@ func NewAdminService(
 	issueService *IssueService,
 	githubService *GitHubService,
 	jobManager *JobManager,
+	discoveryService *DiscoveryService,
 ) *AdminService {
 	return &AdminService{
-		userRepo:      userRepo,
-		repoRepo:      repoRepo,
-		issueRepo:     issueRepo,
-		issueService:  issueService,
-		githubService: githubService,
-		jobManager:    jobManager,
+		userRepo:         userRepo,
+		repoRepo:         repoRepo,
+		issueRepo:        issueRepo,
+		issueService:     issueService,
+		githubService:    githubService,
+		jobManager:       jobManager,
+		discoveryService: discoveryService,
 	}
 }
 
@@ -195,6 +198,10 @@ func (s *AdminService) TriggerIndex(ctx context.Context) (*model.JobStatus, erro
 		}
 		return nil
 	})
+}
+
+func (s *AdminService) TriggerDiscover(ctx context.Context) (*model.JobStatus, error) {
+	return s.discoveryService.Discover(ctx)
 }
 
 func (s *AdminService) GetJobs() []model.JobStatus {

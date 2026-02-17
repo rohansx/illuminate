@@ -161,6 +161,23 @@ func (s *GitHubService) GetPublicRepoLanguages(ctx context.Context, owner, name 
 	return languages, nil
 }
 
+type GitHubSearchRepoResult struct {
+	TotalCount int          `json:"total_count"`
+	Items      []GitHubRepo `json:"items"`
+}
+
+func (s *GitHubService) SearchRepositories(ctx context.Context, query string, page int) (*GitHubSearchRepoResult, error) {
+	apiURL := fmt.Sprintf(
+		"https://api.github.com/search/repositories?q=%s&per_page=30&page=%d",
+		url.QueryEscape(query), page,
+	)
+	var result GitHubSearchRepoResult
+	if err := s.getPublic(ctx, apiURL, &result); err != nil {
+		return nil, fmt.Errorf("searching repositories: %w", err)
+	}
+	return &result, nil
+}
+
 type GitHubSearchResult struct {
 	TotalCount int        `json:"total_count"`
 	Items      []GitHubPR `json:"items"`
