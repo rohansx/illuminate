@@ -18,5 +18,8 @@
     "typescript": "^5.0.0",
     "vite": "^6.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "marked": "^17.0.2"
+  }
 }
