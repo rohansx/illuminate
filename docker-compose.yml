@@ -45,23 +45,15 @@ services:
       ILLUMINATE_ENV: production
       ILLUMINATE_PORT: "8080"
       ILLUMINATE_ADMIN_GITHUB_USERNAME: ${ADMIN_GITHUB_USERNAME:-}
-    expose:
-      - "8080"
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    depends_on:
-      - app
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - "8080:8080"
+    networks:
+      - default
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
 
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:
