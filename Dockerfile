@@ -5,6 +5,8 @@ COPY web/package.json web/bun.lock* ./
 RUN bun install --frozen-lockfile
 COPY web/ .
 ENV VITE_API_BASE=""
+ARG VITE_UMAMI_WEBSITE_ID=""
+ENV VITE_UMAMI_WEBSITE_ID=${VITE_UMAMI_WEBSITE_ID}
 RUN bun run build
 
 # ── Stage 2: Build Go binary ────────────────────────────────────────
