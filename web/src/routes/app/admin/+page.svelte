@@ -8,6 +8,7 @@
 	let seeding = $state(false);
 	let indexing = $state(false);
 	let syncingContribs = $state(false);
+	let seedingHiring = $state(false);
 
 	onMount(async () => {
 		try {
@@ -55,6 +56,18 @@
 			alert(e.message);
 		} finally {
 			syncingContribs = false;
+		}
+	}
+
+	async function triggerHiringSeed() {
+		seedingHiring = true;
+		try {
+			await api.adminTriggerHiringSeed();
+			jobs = await api.adminGetJobs();
+		} catch (e: any) {
+			alert(e.message);
+		} finally {
+			seedingHiring = false;
 		}
 	}
 
@@ -119,6 +132,9 @@
 				</button>
 				<button class="action-btn" onclick={triggerContribSync} disabled={syncingContribs}>
 					{syncingContribs ? 'syncing...' : 'sync contributions'}
+				</button>
+				<button class="action-btn" onclick={triggerHiringSeed} disabled={seedingHiring}>
+					{seedingHiring ? 'seeding...' : 'seed hiring repos'}
 				</button>
 			</div>
 		</div>

@@ -508,6 +508,9 @@ export const api = {
 	adminTriggerContributionSync: () =>
 		request<JobStatus>('/admin/sync-contributions', { method: 'POST' }),
 
+	adminTriggerHiringSeed: () =>
+		request<JobStatus>('/admin/seed-hiring', { method: 'POST' }),
+
 	// Notifications
 	getNotifications: (page = 1, perPage = 20) => {
 		const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });

@@ -100,6 +100,15 @@ func (h *AdminHandler) TriggerContributionSync(w http.ResponseWriter, r *http.Re
 	JSON(w, http.StatusAccepted, job)
 }
 
+func (h *AdminHandler) TriggerHiringSeed(w http.ResponseWriter, r *http.Request) {
+	job, err := h.adminService.TriggerHiringSeed(r.Context())
+	if err != nil {
+		Error(w, http.StatusConflict, err.Error())
+		return
+	}
+	JSON(w, http.StatusAccepted, job)
+}
+
 func (h *AdminHandler) GetJobs(w http.ResponseWriter, r *http.Request) {
 	jobs := h.adminService.GetJobs()
 	if jobs == nil {

@@ -169,6 +169,7 @@ func main() {
 		r.Post("/admin/index", adminHandler.TriggerIndex)
 		r.Post("/admin/discover", adminHandler.TriggerDiscover)
 		r.Post("/admin/sync-contributions", adminHandler.TriggerContributionSync)
+		r.Post("/admin/seed-hiring", adminHandler.TriggerHiringSeed)
 		r.Get("/admin/jobs", adminHandler.GetJobs)
 		r.Get("/admin/repos", adminHandler.ListRepos)
 		r.Delete("/admin/repos/{id}", adminHandler.DeleteRepo)

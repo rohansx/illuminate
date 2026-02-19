@@ -2,10 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -229,4 +233,110 @@ func (s *AdminService) RemoveRepoCategory(ctx context.Context, repoID, categoryI
 
 func (s *AdminService) GetCategories(ctx context.Context) ([]model.Category, error) {
 	return s.repoRepo.GetCategories(ctx)
+}
+
+const openSourceJobsCSV = "https://raw.githubusercontent.com/timqian/open-source-jobs/main/repos.csv"
+
+func (s *AdminService) TriggerHiringSeed(ctx context.Context) (*model.JobStatus, error) {
+	return s.jobManager.StartJob("hiring-seed", func(ctx context.Context, progressFn func(current, total int)) error {
+		// Fetch CSV from GitHub
+		resp, err := http.Get(openSourceJobsCSV)
+		if err != nil {
+			return fmt.Errorf("fetching open-source-jobs CSV: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("open-source-jobs CSV returned %d", resp.StatusCode)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("reading CSV body: %w", err)
+		}
+
+		reader := csv.NewReader(strings.NewReader(string(body)))
+		records, err := reader.ReadAll()
+		if err != nil {
+			return fmt.Errorf("parsing CSV: %w", err)
+		}
+
+		// Skip header row; columns: Repository,Company Name,Company URL,Career URL,Tags,Language,Description
+		if len(records) < 2 {
+			slog.Info("hiring-seed: no records found in CSV")
+			progressFn(1, 1)
+			return nil
+		}
+		rows := records[1:]
+
+		slog.Info("hiring-seed started", "total_repos", len(rows))
+		progressFn(0, len(rows))
+
+		seeded, failed := 0, 0
+		for i, row := range rows {
+			if len(row) < 4 {
+				failed++
+				progressFn(i+1, len(rows))
+				continue
+			}
+
+			repoFullName := strings.TrimSpace(row[0])
+			careerURL := strings.TrimSpace(row[3])
+
+			parts := strings.SplitN(repoFullName, "/", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				slog.Warn("hiring-seed: invalid repo name", "name", repoFullName)
+				failed++
+				progressFn(i+1, len(rows))
+				continue
+			}
+			owner, name := parts[0], parts[1]
+			fullName := owner + "/" + name
+
+			ghRepo, err := s.githubService.GetPublicRepo(ctx, owner, name)
+			if err != nil {
+				slog.Warn("hiring-seed: failed to fetch from github", "repo", fullName, "error", err)
+				failed++
+				progressFn(i+1, len(rows))
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+
+			var lastCommit *time.Time
+			if ghRepo.PushedAt != "" {
+				t, err := time.Parse(time.RFC3339, ghRepo.PushedAt)
+				if err == nil {
+					lastCommit = &t
+				}
+			}
+
+			repo := &model.Repository{
+				GitHubID:        ghRepo.ID,
+				Owner:           ghRepo.Owner.Login,
+				Name:            ghRepo.Name,
+				Description:     ghRepo.Description,
+				Stars:           ghRepo.StargazersCount,
+				PrimaryLanguage: ghRepo.Language,
+				Topics:          ghRepo.Topics,
+				HealthScore:     0.5,
+				LastCommitAt:    lastCommit,
+				IsHiring:        true,
+				HiringURL:       careerURL,
+			}
+
+			if _, err := s.repoRepo.Upsert(ctx, repo); err != nil {
+				slog.Warn("hiring-seed: failed to upsert", "repo", fullName, "error", err)
+				failed++
+			} else {
+				slog.Info("hiring-seed: seeded", "repo", fullName, "career_url", careerURL)
+				seeded++
+			}
+
+			progressFn(i+1, len(rows))
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		slog.Info("hiring-seed completed", "seeded", seeded, "failed", failed, "total", len(rows))
+		return nil
+	})
 }
