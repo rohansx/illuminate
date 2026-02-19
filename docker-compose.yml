@@ -45,8 +45,9 @@ services:
       ILLUMINATE_ENV: production
       ILLUMINATE_PORT: "8080"
       ILLUMINATE_ADMIN_GITHUB_USERNAME: ${ADMIN_GITHUB_USERNAME:-}
-    ports:
-      - "8080:8080"
+      ILLUMINATE_GLM_API_KEY: ${GLM_API_KEY:-}
+    expose:
+      - "8080"
     networks:
       - default
       - dokploy-network
