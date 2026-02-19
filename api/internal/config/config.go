@@ -20,8 +20,7 @@ type Config struct {
 	CookieDomain       string `envconfig:"COOKIE_DOMAIN" default:"localhost"`
 	Env                string `envconfig:"ENV" default:"development"`
 	AdminGitHubUsername string `envconfig:"ADMIN_GITHUB_USERNAME" default:""`
-	GLMAPIKey           string `envconfig:"GLM_API_KEY" default:""`
-	DiscoveryEnabled   bool          `envconfig:"DISCOVERY_ENABLED" default:"true"`
+	GLMAPIKey          string        `envconfig:"GLM_API_KEY" default:""`
 	DiscoveryInterval  time.Duration `envconfig:"DISCOVERY_INTERVAL" default:"1h"`
 }
 

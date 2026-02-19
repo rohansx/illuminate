@@ -76,6 +76,23 @@
 		if (proficiency >= 40) return 'intermediate';
 		return 'beginner';
 	}
+
+	const skillPalette = ['#4ade80', '#60a5fa', '#c084fc', '#f472b6', '#fbbf24', '#67e8f9', '#fb923c', '#a78bfa'];
+	function skillColor(name: string): string {
+		let hash = 0;
+		for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+		return skillPalette[Math.abs(hash) % skillPalette.length];
+	}
+
+	function getLabelColor(label: string): { bg: string; fg: string } {
+		const l = label.toLowerCase();
+		if (l.includes('good first issue') || l.includes('beginner') || l.includes('easy')) return { bg: 'rgba(74, 222, 128, 0.12)', fg: '#4ade80' };
+		if (l.includes('help wanted') || l.includes('contributions')) return { bg: 'rgba(103, 232, 249, 0.12)', fg: '#67e8f9' };
+		if (l.includes('bug') || l.includes('fix')) return { bg: 'rgba(248, 113, 113, 0.12)', fg: '#f87171' };
+		if (l.includes('type:') || l.includes('documentation') || l.includes('docs') || l.includes('cleanup')) return { bg: 'rgba(96, 165, 250, 0.12)', fg: '#60a5fa' };
+		if (l.includes('team-') || l.includes('team:')) return { bg: 'rgba(192, 132, 252, 0.12)', fg: '#c084fc' };
+		return { bg: 'var(--amber-glow)', fg: 'var(--amber)' };
+	}
 </script>
 
 {#if loading}
@@ -118,19 +135,19 @@
 		<!-- Stats Cards -->
 		<div class="stats-grid">
 			<div class="stat-card">
-				<span class="stat-value">{stats.merged_pr_count}</span>
+				<span class="stat-value" style="color: #c084fc">{stats.merged_pr_count}</span>
 				<span class="stat-label">merged PRs</span>
 			</div>
 			<div class="stat-card">
-				<span class="stat-value">{stats.open_pr_count}</span>
+				<span class="stat-value" style="color: #4ade80">{stats.open_pr_count}</span>
 				<span class="stat-label">open PRs</span>
 			</div>
 			<div class="stat-card">
-				<span class="stat-value">{stats.saved_count}</span>
+				<span class="stat-value" style="color: #fbbf24">{stats.saved_count}</span>
 				<span class="stat-label">saved issues</span>
 			</div>
 			<div class="stat-card">
-				<span class="stat-value">{stats.user.skills?.length || 0}</span>
+				<span class="stat-value" style="color: #60a5fa">{stats.user.skills?.length || 0}</span>
 				<span class="stat-label">languages</span>
 			</div>
 		</div>
@@ -147,11 +164,11 @@
 							{#each stats.user.skills as skill}
 								<div class="skill-row">
 									<div class="skill-info">
-										<span class="skill-name">{skill.language}</span>
+										<span class="skill-name"><span class="skill-dot" style="background: {skillColor(skill.language)}"></span>{skill.language}</span>
 										<span class="skill-level">{skillLevel(skill.proficiency)}</span>
 									</div>
 									<div class="skill-bar-bg">
-										<div class="skill-bar-fill" style="width: {skill.proficiency}%"></div>
+										<div class="skill-bar-fill" style="width: {skill.proficiency}%; background: {skillColor(skill.language)}"></div>
 									</div>
 								</div>
 							{/each}
@@ -203,7 +220,7 @@
 					{#if stats.user.skills?.length}
 						<div class="card-skills">
 							{#each stats.user.skills.slice(0, 5) as skill}
-								<span class="card-skill-tag">{skill.language}</span>
+								<span class="card-skill-tag"><span class="skill-dot" style="background: {skillColor(skill.language)}"></span>{skill.language}</span>
 							{/each}
 						</div>
 					{/if}
@@ -268,7 +285,7 @@
 									{#if pr.labels?.length}
 										<div class="pr-labels">
 											{#each pr.labels.slice(0, 3) as label}
-												<span class="pr-label">{label.name}</span>
+												<span class="pr-label" style="background: {getLabelColor(label.name).bg}; color: {getLabelColor(label.name).fg}; border-color: transparent">{label.name}</span>
 											{/each}
 										</div>
 									{/if}
@@ -478,6 +495,16 @@
 		font-size: 0.78rem;
 		color: var(--text);
 		font-weight: 500;
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.skill-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
 	}
 
 	.skill-level {
@@ -631,6 +658,9 @@
 		border: 1px solid var(--border);
 		border-radius: 3px;
 		color: var(--amber);
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
 	}
 
 	.card-footer {

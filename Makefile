@@ -1,4 +1,4 @@
-.PHONY: help up down logs migrate-up migrate-down migrate-status migrate-new install build clean check web-dev web-build web-preview web-check api-dev api-build api-test seed index fmt lint
+.PHONY: help up down logs migrate-up migrate-down migrate-status migrate-new install build clean check web-dev web-build web-preview web-check api-dev api-build api-test seed index fmt lint db-up db-down db-reset
 
 # ──────────────────────────────────────────────
 # illuminate.sh — monorepo makefile
@@ -14,6 +14,9 @@ BUN := bun
 GO  := go
 API_PID := /tmp/illuminate-api.pid
 WEB_PID := /tmp/illuminate-web.pid
+DB_CONTAINER := illuminate-db
+DB_IMAGE := postgres:17-alpine
+DB_PORT := 5432
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[33m%-20s\033[0m %s\n", $$1, $$2}'
@@ -22,7 +25,8 @@ help: ## Show this help
 # Quick commands
 # ──────────────────────────────────────────────
 
-up: ## Start API + frontend (backgrounded, use `make logs` to watch)
+up: db-up ## Start DB + API + frontend (backgrounded, use `make logs` to watch)
+	@cd api && $(DBMATE) up 2>/dev/null || true
 	@mkdir -p /tmp/illuminate-logs
 	@echo "Starting API server..."
 	@cd api && $(GO) run cmd/server/main.go > /tmp/illuminate-logs/api.log 2>&1 & echo $$! > $(API_PID)
@@ -30,6 +34,7 @@ up: ## Start API + frontend (backgrounded, use `make logs` to watch)
 	@cd web && $(BUN) dev > /tmp/illuminate-logs/web.log 2>&1 & echo $$! > $(WEB_PID)
 	@sleep 1
 	@printf '\n'
+	@printf '  \033[33m✓\033[0m DB      → localhost:$(DB_PORT)\n'
 	@printf '  \033[33m✓\033[0m API     → http://localhost:8080\n'
 	@printf '  \033[33m✓\033[0m Web     → http://localhost:5173\n'
 	@printf '\n'
@@ -57,6 +62,55 @@ logs-api: ## Tail API logs only
 
 logs-web: ## Tail frontend logs only
 	@tail -f /tmp/illuminate-logs/web.log
+
+# ──────────────────────────────────────────────
+# Database
+# ──────────────────────────────────────────────
+
+db-up: ## Start PostgreSQL container (creates if needed)
+	@if ! docker info >/dev/null 2>&1; then \
+		echo "Starting Docker daemon..."; \
+		sudo systemctl start docker; \
+		sleep 2; \
+	fi
+	@if docker inspect $(DB_CONTAINER) >/dev/null 2>&1; then \
+		if [ "$$(docker inspect -f '{{.State.Running}}' $(DB_CONTAINER) 2>/dev/null)" != "true" ]; then \
+			echo "Starting existing DB container..."; \
+			docker start $(DB_CONTAINER) >/dev/null; \
+		else \
+			echo "DB already running."; \
+		fi; \
+	else \
+		echo "Creating DB container..."; \
+		docker run -d \
+			--name $(DB_CONTAINER) \
+			-e POSTGRES_USER=illuminate \
+			-e POSTGRES_PASSWORD=illuminate \
+			-e POSTGRES_DB=illuminate \
+			-p $(DB_PORT):5432 \
+			-v illuminate-pgdata:/var/lib/postgresql/data \
+			$(DB_IMAGE) >/dev/null; \
+	fi
+	@printf '  Waiting for PostgreSQL...'
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if docker exec $(DB_CONTAINER) pg_isready -U illuminate -q 2>/dev/null; then \
+			printf ' \033[32mready\033[0m\n'; \
+			break; \
+		fi; \
+		printf '.'; \
+		sleep 1; \
+	done
+
+db-down: ## Stop PostgreSQL container
+	@docker stop $(DB_CONTAINER) 2>/dev/null && echo "DB stopped." || echo "DB not running."
+
+db-reset: ## Destroy and recreate the database (WARNING: deletes all data)
+	@echo "Destroying DB container and volume..."
+	@docker rm -f $(DB_CONTAINER) 2>/dev/null || true
+	@docker volume rm illuminate-pgdata 2>/dev/null || true
+	@$(MAKE) db-up
+	@echo "Running migrations..."
+	@$(MAKE) migrate-up
 
 # ──────────────────────────────────────────────
 # Database migrations (dbmate)

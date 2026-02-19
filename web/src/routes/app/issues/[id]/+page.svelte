@@ -17,6 +17,8 @@
 
 	let comments = $state<GitHubComment[]>([]);
 	let commentsLoading = $state(false);
+	let showAllSkills = $state(false);
+	const MAX_SKILLS = 6;
 
 	// Configure marked for safe rendering
 	marked.setOptions({
@@ -106,6 +108,42 @@
 		return 'var(--amber)';
 	}
 
+	function freshnessColor(score: number): string {
+		if (score >= 0.7) return '#4ade80';
+		if (score >= 0.4) return '#fbbf24';
+		return '#f87171';
+	}
+
+	const labelColors: Record<string, { bg: string; fg: string }> = {
+		green: { bg: 'rgba(74, 222, 128, 0.12)', fg: '#4ade80' },
+		blue: { bg: 'rgba(96, 165, 250, 0.12)', fg: '#60a5fa' },
+		purple: { bg: 'rgba(192, 132, 252, 0.12)', fg: '#c084fc' },
+		red: { bg: 'rgba(248, 113, 113, 0.12)', fg: '#f87171' },
+		yellow: { bg: 'rgba(251, 191, 36, 0.12)', fg: '#fbbf24' },
+		cyan: { bg: 'rgba(103, 232, 249, 0.12)', fg: '#67e8f9' },
+		default: { bg: 'var(--amber-glow)', fg: 'var(--amber)' },
+	};
+
+	function getLabelColor(label: string): { bg: string; fg: string } {
+		const l = label.toLowerCase();
+		if (l.includes('good first issue') || l.includes('beginner') || l.includes('easy')) return labelColors.green;
+		if (l.includes('help wanted') || l.includes('contributions')) return labelColors.cyan;
+		if (l.includes('bug') || l.includes('fix')) return labelColors.red;
+		if (l.includes('type:') || l.includes('documentation') || l.includes('docs') || l.includes('cleanup')) return labelColors.blue;
+		if (l.includes('team-') || l.includes('team:')) return labelColors.purple;
+		if (l.startsWith('p0') || l.startsWith('p1')) return labelColors.red;
+		if (l.startsWith('p2') || l.startsWith('p3')) return labelColors.yellow;
+		if (l.includes('feature') || l.includes('enhancement')) return labelColors.green;
+		return labelColors.default;
+	}
+
+	const skillPalette = ['#4ade80', '#60a5fa', '#c084fc', '#f472b6', '#fbbf24', '#67e8f9', '#fb923c', '#a78bfa'];
+	function skillColor(name: string): string {
+		let hash = 0;
+		for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+		return skillPalette[Math.abs(hash) % skillPalette.length];
+	}
+
 	const ddSections = $derived(deepDive ? [
 		{ num: '01', title: 'project overview', content: deepDive.project_overview, variant: '' },
 		{ num: '02', title: 'issue context', content: deepDive.issue_context, variant: '' },
@@ -137,6 +175,7 @@
 
 		<!-- Title block -->
 		<header class="issue-header">
+			<span class="status-badge"><span class="status-dot"></span>open</span>
 			<h1>{issue.title}</h1>
 			<div class="issue-number">#{issue.number}</div>
 		</header>
@@ -145,17 +184,30 @@
 		<div class="columns">
 			<!-- Main content -->
 			<div class="main-col">
-				<!-- Description -->
+				<!-- Description + Deep Dive Trigger -->
 				<section class="card">
 					<div class="card-label">description</div>
 					<div class="prose">
 						{@html md(issue.body || '*No description provided.*')}
 					</div>
+
+					{#if !deepDive && !deepDiveLoading && !deepDiveError}
+						<div class="dd-trigger-wrap">
+							<button class="dd-trigger" onclick={generateDeepDive}>
+								<span class="dd-trigger-icon">&#9672;</span>
+								<span class="dd-trigger-text">
+									<span class="dd-trigger-title">generate deep dive</span>
+									<span class="dd-trigger-sub">ai-powered analysis tailored to your skill level</span>
+								</span>
+								<span class="dd-trigger-arrow">&rarr;</span>
+							</button>
+						</div>
+					{/if}
 				</section>
 
-				<!-- Deep Dive -->
-				<section class="deep-dive-section">
-					{#if deepDive}
+				<!-- Deep Dive Results -->
+				{#if deepDive}
+					<section class="deep-dive-section">
 						<div class="dd-header-bar">
 							<span class="dd-title">deep dive<span class="cursor">_</span></span>
 							<span class="dd-meta">{deepDive.model_used} &middot; {deepDive.prompt_tokens + deepDive.completion_tokens} tokens</span>
@@ -172,7 +224,9 @@
 								</div>
 							{/each}
 						</div>
-					{:else if deepDiveLoading}
+					</section>
+				{:else if deepDiveLoading}
+					<section class="deep-dive-section">
 						<div class="dd-loading-state">
 							<div class="dd-loading-inner">
 								<div class="spinner"></div>
@@ -185,22 +239,15 @@
 								<div class="dd-loading-progress"></div>
 							</div>
 						</div>
-					{:else if deepDiveError}
+					</section>
+				{:else if deepDiveError}
+					<section class="deep-dive-section">
 						<div class="dd-error-state">
 							<p class="dd-error-msg">{deepDiveError}</p>
 							<button class="btn btn-ghost" onclick={generateDeepDive}>retry</button>
 						</div>
-					{:else}
-						<button class="dd-trigger" onclick={generateDeepDive}>
-							<span class="dd-trigger-icon">&#9672;</span>
-							<span class="dd-trigger-text">
-								<span class="dd-trigger-title">generate deep dive</span>
-								<span class="dd-trigger-sub">ai-powered analysis of this issue tailored to your skill level</span>
-							</span>
-							<span class="dd-trigger-arrow">&rarr;</span>
-						</button>
-					{/if}
-				</section>
+					</section>
+				{/if}
 
 				<!-- Comments -->
 				{#if issue.comment_count > 0}
@@ -266,19 +313,19 @@
 					<div class="sidebar-label">at a glance</div>
 					<div class="stat-grid">
 						<div class="stat">
-							<span class="stat-value" style="color: {difficultyColor(issue.difficulty)}">{difficultyLabel(issue.difficulty)}</span>
+							<span class="stat-value"><span class="stat-dot" style="background: {difficultyColor(issue.difficulty)}"></span>{difficultyLabel(issue.difficulty)}</span>
 							<span class="stat-key">difficulty</span>
 						</div>
 						<div class="stat">
-							<span class="stat-value">{issue.time_estimate}</span>
+							<span class="stat-value"><span class="stat-dot" style="background: #60a5fa"></span>{issue.time_estimate}</span>
 							<span class="stat-key">estimate</span>
 						</div>
 						<div class="stat">
-							<span class="stat-value">{issue.comment_count}</span>
+							<span class="stat-value"><span class="stat-dot" style="background: #c084fc"></span>{issue.comment_count}</span>
 							<span class="stat-key">comments</span>
 						</div>
 						<div class="stat">
-							<span class="stat-value">{Math.round(issue.freshness_score * 100)}%</span>
+							<span class="stat-value"><span class="stat-dot" style="background: {freshnessColor(issue.freshness_score)}"></span>{Math.round(issue.freshness_score * 100)}%</span>
 							<span class="stat-key">freshness</span>
 						</div>
 					</div>
@@ -290,7 +337,7 @@
 						<div class="sidebar-label">labels</div>
 						<div class="tag-list">
 							{#each issue.labels as label}
-								<span class="tag tag-amber">{label}</span>
+								<span class="tag" style="background: {getLabelColor(label).bg}; color: {getLabelColor(label).fg}">{label}</span>
 							{/each}
 						</div>
 					</div>
@@ -301,9 +348,14 @@
 					<div class="sidebar-card">
 						<div class="sidebar-label">skills needed</div>
 						<div class="tag-list">
-							{#each issue.skills as skill}
-								<span class="tag tag-outline">{skill.language}{skill.framework ? ` / ${skill.framework}` : ''}</span>
+							{#each (showAllSkills ? issue.skills : issue.skills.slice(0, MAX_SKILLS)) as skill}
+								<span class="tag tag-outline"><span class="skill-dot" style="background: {skillColor(skill.language)}"></span>{skill.language}{skill.framework ? ` / ${skill.framework}` : ''}</span>
 							{/each}
+							{#if issue.skills.length > MAX_SKILLS}
+								<button class="tag tag-more" onclick={() => showAllSkills = !showAllSkills}>
+									{showAllSkills ? 'show less' : `+${issue.skills.length - MAX_SKILLS} more`}
+								</button>
+							{/if}
 						</div>
 					</div>
 				{/if}
@@ -331,10 +383,10 @@
 							{/if}
 							<div class="repo-stats">
 								{#if issue.repo.stars}
-									<span>&starf; {issue.repo.stars.toLocaleString()}</span>
+									<span class="repo-stat-item"><span class="star-icon">&#9733;</span> {issue.repo.stars.toLocaleString()}</span>
 								{/if}
 								{#if issue.repo.primary_language}
-									<span>{issue.repo.primary_language}</span>
+									<span class="repo-stat-item"><span class="lang-dot" style="background: {skillColor(issue.repo.primary_language)}"></span>{issue.repo.primary_language}</span>
 								{/if}
 							</div>
 						</div>
@@ -413,10 +465,41 @@
 	.issue-header {
 		display: flex;
 		align-items: flex-start;
-		gap: 1rem;
+		gap: 0.75rem;
 		margin-bottom: 1.75rem;
 		padding-bottom: 1.25rem;
 		border-bottom: 1px solid var(--border);
+		flex-wrap: wrap;
+	}
+
+	.status-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: #4ade80;
+		background: rgba(74, 222, 128, 0.1);
+		border: 1px solid rgba(74, 222, 128, 0.2);
+		padding: 0.2rem 0.6rem;
+		border-radius: 99px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		flex-shrink: 0;
+		margin-top: 0.25rem;
+	}
+
+	.status-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: #4ade80;
+		animation: pulse-dot 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
 	}
 
 	.issue-header h1 {
@@ -425,6 +508,7 @@
 		color: var(--text-bright);
 		line-height: 1.4;
 		flex: 1;
+		min-width: 200px;
 	}
 
 	.issue-number {
@@ -743,6 +827,16 @@
 		font-size: 0.85rem;
 		font-weight: 600;
 		color: var(--text-bright);
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.stat-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
 	}
 
 	.stat-key {
@@ -774,6 +868,30 @@
 		background: var(--bg-card);
 		border: 1px solid var(--border);
 		color: var(--text);
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	.skill-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.tag-more {
+		background: transparent;
+		border: 1px dashed var(--border);
+		color: var(--text-dim);
+		cursor: pointer;
+		font-family: var(--font-mono);
+		transition: all 0.15s;
+	}
+
+	.tag-more:hover {
+		border-color: var(--amber-dim);
+		color: var(--amber);
 	}
 
 	/* ── Reason list ── */
@@ -821,16 +939,39 @@
 		margin-top: 0.2rem;
 	}
 
-	/* ── Deep Dive Trigger ── */
+	.repo-stat-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.star-icon {
+		color: #fbbf24;
+	}
+
+	.lang-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	/* ── Deep Dive Trigger (inside description card) ── */
+	.dd-trigger-wrap {
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+	}
+
 	.dd-trigger {
 		width: 100%;
 		display: flex;
 		align-items: center;
-		gap: 1rem;
-		background: var(--bg-raised);
+		gap: 0.75rem;
+		background: transparent;
 		border: 1px dashed var(--amber-dim);
-		border-radius: 6px;
-		padding: 1.25rem 1.5rem;
+		border-radius: 4px;
+		padding: 0.6rem 0.875rem;
 		cursor: pointer;
 		transition: all 0.2s;
 		text-align: left;
@@ -844,7 +985,7 @@
 	}
 
 	.dd-trigger-icon {
-		font-size: 1.5rem;
+		font-size: 1.1rem;
 		color: var(--amber);
 		flex-shrink: 0;
 		line-height: 1;
@@ -853,23 +994,23 @@
 	.dd-trigger-text {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.1rem;
 		flex: 1;
 	}
 
 	.dd-trigger-title {
-		font-size: 0.85rem;
+		font-size: 0.8rem;
 		font-weight: 600;
 		color: var(--amber);
 	}
 
 	.dd-trigger-sub {
-		font-size: 0.72rem;
-		color: var(--text-muted);
+		font-size: 0.68rem;
+		color: var(--text-dim);
 	}
 
 	.dd-trigger-arrow {
-		font-size: 1.1rem;
+		font-size: 1rem;
 		color: var(--amber-dim);
 		transition: transform 0.2s;
 	}

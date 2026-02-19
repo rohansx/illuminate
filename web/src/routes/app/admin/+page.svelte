@@ -57,15 +57,15 @@
 	{:else if stats}
 		<div class="stat-grid">
 			<div class="stat-card">
-				<span class="stat-value">{stats.user_count}</span>
+				<span class="stat-value" style="color: #60a5fa">{stats.user_count}</span>
 				<span class="stat-label">users</span>
 			</div>
 			<div class="stat-card">
-				<span class="stat-value">{stats.repo_count}</span>
+				<span class="stat-value" style="color: #c084fc">{stats.repo_count}</span>
 				<span class="stat-label">repositories</span>
 			</div>
 			<div class="stat-card">
-				<span class="stat-value">{stats.issue_count}</span>
+				<span class="stat-value" style="color: #4ade80">{stats.issue_count}</span>
 				<span class="stat-label">issues indexed</span>
 			</div>
 		</div>
@@ -83,15 +83,18 @@
 		</div>
 
 		<div class="nav-grid">
-			<a href="/app/admin/users" class="nav-card">
+			<a href="/app/admin/users" class="nav-card" style="border-top: 2px solid #60a5fa">
+				<span class="nav-icon" style="color: #60a5fa">&#9679;</span>
 				<span class="nav-title">users</span>
 				<span class="nav-desc">manage users and roles</span>
 			</a>
-			<a href="/app/admin/repos" class="nav-card">
+			<a href="/app/admin/repos" class="nav-card" style="border-top: 2px solid #c084fc">
+				<span class="nav-icon" style="color: #c084fc">&#9679;</span>
 				<span class="nav-title">repositories</span>
 				<span class="nav-desc">view and manage indexed repos</span>
 			</a>
-			<a href="/app/admin/jobs" class="nav-card">
+			<a href="/app/admin/jobs" class="nav-card" style="border-top: 2px solid #4ade80">
+				<span class="nav-icon" style="color: #4ade80">&#9679;</span>
 				<span class="nav-title">jobs</span>
 				<span class="nav-desc">view running operations</span>
 			</a>
@@ -104,7 +107,7 @@
 					<div class="job-row">
 						<span class="job-type">{job.type}</span>
 						<span class="job-status" class:running={job.status === 'running'} class:completed={job.status === 'completed'} class:failed={job.status === 'failed'}>
-							{job.status}
+							<span class="job-dot"></span>{job.status}
 						</span>
 						<span class="job-progress">{job.progress}</span>
 					</div>
@@ -235,6 +238,11 @@
 		background: var(--bg-card);
 	}
 
+	.nav-icon {
+		font-size: 0.5rem;
+		line-height: 1;
+	}
+
 	.nav-title {
 		font-size: 0.9rem;
 		font-weight: 600;
@@ -263,10 +271,29 @@
 		min-width: 60px;
 	}
 
-	.job-status { font-size: 0.75rem; }
+	.job-status {
+		font-size: 0.75rem;
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.job-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--text-dim);
+	}
 	.job-status.running { color: var(--amber); }
+	.job-status.running .job-dot { background: var(--amber); animation: pulse-dot 1.5s ease-in-out infinite; }
 	.job-status.completed { color: var(--green); }
+	.job-status.completed .job-dot { background: var(--green); }
 	.job-status.failed { color: var(--red); }
+	.job-status.failed .job-dot { background: var(--red); }
+
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.3; }
+	}
 
 	.job-progress {
 		color: var(--text-muted);

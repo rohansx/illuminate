@@ -166,7 +166,7 @@ func main() {
 
 	// Discovery scheduler
 	var scheduler *service.Scheduler
-	if cfg.DiscoveryEnabled {
+	if cfg.IsProd() {
 		scheduler = service.NewScheduler(discoveryService, cfg.DiscoveryInterval)
 		scheduler.Start()
 	} else {

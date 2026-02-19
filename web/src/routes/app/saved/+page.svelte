@@ -47,6 +47,19 @@
 		return 'var(--amber)';
 	}
 
+	function getLabelColor(label: string): { bg: string; fg: string } {
+		const l = label.toLowerCase();
+		if (l.includes('good first issue') || l.includes('beginner') || l.includes('easy')) return { bg: 'rgba(74, 222, 128, 0.12)', fg: '#4ade80' };
+		if (l.includes('help wanted') || l.includes('contributions')) return { bg: 'rgba(103, 232, 249, 0.12)', fg: '#67e8f9' };
+		if (l.includes('bug') || l.includes('fix')) return { bg: 'rgba(248, 113, 113, 0.12)', fg: '#f87171' };
+		if (l.includes('type:') || l.includes('documentation') || l.includes('docs') || l.includes('cleanup')) return { bg: 'rgba(96, 165, 250, 0.12)', fg: '#60a5fa' };
+		if (l.includes('team-') || l.includes('team:')) return { bg: 'rgba(192, 132, 252, 0.12)', fg: '#c084fc' };
+		if (l.startsWith('p0') || l.startsWith('p1')) return { bg: 'rgba(248, 113, 113, 0.12)', fg: '#f87171' };
+		if (l.startsWith('p2') || l.startsWith('p3')) return { bg: 'rgba(251, 191, 36, 0.12)', fg: '#fbbf24' };
+		if (l.includes('feature') || l.includes('enhancement')) return { bg: 'rgba(74, 222, 128, 0.12)', fg: '#4ade80' };
+		return { bg: 'var(--amber-glow)', fg: 'var(--amber)' };
+	}
+
 	const totalPages = $derived(feed ? Math.ceil(feed.total_count / feed.per_page) : 0);
 </script>
 
@@ -93,14 +106,14 @@
 								<span class="meta-dot" style="background: {difficultyColor(issue.difficulty)}"></span>
 								{difficultyLabel(issue.difficulty)}
 							</span>
-							<span class="meta-item">{issue.time_estimate}</span>
-							<span class="meta-item">{issue.comment_count} comments</span>
+							<span class="meta-item"><span class="meta-dot" style="background: #60a5fa"></span>{issue.time_estimate}</span>
+							<span class="meta-item"><span class="meta-dot" style="background: #c084fc"></span>{issue.comment_count} comments</span>
 						</div>
 
 						{#if issue.labels?.length}
 							<div class="card-labels">
 								{#each issue.labels.slice(0, 5) as label}
-									<span class="label">{label}</span>
+									<span class="label" style="background: {getLabelColor(label).bg}; color: {getLabelColor(label).fg}">{label}</span>
 								{/each}
 								{#if issue.labels.length > 5}
 									<span class="label label-more">+{issue.labels.length - 5}</span>
@@ -336,7 +349,12 @@
 		flex-shrink: 0;
 	}
 
-	.meta-item { white-space: nowrap; }
+	.meta-item {
+		white-space: nowrap;
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
 
 	.card-labels {
 		display: flex;
@@ -347,8 +365,6 @@
 	.label {
 		font-size: 0.65rem;
 		padding: 0.125rem 0.45rem;
-		background: var(--amber-glow);
-		color: var(--amber);
 		border-radius: 3px;
 		white-space: nowrap;
 	}
