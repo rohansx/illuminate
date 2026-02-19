@@ -239,11 +239,35 @@ export interface PRList {
 export const api = {
 	getMe: () => request<User>('/api/users/me'),
 
+	// Check if user is logged in without triggering auto-redirect to /login
+	checkAuth: async (): Promise<User | null> => {
+		try {
+			const res = await fetch(`${API_BASE}/api/users/me`, { credentials: 'include' });
+			if (res.ok) return res.json();
+			if (res.status === 401) {
+				const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+					method: 'POST',
+					credentials: 'include'
+				});
+				if (refreshRes.ok) {
+					const retryRes = await fetch(`${API_BASE}/api/users/me`, { credentials: 'include' });
+					if (retryRes.ok) return retryRes.json();
+				}
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	},
+
 	updateProfile: (profile: UserProfile) =>
 		request('/api/users/me/profile', {
 			method: 'PATCH',
 			body: JSON.stringify(profile)
 		}),
+
+	analyzeSkills: () =>
+		request('/api/users/me/analyze-skills', { method: 'POST' }),
 
 	getProfileStats: () => request<ProfileStats>('/api/users/me/stats'),
 

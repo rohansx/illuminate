@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { reveal } from '$lib/actions/reveal';
+
+	let { isLoggedIn = false }: { isLoggedIn?: boolean } = $props();
 </script>
 
 <section class="hero" id="hero">
@@ -21,7 +23,11 @@
 			</p>
 
 			<div class="hero-actions" use:reveal class:reveal-d3={true}>
-				<a href="/login" class="btn-primary">Get Started — Free</a>
+				{#if isLoggedIn}
+					<a href="/app/feed" class="btn-primary">Go to Dashboard</a>
+				{:else}
+					<a href="/login" class="btn-primary">Get Started — Free</a>
+				{/if}
 				<a href="https://github.com/rohansx/illuminate" target="_blank" rel="noopener" class="btn-outline">
 					View on GitHub <span class="arrow">→</span>
 				</a>

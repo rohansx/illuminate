@@ -37,6 +37,8 @@
 				time_commitment: timeCommitment,
 				goals
 			});
+			// Trigger skill analysis in background (don't block navigation)
+			api.analyzeSkills().catch(() => {});
 			window.location.href = '/app/feed';
 		} catch (e: any) {
 			error = e.message || 'Something went wrong';

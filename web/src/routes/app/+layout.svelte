@@ -17,6 +17,10 @@
 				window.location.href = '/app/onboarding';
 				return;
 			}
+			if (user.onboarding_done && window.location.pathname.includes('/onboarding')) {
+				window.location.href = '/app/feed';
+				return;
+			}
 		} catch (e: any) {
 			if (e.status === 401) {
 				window.location.href = '/login';

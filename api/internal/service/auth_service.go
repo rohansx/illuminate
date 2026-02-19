@@ -26,6 +26,7 @@ type AuthService struct {
 	encryptor     *crypto.Encryptor
 	jwt           *crypto.JWTManager
 	adminUsername string
+	userService   *UserService
 }
 
 func NewAuthService(
@@ -44,6 +45,12 @@ func NewAuthService(
 		jwt:           jwt,
 		adminUsername: adminUsername,
 	}
+}
+
+// SetUserService sets the user service for post-login skill analysis.
+// Called after both services are created to avoid circular dependency.
+func (s *AuthService) SetUserService(us *UserService) {
+	s.userService = us
 }
 
 func (s *AuthService) HandleCallback(ctx context.Context, code string) (*AuthResult, error) {
@@ -108,6 +115,16 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string) (*AuthRes
 	}
 
 	slog.Info("user authenticated", "user_id", user.ID, "github_username", user.GitHubUsername)
+
+	// Analyze skills in background after login
+	if s.userService != nil {
+		go func() {
+			bgCtx := context.Background()
+			if _, err := s.userService.AnalyzeSkills(bgCtx, user.ID); err != nil {
+				slog.Warn("background skill analysis failed", "user_id", user.ID, "error", err)
+			}
+		}()
+	}
 
 	return &AuthResult{
 		User:         user,

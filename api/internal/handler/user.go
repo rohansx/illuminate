@@ -103,6 +103,18 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, profile)
 }
 
+func (h *UserHandler) AnalyzeSkills(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	skills, err := h.userService.AnalyzeSkills(r.Context(), userID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to analyze skills")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{"skills": skills})
+}
+
 func (h *UserHandler) GetPRs(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 

@@ -144,6 +144,11 @@ func (r *issueRepo) GetFeed(ctx context.Context, filter model.FeedFilter, limit,
 		issues = append(issues, issue)
 	}
 
+	// Batch-load skills for all issues
+	if err := r.loadSkillsBatch(ctx, issues); err != nil {
+		return nil, 0, fmt.Errorf("loading issue skills: %w", err)
+	}
+
 	return issues, totalCount, nil
 }
 
@@ -278,6 +283,41 @@ func (r *issueRepo) getSkills(ctx context.Context, issueID uuid.UUID) ([]model.I
 		skills = append(skills, s)
 	}
 	return skills, nil
+}
+
+func (r *issueRepo) loadSkillsBatch(ctx context.Context, issues []model.Issue) error {
+	if len(issues) == 0 {
+		return nil
+	}
+
+	ids := make([]uuid.UUID, len(issues))
+	for i, issue := range issues {
+		ids[i] = issue.ID
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT issue_id, language, framework FROM issue_skills WHERE issue_id = ANY($1)`, ids,
+	)
+	if err != nil {
+		return fmt.Errorf("querying batch issue skills: %w", err)
+	}
+	defer rows.Close()
+
+	skillMap := make(map[uuid.UUID][]model.IssueSkill)
+	for rows.Next() {
+		var issueID uuid.UUID
+		var s model.IssueSkill
+		if err := rows.Scan(&issueID, &s.Language, &s.Framework); err != nil {
+			return fmt.Errorf("scanning batch issue skill: %w", err)
+		}
+		skillMap[issueID] = append(skillMap[issueID], s)
+	}
+
+	for i := range issues {
+		issues[i].Skills = skillMap[issues[i].ID]
+	}
+
+	return nil
 }
 
 func (r *issueRepo) Count(ctx context.Context) (int, error) {

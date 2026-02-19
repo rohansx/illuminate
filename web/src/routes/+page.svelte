@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { api } from '$lib/api';
 	import Nav from '$lib/components/Nav.svelte';
 	import Hero from '$lib/components/Hero.svelte';
 	import Problem from '$lib/components/Problem.svelte';
@@ -8,11 +10,18 @@
 	import Docs from '$lib/components/Docs.svelte';
 	import OpenSource from '$lib/components/OpenSource.svelte';
 	import Footer from '$lib/components/Footer.svelte';
+
+	let isLoggedIn = $state(false);
+
+	onMount(async () => {
+		const user = await api.checkAuth();
+		if (user) isLoggedIn = true;
+	});
 </script>
 
-<Nav />
+<Nav {isLoggedIn} />
 <main>
-	<Hero />
+	<Hero {isLoggedIn} />
 	<Problem />
 	<Loop />
 	<Features />
