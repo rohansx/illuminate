@@ -152,6 +152,31 @@ func (h *UserHandler) AnalyzeSkills(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, map[string]any{"skills": skills})
 }
 
+func (h *UserHandler) GetStarredRepos(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 50
+	}
+
+	repos, err := h.userService.GetStarredRepos(r.Context(), userID, page, perPage)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to fetch starred repos")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"repos":    repos,
+		"page":     page,
+		"per_page": perPage,
+	})
+}
+
 func (h *UserHandler) GetPRs(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 

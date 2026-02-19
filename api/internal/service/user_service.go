@@ -119,6 +119,25 @@ func (s *UserService) AnalyzeSkills(ctx context.Context, userID uuid.UUID) ([]mo
 	return skills, nil
 }
 
+func (s *UserService) GetStarredRepos(ctx context.Context, userID uuid.UUID, page, perPage int) ([]GitHubStarredRepo, error) {
+	tokenEnc, err := s.userRepo.GetAccessToken(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting access token: %w", err)
+	}
+
+	accessToken, err := s.encryptor.Decrypt(tokenEnc)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting token: %w", err)
+	}
+
+	repos, err := s.github.GetUserStarredRepos(ctx, accessToken, page, perPage)
+	if err != nil {
+		return nil, fmt.Errorf("getting starred repos: %w", err)
+	}
+
+	return repos, nil
+}
+
 func (s *UserService) SetManualSkills(ctx context.Context, userID uuid.UUID, languages []string) ([]model.UserSkill, error) {
 	if err := s.userRepo.SetManualSkills(ctx, userID, languages); err != nil {
 		return nil, fmt.Errorf("setting manual skills: %w", err)

@@ -128,6 +128,7 @@ func main() {
 		r.Patch("/api/users/me/profile", userHandler.UpdateProfile)
 		r.Get("/api/users/me/stats", userHandler.GetProfile)
 		r.Get("/api/users/me/prs", userHandler.GetPRs)
+		r.Get("/api/users/me/starred", userHandler.GetStarredRepos)
 		r.Post("/api/users/me/analyze-skills", userHandler.AnalyzeSkills)
 		r.Put("/api/users/me/skills", userHandler.SetManualSkills)
 		r.Post("/api/repos/import", issueHandler.ImportRepo)

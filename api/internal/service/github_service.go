@@ -254,6 +254,16 @@ func (s *GitHubService) GetUserPRs(ctx context.Context, username string, merged 
 	return &result, nil
 }
 
+type GitHubStarredRepo struct {
+	Owner       string   `json:"owner"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Stars       int      `json:"stargazers_count"`
+	Language    string   `json:"language"`
+	Topics      []string `json:"topics"`
+	HTMLURL     string   `json:"html_url"`
+}
+
 type GitHubComment struct {
 	ID        int64  `json:"id"`
 	Body      string `json:"body"`
@@ -263,6 +273,45 @@ type GitHubComment struct {
 		Login     string `json:"login"`
 		AvatarURL string `json:"avatar_url"`
 	} `json:"user"`
+}
+
+func (s *GitHubService) GetUserStarredRepos(ctx context.Context, accessToken string, page, perPage int) ([]GitHubStarredRepo, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 50
+	}
+	apiURL := fmt.Sprintf("https://api.github.com/user/starred?per_page=%d&page=%d&sort=updated", perPage, page)
+
+	var rawRepos []struct {
+		Owner struct {
+			Login string `json:"login"`
+		} `json:"owner"`
+		Name            string   `json:"name"`
+		Description     string   `json:"description"`
+		StargazersCount int      `json:"stargazers_count"`
+		Language        string   `json:"language"`
+		Topics          []string `json:"topics"`
+		HTMLURL         string   `json:"html_url"`
+	}
+	if err := s.get(ctx, accessToken, apiURL, &rawRepos); err != nil {
+		return nil, fmt.Errorf("getting starred repos: %w", err)
+	}
+
+	repos := make([]GitHubStarredRepo, len(rawRepos))
+	for i, r := range rawRepos {
+		repos[i] = GitHubStarredRepo{
+			Owner:       r.Owner.Login,
+			Name:        r.Name,
+			Description: r.Description,
+			Stars:       r.StargazersCount,
+			Language:    r.Language,
+			Topics:      r.Topics,
+			HTMLURL:     r.HTMLURL,
+		}
+	}
+	return repos, nil
 }
 
 func (s *GitHubService) GetPublicIssueComments(ctx context.Context, owner, name string, number int) ([]GitHubComment, error) {

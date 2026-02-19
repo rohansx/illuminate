@@ -367,6 +367,22 @@ export interface NextStep {
 	priority: number;
 }
 
+export interface StarredRepo {
+	owner: string;
+	name: string;
+	description: string;
+	stargazers_count: number;
+	language: string;
+	topics: string[];
+	html_url: string;
+}
+
+export interface StarredRepoList {
+	repos: StarredRepo[];
+	page: number;
+	per_page: number;
+}
+
 export const api = {
 	getMe: () => request<User>('/api/users/me'),
 
@@ -579,6 +595,12 @@ export const api = {
 	// Public profile
 	getPublicProfile: (username: string) =>
 		request<PublicProfile>(`/api/u/${username}`),
+
+	// Starred repos
+	getStarredRepos: (page = 1, perPage = 100) => {
+		const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+		return request<StarredRepoList>(`/api/users/me/starred?${params}`);
+	},
 
 	// Growth engine
 	getGrowthProfile: () =>
