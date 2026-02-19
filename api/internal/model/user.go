@@ -10,6 +10,7 @@ type User struct {
 	ID             uuid.UUID   `json:"id"`
 	GitHubID       int64       `json:"github_id"`
 	GitHubUsername string      `json:"github_username"`
+	Email          string      `json:"email"`
 	AvatarURL      string      `json:"avatar_url"`
 	Bio            string      `json:"bio"`
 	Role           string      `json:"role"`

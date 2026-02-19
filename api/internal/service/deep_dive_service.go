@@ -98,6 +98,7 @@ func (s *DeepDiveService) Generate(ctx context.Context, issueID, userID uuid.UUI
 		SuggestedApproach: sections["suggested_approach"],
 		QuestionsToAsk:    sections["questions_to_ask"],
 		RedFlags:          sections["red_flags"],
+		FirstComment:      sections["first_comment"],
 		ModelUsed:         result.Model,
 		PromptTokens:      result.PromptTokens,
 		CompletionTokens:  result.CompletionTokens,
@@ -155,7 +156,7 @@ func (s *DeepDiveService) assembleRepoContext(ctx context.Context, owner, name s
 func (s *DeepDiveService) buildPrompt(issue *model.Issue, user *model.User, rc repoContext) (string, string) {
 	system := `You are an expert open-source mentor helping developers contribute to open-source projects. You produce clear, actionable analysis of GitHub issues.
 
-You MUST structure your response with EXACTLY these 5 sections, using these EXACT headers:
+You MUST structure your response with EXACTLY these 6 sections, using these EXACT headers:
 
 ## PROJECT_OVERVIEW
 What the project does, its tech stack, and how contributions work.
@@ -164,13 +165,23 @@ What the project does, its tech stack, and how contributions work.
 A plain-language explanation of what is broken or missing and why it matters.
 
 ## SUGGESTED_APPROACH
-A step-by-step strategy (NOT code) for tackling this issue.
+A numbered checklist of concrete steps for tackling this issue. Format each step as:
+1. [ ] Step description
+2. [ ] Step description
+Include which files/areas to look at and what to test. NOT code, but clear enough to follow.
 
 ## QUESTIONS_TO_ASK
-3-5 smart questions the contributor should post in the issue thread before starting.
+3-5 smart questions the contributor should post in the issue thread before starting. Write them as exact copy-pasteable questions — phrased politely and specifically, as if posting on GitHub.
 
 ## RED_FLAGS
 Warnings about stale issues, duplicate PRs, abandoned repos, or anything else to watch out for. If there are no red flags, say so explicitly.
+
+## FIRST_COMMENT
+Write a ready-to-paste GitHub comment that the contributor can post on the issue to express interest and ask for clarification. It should:
+- Introduce themselves as interested in working on this
+- Mention their relevant skills briefly
+- Ask 1-2 of the most important clarifying questions
+- Be concise, professional, and friendly
 
 Rules:
 - Never write code. Describe approaches in plain language.
@@ -271,6 +282,7 @@ func parseSections(text string) map[string]string {
 		"suggested_approach": "",
 		"questions_to_ask":   "",
 		"red_flags":          "",
+		"first_comment":      "",
 	}
 
 	headerMap := map[string]string{
@@ -279,6 +291,7 @@ func parseSections(text string) map[string]string {
 		"## SUGGESTED_APPROACH": "suggested_approach",
 		"## QUESTIONS_TO_ASK":   "questions_to_ask",
 		"## RED_FLAGS":          "red_flags",
+		"## FIRST_COMMENT":      "first_comment",
 	}
 
 	lines := strings.Split(text, "\n")

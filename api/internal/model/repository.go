@@ -22,6 +22,8 @@ type Repository struct {
 	Tags            []string   `json:"tags"`
 	DifficultyLevel string     `json:"difficulty_level"`
 	ActivityStatus  string     `json:"activity_status"`
+	IsHiring        bool       `json:"is_hiring"`
+	HiringURL       string     `json:"hiring_url,omitempty"`
 	Categories      []Category `json:"categories,omitempty"`
 }
 

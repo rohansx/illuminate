@@ -64,6 +64,17 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string) (*AuthRes
 		return nil, fmt.Errorf("getting github user: %w", err)
 	}
 
+	// Fetch email (the /user endpoint may not include it for private emails)
+	email := ghUser.Email
+	if email == "" {
+		fetchedEmail, err := s.github.GetUserEmail(ctx, oauthToken.AccessToken)
+		if err != nil {
+			slog.Warn("failed to fetch user email", "error", err)
+		} else {
+			email = fetchedEmail
+		}
+	}
+
 	tokenEnc, err := s.encryptor.Encrypt(oauthToken.AccessToken)
 	if err != nil {
 		return nil, fmt.Errorf("encrypting token: %w", err)
@@ -72,6 +83,7 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string) (*AuthRes
 	user := &model.User{
 		GitHubID:       ghUser.ID,
 		GitHubUsername: ghUser.Login,
+		Email:          email,
 		AvatarURL:      ghUser.AvatarURL,
 		Bio:            ghUser.Bio,
 	}

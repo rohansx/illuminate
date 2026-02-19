@@ -4,6 +4,8 @@
 	let comfortLevel = $state('beginner');
 	let timeCommitment = $state('1-3 hours/week');
 	let goals = $state<string[]>([]);
+	let selectedSkills = $state<string[]>([]);
+	let customSkill = $state('');
 	let submitting = $state(false);
 	let error = $state('');
 
@@ -16,12 +18,34 @@
 		'Meet other developers'
 	];
 
+	const popularLanguages = [
+		'Go', 'Python', 'JavaScript', 'TypeScript', 'Rust', 'Java',
+		'C++', 'C#', 'Ruby', 'PHP', 'Swift', 'Kotlin', 'C',
+		'Scala', 'Dart', 'Elixir', 'Haskell', 'Lua', 'R', 'Shell'
+	];
+
 	function toggleGoal(goal: string) {
 		if (goals.includes(goal)) {
 			goals = goals.filter(g => g !== goal);
 		} else {
 			goals = [...goals, goal];
 		}
+	}
+
+	function toggleSkill(lang: string) {
+		if (selectedSkills.includes(lang)) {
+			selectedSkills = selectedSkills.filter(s => s !== lang);
+		} else {
+			selectedSkills = [...selectedSkills, lang];
+		}
+	}
+
+	function addCustomSkill() {
+		const trimmed = customSkill.trim();
+		if (trimmed && !selectedSkills.includes(trimmed)) {
+			selectedSkills = [...selectedSkills, trimmed];
+		}
+		customSkill = '';
 	}
 
 	async function submit() {
@@ -37,7 +61,10 @@
 				time_commitment: timeCommitment,
 				goals
 			});
-			// Trigger skill analysis in background (don't block navigation)
+			if (selectedSkills.length > 0) {
+				await api.setSkills(selectedSkills);
+			}
+			// Trigger skill analysis in background (won't overwrite manual skills)
 			api.analyzeSkills().catch(() => {});
 			window.location.href = '/app/feed';
 		} catch (e: any) {
@@ -103,6 +130,43 @@
 					</button>
 				{/each}
 			</div>
+		</div>
+
+		<div class="field">
+			<label>what languages do you know? <span class="optional">(optional, improves your feed)</span></label>
+			<div class="goal-grid skill-grid">
+				{#each popularLanguages as lang}
+					<button
+						class="goal-btn"
+						class:active={selectedSkills.includes(lang)}
+						onclick={() => toggleSkill(lang)}
+					>
+						{lang}
+					</button>
+				{/each}
+			</div>
+			<div class="custom-skill-row">
+				<input
+					type="text"
+					placeholder="add another language..."
+					bind:value={customSkill}
+					onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomSkill())}
+					class="custom-skill-input"
+				/>
+				{#if customSkill.trim()}
+					<button class="add-skill-btn" onclick={addCustomSkill}>add</button>
+				{/if}
+			</div>
+			{#if selectedSkills.filter(s => !popularLanguages.includes(s)).length > 0}
+				<div class="custom-skills-list">
+					{#each selectedSkills.filter(s => !popularLanguages.includes(s)) as skill}
+						<span class="skill-chip">
+							{skill}
+							<button class="chip-remove" onclick={() => toggleSkill(skill)}>&times;</button>
+						</span>
+					{/each}
+				</div>
+			{/if}
 		</div>
 
 		{#if error}
@@ -265,7 +329,88 @@
 	.submit-btn:hover { background: var(--amber-bright); }
 	.submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+	.optional {
+		color: var(--text-dim);
+		font-weight: 400;
+	}
+
+	.skill-grid {
+		grid-template-columns: repeat(4, 1fr);
+	}
+
+	.custom-skill-row {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.custom-skill-input {
+		flex: 1;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 4px;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.custom-skill-input::placeholder { color: var(--text-dim); }
+	.custom-skill-input:focus { border-color: var(--amber-dim); }
+
+	.add-skill-btn {
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--amber);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		padding: 0.5rem 0.75rem;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: all 0.15s;
+	}
+
+	.add-skill-btn:hover {
+		background: var(--amber-glow);
+		border-color: var(--amber-dim);
+	}
+
+	.custom-skills-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin-top: 0.5rem;
+	}
+
+	.skill-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.75rem;
+		padding: 0.25rem 0.5rem;
+		background: var(--amber-glow);
+		border: 1px solid var(--amber-dim);
+		border-radius: 3px;
+		color: var(--amber);
+	}
+
+	.chip-remove {
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		font-size: 0.9rem;
+		cursor: pointer;
+		padding: 0;
+		line-height: 1;
+		transition: color 0.15s;
+	}
+
+	.chip-remove:hover { color: var(--red); }
+
 	@media (max-width: 500px) {
 		.goal-grid { grid-template-columns: 1fr; }
+		.skill-grid { grid-template-columns: repeat(3, 1fr); }
 	}
 </style>

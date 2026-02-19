@@ -111,10 +111,24 @@ func (s *UserService) AnalyzeSkills(ctx context.Context, userID uuid.UUID) ([]mo
 		skills = skills[:15]
 	}
 
-	if err := s.userRepo.SetSkills(ctx, userID, skills); err != nil {
+	if err := s.userRepo.SetGitHubSkills(ctx, userID, skills); err != nil {
 		return nil, fmt.Errorf("saving skills: %w", err)
 	}
 
 	slog.Info("analyzed user skills", "user_id", userID, "skill_count", len(skills))
 	return skills, nil
+}
+
+func (s *UserService) SetManualSkills(ctx context.Context, userID uuid.UUID, languages []string) ([]model.UserSkill, error) {
+	if err := s.userRepo.SetManualSkills(ctx, userID, languages); err != nil {
+		return nil, fmt.Errorf("setting manual skills: %w", err)
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting updated user: %w", err)
+	}
+
+	slog.Info("set manual skills", "user_id", userID, "count", len(languages))
+	return user.Skills, nil
 }

@@ -28,14 +28,14 @@ func (r *deepDiveRepo) GetByIssueAndUser(ctx context.Context, issueID, userID uu
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, issue_id, user_id, issue_indexed_at,
 			project_overview, issue_context, suggested_approach,
-			questions_to_ask, red_flags, model_used,
+			questions_to_ask, red_flags, first_comment, model_used,
 			prompt_tokens, completion_tokens, created_at
 		FROM deep_dives
 		WHERE issue_id = $1 AND user_id = $2`, issueID, userID,
 	).Scan(
 		&dd.ID, &dd.IssueID, &dd.UserID, &dd.IssueIndexedAt,
 		&dd.ProjectOverview, &dd.IssueContext, &dd.SuggestedApproach,
-		&dd.QuestionsToAsk, &dd.RedFlags, &dd.ModelUsed,
+		&dd.QuestionsToAsk, &dd.RedFlags, &dd.FirstComment, &dd.ModelUsed,
 		&dd.PromptTokens, &dd.CompletionTokens, &dd.CreatedAt,
 	)
 	if err != nil {
@@ -51,9 +51,9 @@ func (r *deepDiveRepo) Upsert(ctx context.Context, dd *model.DeepDive) (*model.D
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO deep_dives (issue_id, user_id, issue_indexed_at,
 			project_overview, issue_context, suggested_approach,
-			questions_to_ask, red_flags, model_used,
+			questions_to_ask, red_flags, first_comment, model_used,
 			prompt_tokens, completion_tokens)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (issue_id, user_id) DO UPDATE SET
 			issue_indexed_at = EXCLUDED.issue_indexed_at,
 			project_overview = EXCLUDED.project_overview,
@@ -61,22 +61,23 @@ func (r *deepDiveRepo) Upsert(ctx context.Context, dd *model.DeepDive) (*model.D
 			suggested_approach = EXCLUDED.suggested_approach,
 			questions_to_ask = EXCLUDED.questions_to_ask,
 			red_flags = EXCLUDED.red_flags,
+			first_comment = EXCLUDED.first_comment,
 			model_used = EXCLUDED.model_used,
 			prompt_tokens = EXCLUDED.prompt_tokens,
 			completion_tokens = EXCLUDED.completion_tokens,
 			created_at = NOW()
 		RETURNING id, issue_id, user_id, issue_indexed_at,
 			project_overview, issue_context, suggested_approach,
-			questions_to_ask, red_flags, model_used,
+			questions_to_ask, red_flags, first_comment, model_used,
 			prompt_tokens, completion_tokens, created_at`,
 		dd.IssueID, dd.UserID, dd.IssueIndexedAt,
 		dd.ProjectOverview, dd.IssueContext, dd.SuggestedApproach,
-		dd.QuestionsToAsk, dd.RedFlags, dd.ModelUsed,
+		dd.QuestionsToAsk, dd.RedFlags, dd.FirstComment, dd.ModelUsed,
 		dd.PromptTokens, dd.CompletionTokens,
 	).Scan(
 		&dd.ID, &dd.IssueID, &dd.UserID, &dd.IssueIndexedAt,
 		&dd.ProjectOverview, &dd.IssueContext, &dd.SuggestedApproach,
-		&dd.QuestionsToAsk, &dd.RedFlags, &dd.ModelUsed,
+		&dd.QuestionsToAsk, &dd.RedFlags, &dd.FirstComment, &dd.ModelUsed,
 		&dd.PromptTokens, &dd.CompletionTokens, &dd.CreatedAt,
 	)
 	if err != nil {

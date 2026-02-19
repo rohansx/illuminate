@@ -46,3 +46,13 @@ type FeedFilter struct {
 	Difficulty int    // 0 = any, 1 = beginner, 2 = intermediate, 3 = advanced
 	Category   string // category slug, empty = any
 }
+
+type IssueProgress struct {
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	IssueID   uuid.UUID `json:"issue_id"`
+	Status    string    `json:"status"`
+	Notes     []string  `json:"notes"`
+	StartedAt time.Time `json:"started_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

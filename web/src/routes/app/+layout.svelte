@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type User } from '$lib/api';
+	import { api, type User, type Notification } from '$lib/api';
 	import { onMount } from 'svelte';
 	import { initTheme } from '$lib/theme';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
@@ -9,27 +9,79 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	onMount(async () => {
-		initTheme();
+	// Notifications
+	let unreadCount = $state(0);
+	let showNotifDropdown = $state(false);
+	let notifications = $state<Notification[]>([]);
+	let notifLoading = $state(false);
+
+	async function pollUnread() {
 		try {
-			user = await api.getMe();
-			if (!user.onboarding_done && !window.location.pathname.includes('/onboarding')) {
-				window.location.href = '/app/onboarding';
-				return;
-			}
-			if (user.onboarding_done && window.location.pathname.includes('/onboarding')) {
-				window.location.href = '/app/feed';
-				return;
-			}
-		} catch (e: any) {
-			if (e.status === 401) {
-				window.location.href = '/login';
-				return;
-			}
-			error = e.message;
-		} finally {
-			loading = false;
+			const res = await api.getUnreadCount();
+			unreadCount = res.count;
+		} catch { /* silent */ }
+	}
+
+	async function toggleNotifDropdown() {
+		showNotifDropdown = !showNotifDropdown;
+		if (showNotifDropdown && notifications.length === 0) {
+			notifLoading = true;
+			try {
+				const res = await api.getNotifications(1, 10);
+				notifications = res.notifications;
+			} catch { /* silent */ }
+			notifLoading = false;
 		}
+	}
+
+	async function markAllRead() {
+		try {
+			await api.markAllNotificationsRead();
+			unreadCount = 0;
+			notifications = notifications.map(n => ({ ...n, read: true }));
+		} catch { /* silent */ }
+	}
+
+	async function markRead(id: string) {
+		try {
+			await api.markNotificationRead(id);
+			unreadCount = Math.max(0, unreadCount - 1);
+			notifications = notifications.map(n => n.id === id ? { ...n, read: true } : n);
+		} catch { /* silent */ }
+	}
+
+	onMount(() => {
+		initTheme();
+		let timer: ReturnType<typeof setInterval> | undefined;
+
+		(async () => {
+			try {
+				user = await api.getMe();
+				if (!user.onboarding_done && !window.location.pathname.includes('/onboarding')) {
+					window.location.href = '/app/onboarding';
+					return;
+				}
+				if (user.onboarding_done && window.location.pathname.includes('/onboarding')) {
+					window.location.href = '/app/feed';
+					return;
+				}
+				// Start notification polling
+				pollUnread();
+				timer = setInterval(pollUnread, 30000);
+			} catch (e: any) {
+				if (e.status === 401) {
+					window.location.href = '/login';
+					return;
+				}
+				error = e.message;
+			} finally {
+				loading = false;
+			}
+		})();
+
+		return () => {
+			if (timer) clearInterval(timer);
+		};
 	});
 </script>
 
@@ -50,12 +102,49 @@
 			<div class="nav-links">
 				<a href="/app/feed" class="nav-link">feed</a>
 				<a href="/app/saved" class="nav-link">saved</a>
+				<a href="/app/awesome" class="nav-link">awesome</a>
+				<a href="/app/hiring" class="nav-link">hiring</a>
 				<a href="/app/profile" class="nav-link">profile</a>
 				{#if user.role === 'admin'}
 					<a href="/app/admin" class="nav-link admin-link">admin</a>
 				{/if}
 			</div>
 			<div class="nav-user">
+				<div class="notif-wrapper">
+					<button class="notif-bell" onclick={toggleNotifDropdown}>
+						&#9993;
+						{#if unreadCount > 0}
+							<span class="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+						{/if}
+					</button>
+					{#if showNotifDropdown}
+						<div class="notif-dropdown">
+							<div class="notif-header">
+								<span class="notif-title">notifications</span>
+								{#if unreadCount > 0}
+									<button class="notif-mark-all" onclick={markAllRead}>mark all read</button>
+								{/if}
+							</div>
+							{#if notifLoading}
+								<p class="notif-empty">loading...</p>
+							{:else if notifications.length === 0}
+								<p class="notif-empty">no notifications yet</p>
+							{:else}
+								{#each notifications as notif (notif.id)}
+									<a
+										href={notif.link || '#'}
+										class="notif-item"
+										class:notif-unread={!notif.read}
+										onclick={() => { if (!notif.read) markRead(notif.id); showNotifDropdown = false; }}
+									>
+										<span class="notif-item-title">{notif.title}</span>
+										<span class="notif-item-msg">{notif.message}</span>
+									</a>
+								{/each}
+							{/if}
+						</div>
+					{/if}
+				</div>
 				<ThemeToggle />
 				<img src={user.avatar_url} alt={user.github_username} class="avatar" />
 				<span class="username">{user.github_username}</span>
@@ -200,5 +289,126 @@
 		width: 100%;
 		margin: 0 auto;
 		padding: 2rem 2rem;
+	}
+
+	/* Notifications */
+	.notif-wrapper {
+		position: relative;
+	}
+
+	.notif-bell {
+		background: none;
+		border: none;
+		color: var(--text-muted);
+		font-size: 1.1rem;
+		cursor: pointer;
+		position: relative;
+		padding: 0.25rem;
+		transition: color 0.15s;
+	}
+
+	.notif-bell:hover {
+		color: var(--text-bright);
+	}
+
+	.notif-badge {
+		position: absolute;
+		top: -4px;
+		right: -6px;
+		background: var(--amber);
+		color: var(--bg);
+		font-size: 0.6rem;
+		font-weight: 700;
+		min-width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
+		padding: 0 3px;
+	}
+
+	.notif-dropdown {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		width: 320px;
+		max-height: 400px;
+		overflow-y: auto;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		z-index: 200;
+		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+	}
+
+	.notif-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.notif-title {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.notif-mark-all {
+		background: none;
+		border: none;
+		color: var(--amber);
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.notif-mark-all:hover {
+		text-decoration: underline;
+	}
+
+	.notif-empty {
+		padding: 1.5rem 1rem;
+		text-align: center;
+		color: var(--text-muted);
+		font-size: 0.8rem;
+	}
+
+	.notif-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--border);
+		text-decoration: none;
+		transition: background 0.15s;
+	}
+
+	.notif-item:last-child {
+		border-bottom: none;
+	}
+
+	.notif-item:hover {
+		background: var(--bg-hover);
+	}
+
+	.notif-unread {
+		border-left: 2px solid var(--amber);
+	}
+
+	.notif-item-title {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.notif-item-msg {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		line-height: 1.4;
 	}
 </style>

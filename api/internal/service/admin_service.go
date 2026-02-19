@@ -21,6 +21,7 @@ type AdminService struct {
 	githubService    *GitHubService
 	jobManager       *JobManager
 	discoveryService *DiscoveryService
+	contribService   *ContributionService
 }
 
 func NewAdminService(
@@ -31,6 +32,7 @@ func NewAdminService(
 	githubService *GitHubService,
 	jobManager *JobManager,
 	discoveryService *DiscoveryService,
+	contribService *ContributionService,
 ) *AdminService {
 	return &AdminService{
 		userRepo:         userRepo,
@@ -40,6 +42,7 @@ func NewAdminService(
 		githubService:    githubService,
 		jobManager:       jobManager,
 		discoveryService: discoveryService,
+		contribService:   contribService,
 	}
 }
 
@@ -202,6 +205,10 @@ func (s *AdminService) TriggerIndex(ctx context.Context) (*model.JobStatus, erro
 
 func (s *AdminService) TriggerDiscover(ctx context.Context) (*model.JobStatus, error) {
 	return s.discoveryService.Discover(ctx)
+}
+
+func (s *AdminService) TriggerContributionSync(ctx context.Context) (*model.JobStatus, error) {
+	return s.contribService.SyncAll(ctx)
 }
 
 func (s *AdminService) GetJobs() []model.JobStatus {

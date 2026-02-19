@@ -7,6 +7,7 @@
 	let loading = $state(true);
 	let seeding = $state(false);
 	let indexing = $state(false);
+	let syncingContribs = $state(false);
 
 	onMount(async () => {
 		try {
@@ -42,6 +43,18 @@
 			alert(e.message);
 		} finally {
 			indexing = false;
+		}
+	}
+
+	async function triggerContribSync() {
+		syncingContribs = true;
+		try {
+			await api.adminTriggerContributionSync();
+			jobs = await api.adminGetJobs();
+		} catch (e: any) {
+			alert(e.message);
+		} finally {
+			syncingContribs = false;
 		}
 	}
 
@@ -103,6 +116,9 @@
 				</button>
 				<button class="action-btn" onclick={triggerIndex} disabled={indexing}>
 					{indexing ? 'indexing...' : 'index issues'}
+				</button>
+				<button class="action-btn" onclick={triggerContribSync} disabled={syncingContribs}>
+					{syncingContribs ? 'syncing...' : 'sync contributions'}
 				</button>
 			</div>
 		</div>

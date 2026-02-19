@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Issue, type IssueFeed, type Category } from '$lib/api';
+	import { api, type Issue, type IssueFeed, type Category, type User } from '$lib/api';
 	import { onMount } from 'svelte';
 
 	let feed = $state<IssueFeed | null>(null);
@@ -9,29 +9,70 @@
 	let page = $state(1);
 	let isSearching = $state(false);
 
+	// Import repo
+	let showImport = $state(false);
+	let importUrl = $state('');
+	let importing = $state(false);
+	let importResult = $state<string | null>(null);
+	let importError = $state('');
+
+	async function doImport() {
+		if (!importUrl.trim()) return;
+		importing = true;
+		importResult = null;
+		importError = '';
+		try {
+			const res = await api.importRepo(importUrl.trim());
+			importResult = res.repo;
+			importUrl = '';
+		} catch (e: any) {
+			importError = e.message || 'failed to import';
+		} finally {
+			importing = false;
+		}
+	}
+
 	// Filters
 	let selectedCategory = $state('');
 	let selectedDifficulty = $state(0);
+	let languageFilters = $state<Record<string, boolean>>({});
 
-	const hasActiveFilters = $derived(selectedCategory !== '' || selectedDifficulty !== 0);
+	const allLanguagesSelected = $derived(
+		Object.keys(languageFilters).length === 0 || Object.values(languageFilters).every(v => v)
+	);
+	const activeLanguages = $derived(
+		Object.entries(languageFilters).filter(([, active]) => active).map(([lang]) => lang)
+	);
+	const hasActiveFilters = $derived(selectedCategory !== '' || selectedDifficulty !== 0 || !allLanguagesSelected);
 
 	onMount(async () => {
-		// Load categories and feed in parallel
-		const [, cats] = await Promise.all([
+		const [, cats, me] = await Promise.all([
 			loadFeed(),
-			api.getCategories().catch(() => [] as Category[])
+			api.getCategories().catch(() => [] as Category[]),
+			api.getMe().catch(() => null as User | null)
 		]);
 		categories = cats;
+		if (me?.skills?.length) {
+			const filters: Record<string, boolean> = {};
+			for (const skill of me.skills) {
+				filters[skill.language] = true;
+			}
+			languageFilters = filters;
+		}
 	});
 
 	async function loadFeed() {
 		loading = true;
 		isSearching = false;
 		try {
-			feed = await api.getFeed(page, 20, {
+			const filters: { difficulty?: number; category?: string; languages?: string[] } = {
 				difficulty: selectedDifficulty || undefined,
 				category: selectedCategory || undefined
-			});
+			};
+			if (!allLanguagesSelected && activeLanguages.length > 0) {
+				filters.languages = activeLanguages;
+			}
+			feed = await api.getFeed(page, 20, filters);
 		} catch (e) {
 			console.error('Failed to load feed:', e);
 		} finally {
@@ -91,9 +132,21 @@
 		loadFeed();
 	}
 
+	function toggleLanguage(lang: string) {
+		languageFilters = { ...languageFilters, [lang]: !languageFilters[lang] };
+		page = 1;
+		loadFeed();
+	}
+
 	function clearFilters() {
 		selectedCategory = '';
 		selectedDifficulty = 0;
+		// Reset all language filters to true
+		const reset: Record<string, boolean> = {};
+		for (const lang of Object.keys(languageFilters)) {
+			reset[lang] = true;
+		}
+		languageFilters = reset;
 		page = 1;
 		loadFeed();
 	}
@@ -128,6 +181,20 @@
 		if (score >= 0.6) return 'B';
 		if (score >= 0.4) return 'C';
 		return 'D';
+	}
+
+	function healthLabel(score: number): string {
+		if (score >= 0.8) return '++';
+		if (score >= 0.6) return '+ ';
+		if (score >= 0.4) return '~ ';
+		return '- ';
+	}
+
+	function healthColor(score: number): string {
+		if (score >= 0.8) return '#4ade80';
+		if (score >= 0.6) return '#fbbf24';
+		if (score >= 0.4) return '#fb923c';
+		return '#f87171';
 	}
 
 	const totalPages = $derived(feed ? Math.ceil(feed.total_count / feed.per_page) : 0);
@@ -168,6 +235,33 @@
 			<button class="search-btn" onclick={search}>search</button>
 		</div>
 
+		<!-- Import Repo -->
+		<div class="import-row">
+			<button class="import-toggle" onclick={() => showImport = !showImport}>
+				{showImport ? '- hide import' : '+ import repo'}
+			</button>
+			{#if showImport}
+				<div class="import-field">
+					<input
+						type="text"
+						placeholder="github.com/owner/repo or owner/repo"
+						bind:value={importUrl}
+						onkeydown={(e) => e.key === 'Enter' && doImport()}
+						disabled={importing}
+					/>
+					<button class="search-btn" onclick={doImport} disabled={importing}>
+						{importing ? 'indexing...' : 'import'}
+					</button>
+				</div>
+				{#if importResult}
+					<p class="import-success">indexed {importResult}</p>
+				{/if}
+				{#if importError}
+					<p class="import-error">{importError}</p>
+				{/if}
+			{/if}
+		</div>
+
 		{#if isSearching && !loading}
 			<div class="search-status">
 				showing results for "<span class="search-term">{searchQuery}</span>"
@@ -194,6 +288,23 @@
 					{/each}
 				</div>
 			</div>
+
+			{#if Object.keys(languageFilters).length > 0}
+				<div class="filter-group">
+					<span class="filter-label">language</span>
+					<div class="filter-chips">
+						{#each Object.keys(languageFilters) as lang}
+							<button
+								class="chip"
+								class:chip-active={languageFilters[lang]}
+								onclick={() => toggleLanguage(lang)}
+							>
+								{lang}
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
 
 			<div class="filter-row-bottom">
 				<div class="filter-group">
@@ -235,9 +346,12 @@
 						{issue.is_saved ? '\u2605' : '\u2606'}
 					</button>
 
-					<!-- Top bar: repo + number -->
+					<!-- Top bar: repo + health + number -->
 					<div class="card-top">
 						<span class="card-repo">{issue.repo?.owner}/{issue.repo?.name}</span>
+						{#if issue.repo?.health_score}
+							<span class="health-badge" style="color: {healthColor(issue.repo.health_score)}" title="health: {Math.round(issue.repo.health_score * 100)}%">{healthLabel(issue.repo.health_score)}</span>
+						{/if}
 						<span class="card-num">#{issue.number}</span>
 					</div>
 
@@ -495,6 +609,58 @@
 
 	.clear-link:hover { color: var(--text); }
 
+	/* ── Import ── */
+	.import-row {
+		margin-top: 0.75rem;
+	}
+
+	.import-toggle {
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		cursor: pointer;
+		padding: 0;
+		transition: color 0.15s;
+	}
+
+	.import-toggle:hover { color: var(--amber); }
+
+	.import-field {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.import-field input {
+		flex: 1;
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 4px;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.import-field input:focus { border-color: var(--amber-dim); }
+	.import-field input::placeholder { color: var(--text-dim); }
+
+	.import-success {
+		font-size: 0.72rem;
+		color: var(--green);
+		margin-top: 0.35rem;
+	}
+
+	.import-error {
+		font-size: 0.72rem;
+		color: var(--red);
+		margin-top: 0.35rem;
+	}
+
 	/* ── Filters ── */
 	.filters {
 		margin-bottom: 1.5rem;
@@ -717,6 +883,14 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.health-badge {
+		font-size: 0.65rem;
+		font-weight: 700;
+		font-family: var(--font-mono);
+		flex-shrink: 0;
+		margin-left: 0.3rem;
 	}
 
 	.card-num {

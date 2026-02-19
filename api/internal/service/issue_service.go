@@ -117,6 +117,26 @@ func (s *IssueService) IndexRepository(ctx context.Context, owner, name string) 
 		}
 	}
 
+	// Check for CONTRIBUTING.md
+	hasContributing := false
+	if _, err := s.github.GetPublicFileContent(ctx, owner, name, "CONTRIBUTING.md"); err == nil {
+		hasContributing = true
+	}
+
+	healthScore := computeHealthScore(ghRepo, lastCommit)
+	if hasContributing && healthScore < 0.95 {
+		healthScore += 0.05
+	}
+
+	// Detect hiring signals
+	isHiring, hiringURL := detectHiring(ghRepo)
+	if !isHiring {
+		if _, err := s.github.GetPublicFileContent(ctx, owner, name, "HIRING.md"); err == nil {
+			isHiring = true
+			hiringURL = fmt.Sprintf("https://github.com/%s/%s/blob/main/HIRING.md", owner, name)
+		}
+	}
+
 	repo := &model.Repository{
 		GitHubID:        ghRepo.ID,
 		Owner:           ghRepo.Owner.Login,
@@ -125,8 +145,11 @@ func (s *IssueService) IndexRepository(ctx context.Context, owner, name string) 
 		Stars:           ghRepo.StargazersCount,
 		PrimaryLanguage: ghRepo.Language,
 		Topics:          ghRepo.Topics,
-		HealthScore:     computeHealthScore(ghRepo, lastCommit),
+		HasContributing: hasContributing,
+		HealthScore:     healthScore,
 		LastCommitAt:    lastCommit,
+		IsHiring:        isHiring,
+		HiringURL:       hiringURL,
 	}
 
 	repo, err = s.repoRepo.Upsert(ctx, repo)
@@ -204,42 +227,70 @@ func (s *IssueService) IndexAllRepositories(ctx context.Context) error {
 func computeHealthScore(repo *GitHubRepo, lastCommit *time.Time) float32 {
 	var score float32
 
-	// Stars factor (0-0.3): logarithmic scale
+	// Stars (0-0.20): logarithmic scale
 	if repo.StargazersCount > 0 {
-		starScore := float32(math.Log10(float64(repo.StargazersCount))) / 5.0 // 100k stars = 1.0
-		if starScore > 0.3 {
-			starScore = 0.3
+		starScore := float32(math.Log10(float64(repo.StargazersCount))) / 5.0
+		if starScore > 0.20 {
+			starScore = 0.20
 		}
 		score += starScore
 	}
 
-	// Recency factor (0-0.4): days since last commit
+	// Recency (0-0.25): days since last commit
 	if lastCommit != nil {
 		daysSince := time.Since(*lastCommit).Hours() / 24
-		if daysSince < 7 {
-			score += 0.4
-		} else if daysSince < 30 {
-			score += 0.3
-		} else if daysSince < 90 {
-			score += 0.2
-		} else if daysSince < 365 {
-			score += 0.1
+		switch {
+		case daysSince < 7:
+			score += 0.25
+		case daysSince < 30:
+			score += 0.20
+		case daysSince < 90:
+			score += 0.12
+		case daysSince < 365:
+			score += 0.05
 		}
 	}
 
-	// Has issues enabled (0.1)
+	// Has issues enabled (0.05)
 	if repo.HasIssues {
-		score += 0.1
+		score += 0.05
 	}
 
-	// Has topics (0.1)
+	// Has topics (0.05)
 	if len(repo.Topics) > 0 {
-		score += 0.1
+		score += 0.05
 	}
 
-	// Has description (0.1)
+	// Has description (0.05)
 	if repo.Description != "" {
-		score += 0.1
+		score += 0.05
+	}
+
+	// License (0.10)
+	if repo.License != nil && repo.License.Key != "" {
+		score += 0.10
+	}
+
+	// Fork ratio (0-0.10): forks/stars indicates community engagement
+	if repo.StargazersCount > 0 && repo.ForksCount > 0 {
+		forkRatio := float64(repo.ForksCount) / float64(repo.StargazersCount)
+		forkScore := float32(math.Min(forkRatio*2.0, 1.0)) * 0.10
+		score += forkScore
+	}
+
+	// Open issues ratio (0-0.10): moderate open issues = active project
+	if repo.OpenIssuesCount > 0 && repo.StargazersCount > 0 {
+		ratio := float64(repo.OpenIssuesCount) / float64(repo.StargazersCount)
+		switch {
+		case ratio < 0.01:
+			score += 0.05
+		case ratio < 0.05:
+			score += 0.10
+		case ratio < 0.15:
+			score += 0.07
+		default:
+			score += 0.02
+		}
 	}
 
 	if score > 1.0 {
@@ -295,4 +346,34 @@ func estimateTime(labels []string) string {
 		}
 	}
 	return "2-4 hours"
+}
+
+func detectHiring(repo *GitHubRepo) (bool, string) {
+	for _, topic := range repo.Topics {
+		lower := strings.ToLower(topic)
+		if lower == "hiring" || lower == "jobs" || lower == "careers" ||
+			lower == "we-are-hiring" || lower == "work-with-us" {
+			return true, fmt.Sprintf("https://github.com/%s/%s", repo.Owner.Login, repo.Name)
+		}
+	}
+
+	descLower := strings.ToLower(repo.Description)
+	for _, kw := range []string{"hiring", "we're hiring", "join our team", "open positions", "careers"} {
+		if strings.Contains(descLower, kw) {
+			return true, fmt.Sprintf("https://github.com/%s/%s", repo.Owner.Login, repo.Name)
+		}
+	}
+
+	return false, ""
+}
+
+func (s *IssueService) GetHiringRepos(ctx context.Context, page, perPage int) ([]model.Repository, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 50 {
+		perPage = 20
+	}
+	offset := (page - 1) * perPage
+	return s.repoRepo.GetHiring(ctx, perPage, offset)
 }

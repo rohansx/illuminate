@@ -17,22 +17,35 @@ import (
 type GitHubUser struct {
 	ID        int64  `json:"id"`
 	Login     string `json:"login"`
+	Email     string `json:"email"`
 	AvatarURL string `json:"avatar_url"`
 	Bio       string `json:"bio"`
 }
 
+type GitHubEmail struct {
+	Email    string `json:"email"`
+	Primary  bool   `json:"primary"`
+	Verified bool   `json:"verified"`
+}
+
 type GitHubRepo struct {
-	ID          int64    `json:"id"`
-	Owner       struct {
+	ID    int64 `json:"id"`
+	Owner struct {
 		Login string `json:"login"`
 	} `json:"owner"`
 	Name            string   `json:"name"`
 	Description     string   `json:"description"`
 	StargazersCount int      `json:"stargazers_count"`
+	ForksCount      int      `json:"forks_count"`
+	OpenIssuesCount int      `json:"open_issues_count"`
 	Language        string   `json:"language"`
 	Topics          []string `json:"topics"`
 	PushedAt        string   `json:"pushed_at"`
 	HasIssues       bool     `json:"has_issues"`
+	License         *struct {
+		Key  string `json:"key"`
+		Name string `json:"name"`
+	} `json:"license"`
 }
 
 type GitHubIssue struct {
@@ -83,6 +96,26 @@ func (s *GitHubService) GetUser(ctx context.Context, accessToken string) (*GitHu
 		return nil, fmt.Errorf("getting user: %w", err)
 	}
 	return &user, nil
+}
+
+func (s *GitHubService) GetUserEmail(ctx context.Context, accessToken string) (string, error) {
+	var emails []GitHubEmail
+	if err := s.get(ctx, accessToken, "https://api.github.com/user/emails", &emails); err != nil {
+		return "", fmt.Errorf("getting user emails: %w", err)
+	}
+	// Find primary verified email
+	for _, e := range emails {
+		if e.Primary && e.Verified {
+			return e.Email, nil
+		}
+	}
+	// Fallback to any verified email
+	for _, e := range emails {
+		if e.Verified {
+			return e.Email, nil
+		}
+	}
+	return "", nil
 }
 
 func (s *GitHubService) GetUserRepos(ctx context.Context, accessToken string) ([]GitHubRepo, error) {

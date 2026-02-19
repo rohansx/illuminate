@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Issue, type DeepDive, type GitHubComment } from '$lib/api';
+	import { api, type Issue, type DeepDive, type GitHubComment, type IssueProgress } from '$lib/api';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { marked } from 'marked';
@@ -19,6 +19,21 @@
 	let commentsLoading = $state(false);
 	let showAllSkills = $state(false);
 	const MAX_SKILLS = 6;
+
+	// Progress tracking
+	let progress = $state<IssueProgress | null>(null);
+	let progressUpdating = $state(false);
+	let newNote = $state('');
+	let copiedComment = $state(false);
+	let copiedPrompt = $state(false);
+	const progressSteps = ['interested', 'researching', 'working', 'pr_submitted', 'completed'] as const;
+	const progressLabels: Record<string, string> = {
+		interested: 'interested',
+		researching: 'researching',
+		working: 'working on it',
+		pr_submitted: 'PR submitted',
+		completed: 'completed',
+	};
 
 	// Configure marked for safe rendering
 	marked.setOptions({
@@ -47,8 +62,9 @@
 		try {
 			issue = await api.getIssue(page.params.id!);
 
-			// Check saved status
+			// Check saved status + progress
 			api.isIssueSaved(page.params.id!).then(res => { isSaved = res.saved; }).catch(() => {});
+			api.getIssueProgress(page.params.id!).then(res => { progress = res.progress; }).catch(() => {});
 
 			// Load comments if there are any
 			if (issue && issue.comment_count > 0) {
@@ -94,6 +110,124 @@
 		} finally {
 			deepDiveLoading = false;
 		}
+	}
+
+	async function startTracking() {
+		if (!issue) return;
+		progressUpdating = true;
+		try {
+			const res = await api.updateIssueProgress(issue.id, 'interested');
+			progress = res.progress;
+		} catch (e) {
+			console.error('Failed to start tracking:', e);
+		} finally {
+			progressUpdating = false;
+		}
+	}
+
+	async function updateProgress(status: string) {
+		if (!issue) return;
+		progressUpdating = true;
+		try {
+			const res = await api.updateIssueProgress(issue.id, status);
+			progress = res.progress;
+		} catch (e) {
+			console.error('Failed to update progress:', e);
+		} finally {
+			progressUpdating = false;
+		}
+	}
+
+	async function addNote() {
+		if (!issue || !newNote.trim()) return;
+		try {
+			const res = await api.addProgressNote(issue.id, newNote.trim());
+			progress = res.progress;
+			newNote = '';
+		} catch (e) {
+			console.error('Failed to add note:', e);
+		}
+	}
+
+	async function stopTracking() {
+		if (!issue) return;
+		progressUpdating = true;
+		try {
+			await api.deleteIssueProgress(issue.id);
+			progress = null;
+		} catch (e) {
+			console.error('Failed to stop tracking:', e);
+		} finally {
+			progressUpdating = false;
+		}
+	}
+
+	function copyFirstComment() {
+		if (!deepDive?.first_comment) return;
+		navigator.clipboard.writeText(deepDive.first_comment);
+		copiedComment = true;
+		setTimeout(() => { copiedComment = false; }, 2000);
+	}
+
+	function buildPrompt(): string {
+		if (!issue || !deepDive) return '';
+		const repo = issue.repo;
+		const lines: string[] = [];
+
+		lines.push(`# Fix: ${issue.title}`);
+		lines.push('');
+		lines.push(`## Repository`);
+		lines.push(`- **Repo:** ${repo?.owner}/${repo?.name}`);
+		if (repo?.description) lines.push(`- **Description:** ${repo.description}`);
+		if (repo?.primary_language) lines.push(`- **Language:** ${repo.primary_language}`);
+		lines.push(`- **Issue:** #${issue.number}`);
+		lines.push(`- **GitHub URL:** https://github.com/${repo?.owner}/${repo?.name}/issues/${issue.number}`);
+		lines.push('');
+
+		lines.push(`## Issue Description`);
+		lines.push(issue.body || '*No description provided.*');
+		lines.push('');
+
+		if (issue.labels?.length) {
+			lines.push(`## Labels`);
+			lines.push(issue.labels.join(', '));
+			lines.push('');
+		}
+
+		lines.push(`## Project Context`);
+		lines.push(deepDive.project_overview);
+		lines.push('');
+
+		lines.push(`## Analysis`);
+		lines.push(deepDive.issue_context);
+		lines.push('');
+
+		lines.push(`## Suggested Approach`);
+		lines.push(deepDive.suggested_approach);
+		lines.push('');
+
+		if (deepDive.red_flags) {
+			lines.push(`## Watch Out For`);
+			lines.push(deepDive.red_flags);
+			lines.push('');
+		}
+
+		lines.push(`## Instructions`);
+		lines.push(`Follow the suggested approach above to fix this issue. Make sure to:`);
+		lines.push(`1. Read the relevant source files before making changes`);
+		lines.push(`2. Follow existing code patterns and conventions in the repository`);
+		lines.push(`3. Write clean, minimal changes — don't over-engineer`);
+		lines.push(`4. Run existing tests to make sure nothing breaks`);
+
+		return lines.join('\n');
+	}
+
+	function copyPrompt() {
+		const prompt = buildPrompt();
+		if (!prompt) return;
+		navigator.clipboard.writeText(prompt);
+		copiedPrompt = true;
+		setTimeout(() => { copiedPrompt = false; }, 2000);
 	}
 
 	function difficultyLabel(d: number): string {
@@ -150,6 +284,7 @@
 		{ num: '03', title: 'suggested approach', content: deepDive.suggested_approach, variant: '' },
 		{ num: '04', title: 'questions to ask', content: deepDive.questions_to_ask, variant: '' },
 		{ num: '05', title: 'red flags', content: deepDive.red_flags, variant: 'red' },
+		...(deepDive.first_comment ? [{ num: '06', title: 'first comment draft', content: deepDive.first_comment, variant: 'green' }] : []),
 	] : []);
 </script>
 
@@ -237,14 +372,26 @@
 					<section class="deep-dive-section">
 						<div class="dd-header-bar">
 							<span class="dd-title">deep dive<span class="cursor">_</span></span>
-							<span class="dd-meta">{deepDive.model_used} &middot; {deepDive.prompt_tokens + deepDive.completion_tokens} tokens</span>
+							<div class="dd-header-right">
+								<button class="dd-prompt-btn" onclick={copyPrompt}>
+									{copiedPrompt ? '\u2713 copied!' : '\u270D copy AI prompt'}
+								</button>
+								<span class="dd-meta">{deepDive.model_used} &middot; {deepDive.prompt_tokens + deepDive.completion_tokens} tokens</span>
+							</div>
 						</div>
 
 						<div class="dd-grid">
 							{#each ddSections as section, i}
-								<div class="dd-card" class:dd-card-red={section.variant === 'red'} style="animation-delay: {i * 60}ms">
-									<div class="dd-card-num" class:dd-num-red={section.variant === 'red'}>{section.num}</div>
-									<h3 class="dd-card-title" class:dd-title-red={section.variant === 'red'}>{section.title}</h3>
+								<div class="dd-card" class:dd-card-red={section.variant === 'red'} class:dd-card-green={section.variant === 'green'} style="animation-delay: {i * 60}ms">
+									<div class="dd-card-top-row">
+										<div class="dd-card-num" class:dd-num-red={section.variant === 'red'} class:dd-num-green={section.variant === 'green'}>{section.num}</div>
+										{#if section.variant === 'green'}
+											<button class="dd-copy-btn" onclick={copyFirstComment}>
+												{copiedComment ? 'copied!' : 'copy'}
+											</button>
+										{/if}
+									</div>
+									<h3 class="dd-card-title" class:dd-title-red={section.variant === 'red'} class:dd-title-green={section.variant === 'green'}>{section.title}</h3>
 									<div class="prose prose-sm">
 										{@html md(section.content)}
 									</div>
@@ -311,6 +458,57 @@
 							&#9734; save issue
 						{/if}
 					</button>
+				</div>
+
+				<!-- Progress Tracking -->
+				<div class="sidebar-card">
+					<div class="sidebar-label">your progress</div>
+					{#if progress}
+						<div class="progress-steps">
+							{#each progressSteps as step, i}
+								{@const isActive = progress.status === step}
+								{@const currentIdx = progressSteps.indexOf(progress.status as typeof progressSteps[number])}
+								{@const isPast = i < currentIdx}
+								<button
+									class="progress-step"
+									class:step-active={isActive}
+									class:step-past={isPast}
+									disabled={progressUpdating}
+									onclick={() => updateProgress(step)}
+								>
+									<span class="step-indicator" class:indicator-active={isActive} class:indicator-past={isPast}>
+										{#if isPast}&#10003;{:else}{i + 1}{/if}
+									</span>
+									<span class="step-label" class:label-active={isActive}>{progressLabels[step]}</span>
+								</button>
+							{/each}
+						</div>
+						{#if progress.notes.length > 0}
+							<div class="progress-notes">
+								{#each progress.notes as note}
+									<div class="progress-note">{note}</div>
+								{/each}
+							</div>
+						{/if}
+						<div class="progress-note-input">
+							<input
+								type="text"
+								placeholder="add a note..."
+								bind:value={newNote}
+								onkeydown={(e) => e.key === 'Enter' && addNote()}
+							/>
+							{#if newNote.trim()}
+								<button class="note-add-btn" onclick={addNote}>+</button>
+							{/if}
+						</div>
+						<button class="stop-tracking-btn" onclick={stopTracking} disabled={progressUpdating}>
+							stop tracking
+						</button>
+					{:else}
+						<button class="start-tracking-btn" onclick={startTracking} disabled={progressUpdating}>
+							{progressUpdating ? 'starting...' : 'start tracking this issue'}
+						</button>
+					{/if}
 				</div>
 
 				<!-- At a glance -->
@@ -1170,6 +1368,32 @@
 		color: var(--text-dim);
 	}
 
+	.dd-header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.dd-prompt-btn {
+		background: var(--amber-glow);
+		border: 1px solid var(--amber-dim);
+		color: var(--amber);
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 0.3rem 0.65rem;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s;
+		white-space: nowrap;
+	}
+
+	.dd-prompt-btn:hover {
+		background: var(--amber);
+		color: var(--bg);
+		border-color: var(--amber);
+	}
+
 	/* ── Deep Dive Grid ── */
 	.dd-grid {
 		display: grid;
@@ -1182,7 +1406,8 @@
 		grid-column: 1 / -1;
 	}
 
-	.dd-grid .dd-card:nth-child(5) {
+	.dd-grid .dd-card:nth-child(5),
+	.dd-grid .dd-card:nth-child(6) {
 		grid-column: 1 / -1;
 	}
 
@@ -1299,6 +1524,222 @@
 		color: var(--text-dim);
 		text-align: center;
 		padding: 1rem;
+	}
+
+	/* ── Deep Dive Green Card (first comment) ── */
+	.dd-card-green {
+		border-color: rgba(74, 222, 128, 0.25);
+		background: rgba(74, 222, 128, 0.04);
+	}
+
+	.dd-num-green {
+		color: var(--green);
+		background: rgba(74, 222, 128, 0.1);
+	}
+
+	.dd-title-green {
+		color: var(--green);
+	}
+
+	.dd-card-top-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.dd-copy-btn {
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--green);
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		padding: 0.2rem 0.5rem;
+		border-radius: 3px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.dd-copy-btn:hover {
+		background: rgba(74, 222, 128, 0.1);
+		border-color: rgba(74, 222, 128, 0.3);
+	}
+
+	/* ── Progress Tracking ── */
+	.progress-steps {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.progress-step {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: none;
+		border: none;
+		padding: 0.3rem 0.25rem;
+		cursor: pointer;
+		border-radius: 3px;
+		transition: background 0.15s;
+		font-family: var(--font-mono);
+		text-align: left;
+	}
+
+	.progress-step:hover:not(:disabled) {
+		background: var(--bg-card);
+	}
+
+	.progress-step:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.step-indicator {
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.6rem;
+		font-weight: 700;
+		border: 1.5px solid var(--border);
+		color: var(--text-dim);
+		flex-shrink: 0;
+		transition: all 0.15s;
+	}
+
+	.indicator-active {
+		border-color: var(--amber);
+		color: var(--amber);
+		background: var(--amber-glow);
+	}
+
+	.indicator-past {
+		border-color: var(--green);
+		color: var(--green);
+		background: rgba(74, 222, 128, 0.1);
+		font-size: 0.55rem;
+	}
+
+	.step-label {
+		font-size: 0.72rem;
+		color: var(--text-dim);
+		transition: color 0.15s;
+	}
+
+	.label-active {
+		color: var(--amber);
+		font-weight: 600;
+	}
+
+	.progress-notes {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-bottom: 0.5rem;
+		max-height: 150px;
+		overflow-y: auto;
+	}
+
+	.progress-note {
+		font-size: 0.72rem;
+		color: var(--text-muted);
+		padding: 0.3rem 0.5rem;
+		background: var(--bg-card);
+		border-radius: 3px;
+		border: 1px solid var(--border);
+		line-height: 1.4;
+	}
+
+	.progress-note-input {
+		display: flex;
+		gap: 0.35rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.progress-note-input input {
+		flex: 1;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		padding: 0.35rem 0.5rem;
+		border-radius: 3px;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.progress-note-input input::placeholder {
+		color: var(--text-dim);
+	}
+
+	.progress-note-input input:focus {
+		border-color: var(--amber-dim);
+	}
+
+	.note-add-btn {
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		color: var(--amber);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		width: 28px;
+		cursor: pointer;
+		border-radius: 3px;
+		transition: all 0.15s;
+	}
+
+	.note-add-btn:hover {
+		background: var(--amber-glow);
+		border-color: var(--amber-dim);
+	}
+
+	.start-tracking-btn {
+		width: 100%;
+		background: var(--bg-card);
+		border: 1px dashed var(--amber-dim);
+		color: var(--amber);
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		padding: 0.5rem;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: all 0.15s;
+	}
+
+	.start-tracking-btn:hover {
+		background: var(--amber-glow);
+		border-style: solid;
+	}
+
+	.start-tracking-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.stop-tracking-btn {
+		width: 100%;
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		padding: 0.25rem;
+		cursor: pointer;
+		text-decoration: underline;
+		transition: color 0.15s;
+	}
+
+	.stop-tracking-btn:hover {
+		color: var(--red);
+	}
+
+	.stop-tracking-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	/* ── Mobile tweaks ── */

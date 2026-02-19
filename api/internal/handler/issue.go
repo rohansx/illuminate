@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -17,6 +20,7 @@ type IssueHandler struct {
 	userService     *service.UserService
 	matchingService *service.MatchingService
 	savedService    *service.SavedIssueService
+	notifService    *service.NotificationService
 }
 
 func NewIssueHandler(
@@ -24,12 +28,14 @@ func NewIssueHandler(
 	userService *service.UserService,
 	matchingService *service.MatchingService,
 	savedService *service.SavedIssueService,
+	notifService *service.NotificationService,
 ) *IssueHandler {
 	return &IssueHandler{
 		issueService:    issueService,
 		userService:     userService,
 		matchingService: matchingService,
 		savedService:    savedService,
+		notifService:    notifService,
 	}
 }
 
@@ -158,4 +164,84 @@ func (h *IssueHandler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, feed)
+}
+
+func (h *IssueHandler) ImportRepo(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	owner, name, err := parseGitHubURL(body.URL)
+	if err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.issueService.IndexRepository(r.Context(), owner, name); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to index repository")
+		return
+	}
+
+	// Create notification
+	userID := middleware.GetUserID(r.Context())
+	_ = h.notifService.Create(r.Context(), userID, "repo_indexed",
+		"Repository indexed",
+		fmt.Sprintf("%s/%s has been indexed with its issues", owner, name),
+		"/app/feed")
+
+	JSON(w, http.StatusOK, map[string]string{
+		"status": "indexed",
+		"repo":   owner + "/" + name,
+	})
+}
+
+func (h *IssueHandler) GetHiringRepos(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+
+	repos, total, err := h.issueService.GetHiringRepos(r.Context(), page, perPage)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to get hiring repos")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"repos":       repos,
+		"total_count": total,
+		"page":        page,
+		"per_page":    perPage,
+	})
+}
+
+func parseGitHubURL(rawURL string) (owner, name string, err error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", "", fmt.Errorf("URL is required")
+	}
+
+	// Support shorthand "owner/repo"
+	if !strings.Contains(rawURL, "://") && strings.Count(rawURL, "/") == 1 {
+		parts := strings.Split(rawURL, "/")
+		if parts[0] == "" || parts[1] == "" {
+			return "", "", fmt.Errorf("invalid format, use owner/repo")
+		}
+		return parts[0], parts[1], nil
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid URL")
+	}
+	if u.Host != "github.com" && u.Host != "www.github.com" {
+		return "", "", fmt.Errorf("only GitHub URLs are supported")
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("URL must be github.com/owner/repo")
+	}
+	return parts[0], strings.TrimSuffix(parts[1], ".git"), nil
 }

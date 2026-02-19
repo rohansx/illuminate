@@ -23,6 +23,7 @@ type RepoRepo interface {
 	AssignCategory(ctx context.Context, repoID, categoryID uuid.UUID) error
 	RemoveCategory(ctx context.Context, repoID, categoryID uuid.UUID) error
 	GetCategories(ctx context.Context) ([]model.Category, error)
+	GetHiring(ctx context.Context, limit, offset int) ([]model.Repository, int, error)
 }
 
 type repoRepo struct {
@@ -33,19 +34,25 @@ func NewRepoRepo(pool *pgxpool.Pool) RepoRepo {
 	return &repoRepo{pool: pool}
 }
 
-func (r *repoRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Repository, error) {
-	repo := &model.Repository{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, github_id, owner, name, description, stars, primary_language,
-			topics, has_contributing, health_score, last_commit_at, indexed_at,
-			tags, difficulty_level, activity_status
-		FROM repositories WHERE id = $1`, id,
-	).Scan(
+const repoColumns = `id, github_id, owner, name, description, stars, primary_language,
+	topics, has_contributing, health_score, last_commit_at, indexed_at,
+	tags, difficulty_level, activity_status, is_hiring, hiring_url`
+
+func scanRepo(row interface{ Scan(dest ...any) error }, repo *model.Repository) error {
+	return row.Scan(
 		&repo.ID, &repo.GitHubID, &repo.Owner, &repo.Name, &repo.Description,
 		&repo.Stars, &repo.PrimaryLanguage, &repo.Topics, &repo.HasContributing,
 		&repo.HealthScore, &repo.LastCommitAt, &repo.IndexedAt,
 		&repo.Tags, &repo.DifficultyLevel, &repo.ActivityStatus,
+		&repo.IsHiring, &repo.HiringURL,
 	)
+}
+
+func (r *repoRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Repository, error) {
+	repo := &model.Repository{}
+	err := scanRepo(r.pool.QueryRow(ctx, `
+		SELECT `+repoColumns+`
+		FROM repositories WHERE id = $1`, id), repo)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -64,17 +71,9 @@ func (r *repoRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Repository
 
 func (r *repoRepo) GetByGitHubID(ctx context.Context, githubID int64) (*model.Repository, error) {
 	repo := &model.Repository{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, github_id, owner, name, description, stars, primary_language,
-			topics, has_contributing, health_score, last_commit_at, indexed_at,
-			tags, difficulty_level, activity_status
-		FROM repositories WHERE github_id = $1`, githubID,
-	).Scan(
-		&repo.ID, &repo.GitHubID, &repo.Owner, &repo.Name, &repo.Description,
-		&repo.Stars, &repo.PrimaryLanguage, &repo.Topics, &repo.HasContributing,
-		&repo.HealthScore, &repo.LastCommitAt, &repo.IndexedAt,
-		&repo.Tags, &repo.DifficultyLevel, &repo.ActivityStatus,
-	)
+	err := scanRepo(r.pool.QueryRow(ctx, `
+		SELECT `+repoColumns+`
+		FROM repositories WHERE github_id = $1`, githubID), repo)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -87,10 +86,10 @@ func (r *repoRepo) GetByGitHubID(ctx context.Context, githubID int64) (*model.Re
 }
 
 func (r *repoRepo) Upsert(ctx context.Context, repo *model.Repository) (*model.Repository, error) {
-	err := r.pool.QueryRow(ctx, `
+	err := scanRepo(r.pool.QueryRow(ctx, `
 		INSERT INTO repositories (github_id, owner, name, description, stars, primary_language,
-			topics, has_contributing, health_score, last_commit_at, indexed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+			topics, has_contributing, health_score, last_commit_at, indexed_at, is_hiring, hiring_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12)
 		ON CONFLICT (github_id) DO UPDATE SET
 			owner = EXCLUDED.owner,
 			name = EXCLUDED.name,
@@ -101,18 +100,14 @@ func (r *repoRepo) Upsert(ctx context.Context, repo *model.Repository) (*model.R
 			has_contributing = EXCLUDED.has_contributing,
 			health_score = EXCLUDED.health_score,
 			last_commit_at = EXCLUDED.last_commit_at,
+			is_hiring = EXCLUDED.is_hiring,
+			hiring_url = EXCLUDED.hiring_url,
 			indexed_at = NOW()
-		RETURNING id, github_id, owner, name, description, stars, primary_language,
-			topics, has_contributing, health_score, last_commit_at, indexed_at,
-			tags, difficulty_level, activity_status`,
+		RETURNING `+repoColumns,
 		repo.GitHubID, repo.Owner, repo.Name, repo.Description, repo.Stars,
 		repo.PrimaryLanguage, repo.Topics, repo.HasContributing, repo.HealthScore, repo.LastCommitAt,
-	).Scan(
-		&repo.ID, &repo.GitHubID, &repo.Owner, &repo.Name, &repo.Description,
-		&repo.Stars, &repo.PrimaryLanguage, &repo.Topics, &repo.HasContributing,
-		&repo.HealthScore, &repo.LastCommitAt, &repo.IndexedAt,
-		&repo.Tags, &repo.DifficultyLevel, &repo.ActivityStatus,
-	)
+		repo.IsHiring, repo.HiringURL,
+	), repo)
 	if err != nil {
 		return nil, fmt.Errorf("upserting repo: %w", err)
 	}
@@ -123,9 +118,7 @@ func (r *repoRepo) Upsert(ctx context.Context, repo *model.Repository) (*model.R
 
 func (r *repoRepo) GetAll(ctx context.Context) ([]model.Repository, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, github_id, owner, name, description, stars, primary_language,
-			topics, has_contributing, health_score, last_commit_at, indexed_at,
-			tags, difficulty_level, activity_status
+		SELECT `+repoColumns+`
 		FROM repositories ORDER BY stars DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("querying repos: %w", err)
@@ -135,12 +128,7 @@ func (r *repoRepo) GetAll(ctx context.Context) ([]model.Repository, error) {
 	var repos []model.Repository
 	for rows.Next() {
 		var repo model.Repository
-		if err := rows.Scan(
-			&repo.ID, &repo.GitHubID, &repo.Owner, &repo.Name, &repo.Description,
-			&repo.Stars, &repo.PrimaryLanguage, &repo.Topics, &repo.HasContributing,
-			&repo.HealthScore, &repo.LastCommitAt, &repo.IndexedAt,
-			&repo.Tags, &repo.DifficultyLevel, &repo.ActivityStatus,
-		); err != nil {
+		if err := scanRepo(rows, &repo); err != nil {
 			return nil, fmt.Errorf("scanning repo: %w", err)
 		}
 		cats, _ := r.getRepoCategories(ctx, repo.ID)
@@ -282,6 +270,36 @@ func (r *repoRepo) GetCategories(ctx context.Context) ([]model.Category, error) 
 		cats = append(cats, cat)
 	}
 	return cats, nil
+}
+
+func (r *repoRepo) GetHiring(ctx context.Context, limit, offset int) ([]model.Repository, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM repositories WHERE is_hiring = TRUE`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("counting hiring repos: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+repoColumns+`
+		FROM repositories
+		WHERE is_hiring = TRUE
+		ORDER BY stars DESC
+		LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("querying hiring repos: %w", err)
+	}
+	defer rows.Close()
+
+	var repos []model.Repository
+	for rows.Next() {
+		var repo model.Repository
+		if err := scanRepo(rows, &repo); err != nil {
+			return nil, 0, fmt.Errorf("scanning hiring repo: %w", err)
+		}
+		cats, _ := r.getRepoCategories(ctx, repo.ID)
+		repo.Categories = cats
+		repos = append(repos, repo)
+	}
+	return repos, total, nil
 }
 
 func (r *repoRepo) getRepoCategories(ctx context.Context, repoID uuid.UUID) ([]model.Category, error) {

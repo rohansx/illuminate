@@ -14,13 +14,15 @@ type UserHandler struct {
 	userService  *service.UserService
 	github       *service.GitHubService
 	savedService *service.SavedIssueService
+	notifService *service.NotificationService
 }
 
-func NewUserHandler(userService *service.UserService, github *service.GitHubService, savedService *service.SavedIssueService) *UserHandler {
+func NewUserHandler(userService *service.UserService, github *service.GitHubService, savedService *service.SavedIssueService, notifService *service.NotificationService) *UserHandler {
 	return &UserHandler{
 		userService:  userService,
 		github:       github,
 		savedService: savedService,
+		notifService: notifService,
 	}
 }
 
@@ -103,6 +105,36 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, profile)
 }
 
+func (h *UserHandler) SetManualSkills(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var body struct {
+		Languages []string `json:"languages"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(body.Languages) == 0 {
+		Error(w, http.StatusBadRequest, "at least one language is required")
+		return
+	}
+
+	if len(body.Languages) > 20 {
+		Error(w, http.StatusBadRequest, "maximum 20 languages allowed")
+		return
+	}
+
+	skills, err := h.userService.SetManualSkills(r.Context(), userID, body.Languages)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to set skills")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{"skills": skills})
+}
+
 func (h *UserHandler) AnalyzeSkills(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
@@ -111,6 +143,11 @@ func (h *UserHandler) AnalyzeSkills(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to analyze skills")
 		return
 	}
+
+	_ = h.notifService.Create(r.Context(), userID, "skills_analyzed",
+		"Skills analyzed",
+		"Your skill profile has been updated based on your GitHub activity",
+		"/app/profile")
 
 	JSON(w, http.StatusOK, map[string]any{"skills": skills})
 }

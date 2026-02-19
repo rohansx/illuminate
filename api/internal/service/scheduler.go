@@ -7,16 +7,18 @@ import (
 )
 
 type Scheduler struct {
-	discovery *DiscoveryService
-	interval  time.Duration
-	stopCh    chan struct{}
+	discovery      *DiscoveryService
+	contribService *ContributionService
+	interval       time.Duration
+	stopCh         chan struct{}
 }
 
-func NewScheduler(discovery *DiscoveryService, interval time.Duration) *Scheduler {
+func NewScheduler(discovery *DiscoveryService, contribService *ContributionService, interval time.Duration) *Scheduler {
 	return &Scheduler{
-		discovery: discovery,
-		interval:  interval,
-		stopCh:    make(chan struct{}),
+		discovery:      discovery,
+		contribService: contribService,
+		interval:       interval,
+		stopCh:         make(chan struct{}),
 	}
 }
 
@@ -35,10 +37,17 @@ func (s *Scheduler) Start() {
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 
+		// Contribution sync runs every other tick (12h if interval is 6h)
+		contribTick := 0
+
 		for {
 			select {
 			case <-ticker.C:
 				s.runDiscovery()
+				contribTick++
+				if contribTick%2 == 0 {
+					s.runContributionSync()
+				}
 			case <-s.stopCh:
 				slog.Info("scheduler stopped")
 				return
@@ -60,4 +69,15 @@ func (s *Scheduler) runDiscovery() {
 		return
 	}
 	slog.Info("scheduler: discovery job started", "job_id", job.ID)
+}
+
+func (s *Scheduler) runContributionSync() {
+	slog.Info("scheduler: triggering contribution sync")
+	ctx := context.Background()
+	job, err := s.contribService.SyncAll(ctx)
+	if err != nil {
+		slog.Warn("scheduler: contribution sync failed to start", "error", err)
+		return
+	}
+	slog.Info("scheduler: contribution sync job started", "job_id", job.ID)
 }

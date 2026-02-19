@@ -69,6 +69,9 @@ func main() {
 	tokenRepo := repository.NewTokenRepo(pool)
 	deepDiveRepo := repository.NewDeepDiveRepo(pool)
 	savedIssueRepo := repository.NewSavedIssueRepo(pool)
+	contribRepo := repository.NewContributionRepo(pool)
+	notifRepo := repository.NewNotificationRepo(pool)
+	issueProgressRepo := repository.NewIssueProgressRepo(pool)
 
 	// Services
 	callbackURL := cfg.BackendURL + "/auth/github/callback"
@@ -81,19 +84,28 @@ func main() {
 	glmService := service.NewGLMService(cfg.GLMAPIKey)
 	deepDiveService := service.NewDeepDiveService(deepDiveRepo, issueRepo, repoRepo, userRepo, githubService, glmService)
 	savedIssueService := service.NewSavedIssueService(savedIssueRepo, issueRepo)
+	notifService := service.NewNotificationService(notifRepo)
+	issueProgressService := service.NewIssueProgressService(issueProgressRepo)
 
 	// Admin + Discovery
 	jobManager := service.NewJobManager()
 	discoveryService := service.NewDiscoveryService(repoRepo, issueService, githubService, jobManager)
-	adminService := service.NewAdminService(userRepo, repoRepo, issueRepo, issueService, githubService, jobManager, discoveryService)
+	contribService := service.NewContributionService(contribRepo, userRepo, githubService, encryptor, jobManager)
+	growthService := service.NewGrowthService(contribRepo, userRepo)
+	adminService := service.NewAdminService(userRepo, repoRepo, issueRepo, issueService, githubService, jobManager, discoveryService, contribService)
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authService, githubService, cfg.FrontendURL, cfg.CookieDomain, cfg.IsProd())
-	userHandler := handler.NewUserHandler(userService, githubService, savedIssueService)
-	issueHandler := handler.NewIssueHandler(issueService, userService, matchingService, savedIssueService)
+	userHandler := handler.NewUserHandler(userService, githubService, savedIssueService, notifService)
+	issueHandler := handler.NewIssueHandler(issueService, userService, matchingService, savedIssueService, notifService)
 	adminHandler := handler.NewAdminHandler(adminService)
 	deepDiveHandler := handler.NewDeepDiveHandler(deepDiveService)
 	savedIssueHandler := handler.NewSavedIssueHandler(savedIssueService)
+	contribHandler := handler.NewContributionHandler(contribService)
+	profileHandler := handler.NewProfileHandler(contribService)
+	notifHandler := handler.NewNotificationHandler(notifService)
+	issueProgressHandler := handler.NewIssueProgressHandler(issueProgressService)
+	growthHandler := handler.NewGrowthHandler(growthService)
 
 	// Router
 	r := chi.NewRouter()
@@ -106,6 +118,7 @@ func main() {
 	r.Get("/auth/github/login", authHandler.Login)
 	r.Get("/auth/github/callback", authHandler.Callback)
 	r.Post("/auth/refresh", authHandler.Refresh)
+	r.Get("/api/u/{username}", profileHandler.GetPublicProfile)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -116,6 +129,9 @@ func main() {
 		r.Get("/api/users/me/stats", userHandler.GetProfile)
 		r.Get("/api/users/me/prs", userHandler.GetPRs)
 		r.Post("/api/users/me/analyze-skills", userHandler.AnalyzeSkills)
+		r.Put("/api/users/me/skills", userHandler.SetManualSkills)
+		r.Post("/api/repos/import", issueHandler.ImportRepo)
+		r.Get("/api/repos/hiring", issueHandler.GetHiringRepos)
 		r.Get("/api/categories", issueHandler.GetCategories)
 		r.Get("/api/issues/feed", issueHandler.GetFeed)
 		r.Get("/api/issues/saved", savedIssueHandler.ListSaved)
@@ -126,6 +142,20 @@ func main() {
 		r.Post("/api/issues/{id}/save", savedIssueHandler.Save)
 		r.Delete("/api/issues/{id}/save", savedIssueHandler.Unsave)
 		r.Get("/api/issues/{id}/saved", savedIssueHandler.IsSaved)
+		r.Get("/api/issues/{id}/progress", issueProgressHandler.Get)
+		r.Put("/api/issues/{id}/progress", issueProgressHandler.Upsert)
+		r.Post("/api/issues/{id}/progress/notes", issueProgressHandler.AddNote)
+		r.Delete("/api/issues/{id}/progress", issueProgressHandler.Delete)
+		r.Get("/api/users/me/contributions", contribHandler.GetTimeline)
+		r.Get("/api/users/me/contributions/projects", contribHandler.GetProjects)
+		r.Get("/api/users/me/contributions/stats", contribHandler.GetStats)
+		r.Post("/api/users/me/contributions/sync", contribHandler.SyncContributions)
+		r.Get("/api/users/me/progress", issueProgressHandler.ListByUser)
+		r.Get("/api/notifications", notifHandler.List)
+		r.Get("/api/notifications/unread-count", notifHandler.UnreadCount)
+		r.Patch("/api/notifications/{id}/read", notifHandler.MarkRead)
+		r.Post("/api/notifications/read-all", notifHandler.MarkAllRead)
+		r.Get("/api/users/me/growth", growthHandler.GetGrowthProfile)
 	})
 
 	// Admin routes
@@ -138,6 +168,7 @@ func main() {
 		r.Post("/admin/seed", adminHandler.TriggerSeed)
 		r.Post("/admin/index", adminHandler.TriggerIndex)
 		r.Post("/admin/discover", adminHandler.TriggerDiscover)
+		r.Post("/admin/sync-contributions", adminHandler.TriggerContributionSync)
 		r.Get("/admin/jobs", adminHandler.GetJobs)
 		r.Get("/admin/repos", adminHandler.ListRepos)
 		r.Delete("/admin/repos/{id}", adminHandler.DeleteRepo)
@@ -167,7 +198,7 @@ func main() {
 	// Discovery scheduler
 	var scheduler *service.Scheduler
 	if cfg.IsProd() {
-		scheduler = service.NewScheduler(discoveryService, cfg.DiscoveryInterval)
+		scheduler = service.NewScheduler(discoveryService, contribService, cfg.DiscoveryInterval)
 		scheduler.Start()
 	} else {
 		slog.Info("auto-discovery disabled")

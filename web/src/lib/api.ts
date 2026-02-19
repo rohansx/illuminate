@@ -52,6 +52,7 @@ export interface User {
 	id: string;
 	github_id: number;
 	github_username: string;
+	email: string;
 	avatar_url: string;
 	bio: string;
 	role: string;
@@ -104,6 +105,36 @@ export interface Repository {
 	primary_language: string;
 	topics: string[];
 	health_score: number;
+	is_hiring?: boolean;
+	hiring_url?: string;
+}
+
+export interface HiringRepoList {
+	repos: Repository[];
+	total_count: number;
+	page: number;
+	per_page: number;
+}
+
+export interface Notification {
+	id: string;
+	user_id: string;
+	type: string;
+	title: string;
+	message: string;
+	link?: string;
+	read: boolean;
+	created_at: string;
+}
+
+export interface NotificationList {
+	notifications: Notification[];
+	total_count: number;
+	unread_count: number;
+}
+
+export interface UnreadCount {
+	count: number;
 }
 
 export interface IssueSkill {
@@ -120,6 +151,7 @@ export interface DeepDive {
 	suggested_approach: string;
 	questions_to_ask: string;
 	red_flags: string;
+	first_comment: string;
 	model_used: string;
 	prompt_tokens: number;
 	completion_tokens: number;
@@ -236,6 +268,105 @@ export interface PRList {
 	items: GitHubPR[];
 }
 
+export interface Contribution {
+	id: string;
+	user_id: string;
+	github_pr_id: number;
+	repo_owner: string;
+	repo_name: string;
+	pr_number: number;
+	pr_title: string;
+	pr_url: string;
+	pr_state: string;
+	language: string;
+	labels: string[];
+	merged_at: string | null;
+	created_at: string;
+	synced_at: string;
+}
+
+export interface ContributionFeed {
+	contributions: Contribution[];
+	total_count: number;
+	page: number;
+	per_page: number;
+}
+
+export interface ProjectGroup {
+	repo_owner: string;
+	repo_name: string;
+	language: string;
+	pr_count: number;
+	latest_at: string | null;
+}
+
+export interface PortfolioStats {
+	total_prs: number;
+	total_repos: number;
+	languages: Record<string, number>;
+	first_contribution: string | null;
+	latest_contribution: string | null;
+	current_streak: number;
+	longest_streak: number;
+}
+
+export interface PublicProfile {
+	user: {
+		github_username: string;
+		avatar_url: string;
+		bio: string;
+		skills: UserSkill[];
+		created_at: string;
+	};
+	stats: PortfolioStats;
+	top_projects: ProjectGroup[];
+	recent_prs: Contribution[];
+}
+
+export interface IssueProgress {
+	id: string;
+	user_id: string;
+	issue_id: string;
+	status: string;
+	notes: string[];
+	started_at: string;
+	updated_at: string;
+}
+
+export interface GrowthProfile {
+	level: string;
+	level_name: string;
+	level_index: number;
+	next_level: string | null;
+	next_level_name: string;
+	progress: LevelProgress;
+	radar: RadarScores;
+	next_steps: NextStep[];
+}
+
+export interface LevelProgress {
+	current_value: number;
+	target_value: number;
+	metric: string;
+	percentage: number;
+}
+
+export interface RadarScores {
+	volume: number;
+	breadth: number;
+	consistency: number;
+	depth: number;
+	diversity: number;
+	recency: number;
+}
+
+export interface NextStep {
+	id: string;
+	title: string;
+	description: string;
+	priority: number;
+}
+
 export const api = {
 	getMe: () => request<User>('/api/users/me'),
 
@@ -268,6 +399,12 @@ export const api = {
 
 	analyzeSkills: () =>
 		request('/api/users/me/analyze-skills', { method: 'POST' }),
+
+	setSkills: (languages: string[]) =>
+		request<{ skills: UserSkill[] }>('/api/users/me/skills', {
+			method: 'PUT',
+			body: JSON.stringify({ languages })
+		}),
 
 	getProfileStats: () => request<ProfileStats>('/api/users/me/stats'),
 
@@ -367,4 +504,80 @@ export const api = {
 		request('/admin/repos/' + repoId + '/categories/' + categoryId, {
 			method: 'DELETE'
 		}),
+
+	adminTriggerContributionSync: () =>
+		request<JobStatus>('/admin/sync-contributions', { method: 'POST' }),
+
+	// Notifications
+	getNotifications: (page = 1, perPage = 20) => {
+		const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+		return request<NotificationList>(`/api/notifications?${params}`);
+	},
+
+	getUnreadCount: () =>
+		request<UnreadCount>('/api/notifications/unread-count'),
+
+	markNotificationRead: (id: string) =>
+		request('/api/notifications/' + id + '/read', { method: 'PATCH' }),
+
+	markAllNotificationsRead: () =>
+		request('/api/notifications/read-all', { method: 'POST' }),
+
+	// Hiring repos
+	getHiringRepos: (page = 1, perPage = 20) => {
+		const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+		return request<HiringRepoList>(`/api/repos/hiring?${params}`);
+	},
+
+	// Import repo
+	importRepo: (url: string) =>
+		request<{ status: string; repo: string }>('/api/repos/import', {
+			method: 'POST',
+			body: JSON.stringify({ url })
+		}),
+
+	// Contribution / Portfolio endpoints
+	getContributions: (page = 1, perPage = 20) => {
+		const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+		return request<ContributionFeed>(`/api/users/me/contributions?${params}`);
+	},
+
+	getContributionProjects: () =>
+		request<ProjectGroup[]>('/api/users/me/contributions/projects'),
+
+	getPortfolioStats: () =>
+		request<PortfolioStats>('/api/users/me/contributions/stats'),
+
+	syncContributions: () =>
+		request('/api/users/me/contributions/sync', { method: 'POST' }),
+
+	// Issue progress tracking
+	getIssueProgress: (issueId: string) =>
+		request<{ progress: IssueProgress | null }>(`/api/issues/${issueId}/progress`),
+
+	updateIssueProgress: (issueId: string, status: string) =>
+		request<{ progress: IssueProgress }>(`/api/issues/${issueId}/progress`, {
+			method: 'PUT',
+			body: JSON.stringify({ status })
+		}),
+
+	addProgressNote: (issueId: string, note: string) =>
+		request<{ progress: IssueProgress }>(`/api/issues/${issueId}/progress/notes`, {
+			method: 'POST',
+			body: JSON.stringify({ note })
+		}),
+
+	deleteIssueProgress: (issueId: string) =>
+		request(`/api/issues/${issueId}/progress`, { method: 'DELETE' }),
+
+	getMyProgress: () =>
+		request<{ progress: IssueProgress[] }>('/api/users/me/progress'),
+
+	// Public profile
+	getPublicProfile: (username: string) =>
+		request<PublicProfile>(`/api/u/${username}`),
+
+	// Growth engine
+	getGrowthProfile: () =>
+		request<GrowthProfile>('/api/users/me/growth'),
 };

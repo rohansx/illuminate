@@ -13,14 +13,19 @@ import (
 type UserRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.User, error)
 	GetByGitHubID(ctx context.Context, githubID int64) (*model.User, error)
+	GetByUsername(ctx context.Context, username string) (*model.User, error)
 	Upsert(ctx context.Context, user *model.User, tokenEnc []byte) (*model.User, error)
 	UpdateProfile(ctx context.Context, id uuid.UUID, profile model.UserProfile) error
 	SetSkills(ctx context.Context, userID uuid.UUID, skills []model.UserSkill) error
+	SetManualSkills(ctx context.Context, userID uuid.UUID, languages []string) error
+	SetGitHubSkills(ctx context.Context, userID uuid.UUID, skills []model.UserSkill) error
 	GetAccessToken(ctx context.Context, userID uuid.UUID) ([]byte, error)
 	GetRole(ctx context.Context, id uuid.UUID) (string, error)
 	UpdateRole(ctx context.Context, id uuid.UUID, role string) error
 	ListAll(ctx context.Context, limit, offset int) ([]model.UserListItem, int, error)
 	Count(ctx context.Context) (int, error)
+	GetAllForSync(ctx context.Context) ([]model.UserSyncInfo, error)
+	UpdateContributionsSyncedAt(ctx context.Context, userID uuid.UUID) error
 }
 
 type userRepo struct {
@@ -34,11 +39,11 @@ func NewUserRepo(pool *pgxpool.Pool) UserRepo {
 func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	u := &model.User{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, github_id, github_username, avatar_url, bio, role,
+		SELECT id, github_id, github_username, email, avatar_url, bio, role,
 			comfort_level, time_commitment, goals, onboarding_done, created_at, updated_at
 		FROM users WHERE id = $1`, id,
 	).Scan(
-		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.AvatarURL, &u.Bio, &u.Role,
+		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.Email, &u.AvatarURL, &u.Bio, &u.Role,
 		&u.ComfortLevel, &u.TimeCommitment, &u.Goals, &u.OnboardingDone, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -60,11 +65,11 @@ func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.User, erro
 func (r *userRepo) GetByGitHubID(ctx context.Context, githubID int64) (*model.User, error) {
 	u := &model.User{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, github_id, github_username, avatar_url, bio, role,
+		SELECT id, github_id, github_username, email, avatar_url, bio, role,
 			comfort_level, time_commitment, goals, onboarding_done, created_at, updated_at
 		FROM users WHERE github_id = $1`, githubID,
 	).Scan(
-		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.AvatarURL, &u.Bio, &u.Role,
+		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.Email, &u.AvatarURL, &u.Bio, &u.Role,
 		&u.ComfortLevel, &u.TimeCommitment, &u.Goals, &u.OnboardingDone, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -78,19 +83,20 @@ func (r *userRepo) GetByGitHubID(ctx context.Context, githubID int64) (*model.Us
 
 func (r *userRepo) Upsert(ctx context.Context, user *model.User, tokenEnc []byte) (*model.User, error) {
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO users (github_id, github_username, avatar_url, bio, access_token_enc)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (github_id, github_username, email, avatar_url, bio, access_token_enc)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (github_id) DO UPDATE SET
 			github_username = EXCLUDED.github_username,
+			email = EXCLUDED.email,
 			avatar_url = EXCLUDED.avatar_url,
 			bio = EXCLUDED.bio,
 			access_token_enc = EXCLUDED.access_token_enc,
 			updated_at = NOW()
-		RETURNING id, github_id, github_username, avatar_url, bio, role,
+		RETURNING id, github_id, github_username, email, avatar_url, bio, role,
 			comfort_level, time_commitment, goals, onboarding_done, created_at, updated_at`,
-		user.GitHubID, user.GitHubUsername, user.AvatarURL, user.Bio, tokenEnc,
+		user.GitHubID, user.GitHubUsername, user.Email, user.AvatarURL, user.Bio, tokenEnc,
 	).Scan(
-		&user.ID, &user.GitHubID, &user.GitHubUsername, &user.AvatarURL, &user.Bio, &user.Role,
+		&user.ID, &user.GitHubID, &user.GitHubUsername, &user.Email, &user.AvatarURL, &user.Bio, &user.Role,
 		&user.ComfortLevel, &user.TimeCommitment, &user.Goals, &user.OnboardingDone, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
@@ -136,6 +142,62 @@ func (r *userRepo) SetSkills(ctx context.Context, userID uuid.UUID, skills []mod
 		)
 		if err != nil {
 			return fmt.Errorf("inserting skill: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *userRepo) SetManualSkills(ctx context.Context, userID uuid.UUID, languages []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `DELETE FROM user_skills WHERE user_id = $1 AND source = 'manual'`, userID)
+	if err != nil {
+		return fmt.Errorf("deleting old manual skills: %w", err)
+	}
+
+	for _, lang := range languages {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO user_skills (user_id, language, proficiency, source)
+			VALUES ($1, $2, 0.90, 'manual')
+			ON CONFLICT (user_id, language) DO UPDATE SET
+				source = 'manual',
+				proficiency = GREATEST(user_skills.proficiency, 0.90)`,
+			userID, lang,
+		)
+		if err != nil {
+			return fmt.Errorf("inserting manual skill: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *userRepo) SetGitHubSkills(ctx context.Context, userID uuid.UUID, skills []model.UserSkill) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `DELETE FROM user_skills WHERE user_id = $1 AND source = 'github'`, userID)
+	if err != nil {
+		return fmt.Errorf("deleting old github skills: %w", err)
+	}
+
+	for _, s := range skills {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO user_skills (user_id, language, proficiency, source)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (user_id, language) DO NOTHING`,
+			userID, s.Language, s.Proficiency, s.Source,
+		)
+		if err != nil {
+			return fmt.Errorf("inserting github skill: %w", err)
 		}
 	}
 
@@ -202,6 +264,61 @@ func (r *userRepo) Count(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("counting users: %w", err)
 	}
 	return count, nil
+}
+
+func (r *userRepo) GetByUsername(ctx context.Context, username string) (*model.User, error) {
+	u := &model.User{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, github_id, github_username, email, avatar_url, bio, role,
+			comfort_level, time_commitment, goals, onboarding_done, created_at, updated_at
+		FROM users WHERE github_username = $1`, username,
+	).Scan(
+		&u.ID, &u.GitHubID, &u.GitHubUsername, &u.Email, &u.AvatarURL, &u.Bio, &u.Role,
+		&u.ComfortLevel, &u.TimeCommitment, &u.Goals, &u.OnboardingDone, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("getting user by username: %w", err)
+	}
+
+	skills, err := r.getSkills(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	u.Skills = skills
+
+	return u, nil
+}
+
+func (r *userRepo) GetAllForSync(ctx context.Context) ([]model.UserSyncInfo, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, github_username, contributions_synced_at
+		FROM users
+		ORDER BY contributions_synced_at NULLS FIRST, created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("querying users for sync: %w", err)
+	}
+	defer rows.Close()
+
+	var users []model.UserSyncInfo
+	for rows.Next() {
+		var u model.UserSyncInfo
+		if err := rows.Scan(&u.ID, &u.GitHubUsername, &u.ContribSyncedAt); err != nil {
+			return nil, fmt.Errorf("scanning user sync info: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+func (r *userRepo) UpdateContributionsSyncedAt(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.pool.Exec(ctx, `UPDATE users SET contributions_synced_at = NOW() WHERE id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("updating contributions_synced_at: %w", err)
+	}
+	return nil
 }
 
 func (r *userRepo) getSkills(ctx context.Context, userID uuid.UUID) ([]model.UserSkill, error) {

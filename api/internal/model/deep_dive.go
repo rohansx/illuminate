@@ -16,6 +16,7 @@ type DeepDive struct {
 	SuggestedApproach string    `json:"suggested_approach"`
 	QuestionsToAsk    string    `json:"questions_to_ask"`
 	RedFlags          string    `json:"red_flags"`
+	FirstComment      string    `json:"first_comment"`
 	ModelUsed         string    `json:"model_used"`
 	PromptTokens      int       `json:"prompt_tokens"`
 	CompletionTokens  int       `json:"completion_tokens"`

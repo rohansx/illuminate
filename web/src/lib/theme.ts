@@ -12,18 +12,16 @@ export type ThemeId = (typeof THEMES)[number]['id'];
 const STORAGE_KEY = 'illuminate-theme';
 
 export function getTheme(): ThemeId {
-	if (typeof localStorage === 'undefined') return 'forest';
-	return (localStorage.getItem(STORAGE_KEY) as ThemeId) || 'forest';
+	if (typeof localStorage === 'undefined') return 'mono';
+	return (localStorage.getItem(STORAGE_KEY) as ThemeId) || 'mono';
 }
 
 export function setTheme(id: ThemeId) {
-	document.documentElement.setAttribute('data-theme', id === 'forest' ? '' : id);
+	document.documentElement.setAttribute('data-theme', id);
 	localStorage.setItem(STORAGE_KEY, id);
 }
 
 export function initTheme() {
 	const saved = getTheme();
-	if (saved && saved !== 'forest') {
-		document.documentElement.setAttribute('data-theme', saved);
-	}
+	document.documentElement.setAttribute('data-theme', saved);
 }
