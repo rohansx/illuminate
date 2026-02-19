@@ -184,7 +184,7 @@
 		<div class="columns">
 			<!-- Main content -->
 			<div class="main-col">
-				<!-- Description + Deep Dive Trigger -->
+				<!-- Description + Deep Dive Trigger/Loading/Error -->
 				<section class="card">
 					<div class="card-label">description</div>
 					<div class="prose">
@@ -201,6 +201,33 @@
 								</span>
 								<span class="dd-trigger-arrow">&rarr;</span>
 							</button>
+						</div>
+					{:else if deepDiveLoading}
+						<div class="dd-inline-loading">
+							<div class="dd-loading-bar">
+								<div class="dd-loading-progress"></div>
+							</div>
+							<div class="dd-loading-steps">
+								<span class="dd-step active">
+									<span class="dd-step-dot"></span>
+									fetching context
+								</span>
+								<span class="dd-step">
+									<span class="dd-step-dot"></span>
+									building prompt
+								</span>
+								<span class="dd-step">
+									<span class="dd-step-dot"></span>
+									generating analysis
+								</span>
+							</div>
+							<p class="dd-loading-hint">this usually takes 10-20 seconds</p>
+						</div>
+					{:else if deepDiveError}
+						<div class="dd-inline-error">
+							<span class="dd-error-icon">&#9888;</span>
+							<span class="dd-error-msg">{deepDiveError}</span>
+							<button class="btn btn-ghost" onclick={generateDeepDive}>retry</button>
 						</div>
 					{/if}
 				</section>
@@ -223,28 +250,6 @@
 									</div>
 								</div>
 							{/each}
-						</div>
-					</section>
-				{:else if deepDiveLoading}
-					<section class="deep-dive-section">
-						<div class="dd-loading-state">
-							<div class="dd-loading-inner">
-								<div class="spinner"></div>
-								<div class="dd-loading-text">
-									<p class="dd-loading-title">analyzing issue with ai</p>
-									<p class="dd-loading-sub">fetching repo context, building prompt, generating analysis...</p>
-								</div>
-							</div>
-							<div class="dd-loading-bar">
-								<div class="dd-loading-progress"></div>
-							</div>
-						</div>
-					</section>
-				{:else if deepDiveError}
-					<section class="deep-dive-section">
-						<div class="dd-error-state">
-							<p class="dd-error-msg">{deepDiveError}</p>
-							<button class="btn btn-ghost" onclick={generateDeepDive}>retry</button>
 						</div>
 					</section>
 				{/if}
@@ -448,6 +453,7 @@
 		font-size: 0.75rem;
 		color: var(--text-dim);
 		margin-bottom: 1.25rem;
+		flex-wrap: wrap;
 	}
 
 	.breadcrumb a {
@@ -458,7 +464,7 @@
 
 	.breadcrumb a:hover { color: var(--amber); }
 	.sep { opacity: 0.4; }
-	.repo-path { color: var(--text-muted); }
+	.repo-path { color: var(--text-muted); word-break: break-all; }
 	.current { color: var(--text); }
 
 	/* ── Header ── */
@@ -509,6 +515,7 @@
 		line-height: 1.4;
 		flex: 1;
 		min-width: 200px;
+		word-break: break-word;
 	}
 
 	.issue-number {
@@ -529,6 +536,7 @@
 	@media (max-width: 900px) {
 		.columns {
 			grid-template-columns: 1fr;
+			gap: 1.25rem;
 		}
 		.side-col {
 			order: -1;
@@ -549,6 +557,7 @@
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		padding: 1.5rem;
+		overflow: hidden;
 	}
 
 	.card-label {
@@ -561,6 +570,12 @@
 	}
 
 	/* ── Prose (markdown) ── */
+	.prose {
+		overflow-wrap: break-word;
+		word-break: break-word;
+		min-width: 0;
+	}
+
 	.prose :global(h1),
 	.prose :global(h2),
 	.prose :global(h3),
@@ -609,6 +624,7 @@
 		padding: 0.1rem 0.35rem;
 		border-radius: 3px;
 		color: var(--amber);
+		word-break: break-all;
 	}
 
 	.prose :global(pre) {
@@ -626,6 +642,7 @@
 		padding: 0;
 		font-size: 0.8rem;
 		color: var(--text);
+		word-break: normal;
 	}
 
 	.prose :global(blockquote) {
@@ -640,6 +657,7 @@
 		text-decoration: underline;
 		text-decoration-color: var(--amber-dim);
 		text-underline-offset: 2px;
+		word-break: break-all;
 	}
 
 	.prose :global(a:hover) {
@@ -656,10 +674,17 @@
 		max-width: 100%;
 		border-radius: 4px;
 		border: 1px solid var(--border);
+		height: auto;
+	}
+
+	/* Table overflow wrapper */
+	.prose {
+		overflow-x: auto;
 	}
 
 	.prose :global(table) {
-		width: 100%;
+		width: max-content;
+		min-width: 100%;
 		border-collapse: collapse;
 		font-size: 0.8rem;
 		margin-bottom: 0.75rem;
@@ -670,6 +695,7 @@
 		border: 1px solid var(--border);
 		padding: 0.4rem 0.6rem;
 		text-align: left;
+		white-space: nowrap;
 	}
 
 	.prose :global(th) {
@@ -699,6 +725,12 @@
 		gap: 0.75rem;
 		position: sticky;
 		top: 60px;
+	}
+
+	@media (max-width: 900px) {
+		.side-col {
+			position: static;
+		}
 	}
 
 	.sidebar-card {
@@ -923,6 +955,7 @@
 		font-size: 0.8rem;
 		font-weight: 600;
 		color: var(--text-bright);
+		word-break: break-all;
 	}
 
 	.repo-desc {
@@ -1020,12 +1053,104 @@
 		color: var(--amber);
 	}
 
+	/* ── Deep Dive Inline Loading (inside description card) ── */
+	.dd-inline-loading {
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.dd-loading-steps {
+		display: flex;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.dd-step {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.72rem;
+		color: var(--text-dim);
+	}
+
+	.dd-step.active {
+		color: var(--amber);
+	}
+
+	.dd-step-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--border);
+		flex-shrink: 0;
+	}
+
+	.dd-step.active .dd-step-dot {
+		background: var(--amber);
+		animation: pulse-dot 1.5s ease-in-out infinite;
+	}
+
+	.dd-loading-hint {
+		font-size: 0.65rem;
+		color: var(--text-dim);
+		opacity: 0.7;
+	}
+
+	.dd-loading-bar {
+		height: 2px;
+		background: var(--border);
+		border-radius: 1px;
+		overflow: hidden;
+	}
+
+	.dd-loading-progress {
+		height: 100%;
+		width: 40%;
+		background: var(--amber);
+		border-radius: 1px;
+		animation: loadSlide 2s ease-in-out infinite;
+	}
+
+	@keyframes loadSlide {
+		0% { transform: translateX(-100%); }
+		50% { transform: translateX(200%); }
+		100% { transform: translateX(-100%); }
+	}
+
+	/* ── Deep Dive Inline Error (inside description card) ── */
+	.dd-inline-error {
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.dd-error-icon {
+		color: var(--red);
+		font-size: 0.9rem;
+		flex-shrink: 0;
+	}
+
+	.dd-error-msg {
+		font-size: 0.8rem;
+		color: var(--red);
+		flex: 1;
+	}
+
 	/* ── Deep Dive Header ── */
 	.dd-header-bar {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 1rem;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 
 	.dd-title {
@@ -1073,6 +1198,7 @@
 		border-radius: 6px;
 		padding: 1.25rem;
 		animation: cardIn 0.3s ease both;
+		overflow: hidden;
 	}
 
 	@keyframes cardIn {
@@ -1114,78 +1240,6 @@
 		color: var(--red);
 	}
 
-	/* ── Deep Dive Loading ── */
-	.dd-loading-state {
-		background: var(--bg-raised);
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 2rem 1.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1.25rem;
-	}
-
-	.dd-loading-inner {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.dd-loading-text {
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
-	}
-
-	.dd-loading-title {
-		font-size: 0.85rem;
-		color: var(--text-bright);
-		font-weight: 500;
-	}
-
-	.dd-loading-sub {
-		font-size: 0.72rem;
-		color: var(--text-dim);
-	}
-
-	.dd-loading-bar {
-		height: 2px;
-		background: var(--border);
-		border-radius: 1px;
-		overflow: hidden;
-	}
-
-	.dd-loading-progress {
-		height: 100%;
-		width: 40%;
-		background: var(--amber);
-		border-radius: 1px;
-		animation: loadSlide 2s ease-in-out infinite;
-	}
-
-	@keyframes loadSlide {
-		0% { transform: translateX(-100%); }
-		50% { transform: translateX(200%); }
-		100% { transform: translateX(-100%); }
-	}
-
-	/* ── Deep Dive Error ── */
-	.dd-error-state {
-		background: var(--bg-raised);
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 1.5rem;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-
-	.dd-error-msg {
-		font-size: 0.82rem;
-		color: var(--red);
-	}
-
 	/* ── Comments ── */
 	.comments-loading {
 		display: flex;
@@ -1207,6 +1261,7 @@
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		background: var(--bg-card);
+		overflow: hidden;
 	}
 
 	.comment-header {
@@ -1244,5 +1299,23 @@
 		color: var(--text-dim);
 		text-align: center;
 		padding: 1rem;
+	}
+
+	/* ── Mobile tweaks ── */
+	@media (max-width: 600px) {
+		.card {
+			padding: 1rem;
+		}
+		.issue-header h1 {
+			font-size: 1.1rem;
+			min-width: 150px;
+		}
+		.issue-number {
+			display: none;
+		}
+		.dd-loading-steps {
+			flex-direction: column;
+			gap: 0.4rem;
+		}
 	}
 </style>

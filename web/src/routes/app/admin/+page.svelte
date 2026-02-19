@@ -44,6 +44,31 @@
 			indexing = false;
 		}
 	}
+
+	function timeSince(dateStr: string): string {
+		const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+		if (seconds < 60) return `${seconds}s ago`;
+		const minutes = Math.floor(seconds / 60);
+		if (minutes < 60) return `${minutes}m ago`;
+		const hours = Math.floor(minutes / 60);
+		if (hours < 24) return `${hours}h ago`;
+		const days = Math.floor(hours / 24);
+		return `${days}d ago`;
+	}
+
+	function statusColor(status: string): string {
+		if (status === 'running') return '#fbbf24';
+		if (status === 'completed') return '#4ade80';
+		if (status === 'failed') return '#f87171';
+		return 'var(--text-dim)';
+	}
+
+	function statusBg(status: string): string {
+		if (status === 'running') return 'rgba(251, 191, 36, 0.1)';
+		if (status === 'completed') return 'rgba(74, 222, 128, 0.1)';
+		if (status === 'failed') return 'rgba(248, 113, 113, 0.1)';
+		return 'rgba(255,255,255,0.05)';
+	}
 </script>
 
 <div class="admin-page">
@@ -102,16 +127,30 @@
 
 		{#if jobs?.length}
 			<div class="recent-jobs">
-				<h2>recent jobs</h2>
-				{#each jobs.slice(0, 3) as job}
-					<div class="job-row">
-						<span class="job-type">{job.type}</span>
-						<span class="job-status" class:running={job.status === 'running'} class:completed={job.status === 'completed'} class:failed={job.status === 'failed'}>
-							<span class="job-dot"></span>{job.status}
-						</span>
-						<span class="job-progress">{job.progress}</span>
-					</div>
-				{/each}
+				<div class="rj-header">
+					<h2>recent jobs</h2>
+					<a href="/app/admin/jobs" class="rj-view-all">view all &rarr;</a>
+				</div>
+				<div class="rj-list">
+					{#each jobs.slice(0, 5) as job}
+						<div class="rj-card" style="border-left: 3px solid {statusColor(job.status)}">
+							<div class="rj-top">
+								<span class="rj-type">{job.type}</span>
+								<span class="rj-status" style="color: {statusColor(job.status)}; background: {statusBg(job.status)}">
+									{#if job.status === 'running'}<span class="rj-pulse"></span>{/if}
+									{job.status}
+								</span>
+							</div>
+							<div class="rj-details">
+								<span class="rj-progress">{job.progress}</span>
+								<span class="rj-time">{timeSince(job.started_at)}</span>
+							</div>
+							{#if job.error}
+								<div class="rj-error">{job.error}</div>
+							{/if}
+						</div>
+					{/each}
+				</div>
 			</div>
 		{/if}
 	{/if}
@@ -161,6 +200,15 @@
 		margin-bottom: 2rem;
 	}
 
+	@media (max-width: 600px) {
+		.stat-grid {
+			grid-template-columns: 1fr;
+		}
+		.nav-grid {
+			grid-template-columns: 1fr !important;
+		}
+	}
+
 	.stat-card {
 		background: var(--bg-raised);
 		border: 1px solid var(--border);
@@ -186,7 +234,7 @@
 
 	.actions { margin-bottom: 2rem; }
 
-	.actions h2, .recent-jobs h2 {
+	.actions h2 {
 		font-size: 0.85rem;
 		color: var(--text-muted);
 		text-transform: uppercase;
@@ -197,6 +245,7 @@
 	.action-grid {
 		display: flex;
 		gap: 0.75rem;
+		flex-wrap: wrap;
 	}
 
 	.action-btn {
@@ -254,50 +303,108 @@
 		color: var(--text-muted);
 	}
 
-	.recent-jobs { margin-top: 1.5rem; }
+	/* ── Recent Jobs ── */
+	.recent-jobs { margin-top: 0.5rem; }
 
-	.job-row {
+	.rj-header {
 		display: flex;
 		align-items: center;
-		gap: 1rem;
-		padding: 0.5rem 0;
-		border-bottom: 1px solid var(--border);
+		justify-content: space-between;
+		margin-bottom: 0.75rem;
+	}
+
+	.rj-header h2 {
 		font-size: 0.85rem;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
-	.job-type {
-		color: var(--text);
-		font-weight: 500;
-		min-width: 60px;
-	}
-
-	.job-status {
+	.rj-view-all {
 		font-size: 0.75rem;
+		color: var(--amber);
+		text-decoration: none;
+		transition: color 0.15s;
+	}
+
+	.rj-view-all:hover {
+		color: var(--amber-bright);
+	}
+
+	.rj-list {
 		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.rj-card {
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 0.75rem 1rem;
+	}
+
+	.rj-top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.35rem;
+	}
+
+	.rj-type {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--text-bright);
+	}
+
+	.rj-status {
+		font-size: 0.7rem;
+		padding: 0.1rem 0.5rem;
+		border-radius: 99px;
+		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
+		font-weight: 500;
 	}
-	.job-dot {
-		width: 6px;
-		height: 6px;
+
+	.rj-pulse {
+		width: 5px;
+		height: 5px;
 		border-radius: 50%;
-		background: var(--text-dim);
+		background: currentColor;
+		animation: pulse-dot 1.5s ease-in-out infinite;
 	}
-	.job-status.running { color: var(--amber); }
-	.job-status.running .job-dot { background: var(--amber); animation: pulse-dot 1.5s ease-in-out infinite; }
-	.job-status.completed { color: var(--green); }
-	.job-status.completed .job-dot { background: var(--green); }
-	.job-status.failed { color: var(--red); }
-	.job-status.failed .job-dot { background: var(--red); }
 
 	@keyframes pulse-dot {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.3; }
 	}
 
-	.job-progress {
-		color: var(--text-muted);
+	.rj-details {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.rj-progress {
 		font-size: 0.75rem;
-		margin-left: auto;
+		color: var(--text-muted);
+	}
+
+	.rj-time {
+		font-size: 0.7rem;
+		color: var(--text-dim);
+	}
+
+	.rj-error {
+		margin-top: 0.4rem;
+		font-size: 0.75rem;
+		color: var(--red);
+		padding: 0.35rem 0.5rem;
+		background: rgba(248, 113, 113, 0.05);
+		border-radius: 4px;
+		border: 1px solid rgba(248, 113, 113, 0.15);
 	}
 </style>
