@@ -1,0 +1,28 @@
+[package]
+name = "illuminate-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MCP server for illuminate — exposes graph memory to Claude and other LLMs"
+
+[lib]
+name = "illuminate_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "illuminate-mcp"
+path = "src/main.rs"
+
+[dependencies]
+illuminate = { path = "../illuminate-core", version = "0.8.0" }
+illuminate-embed = { path = "../illuminate-embed", version = "0.8.0" }
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+dotenvy = "0.15"
+
+[dev-dependencies]
+tempfile = "3"

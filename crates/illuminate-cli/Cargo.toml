@@ -1,0 +1,23 @@
+[package]
+name = "illuminate-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI for illuminate — local-first context graph engine"
+
+[[bin]]
+name = "illuminate"
+path = "src/main.rs"
+
+[dependencies]
+illuminate = { version = "0.8.0", path = "../illuminate-core" }
+illuminate-extract = { version = "0.8.0", path = "../illuminate-extract" }
+illuminate-mcp = { version = "0.8.0", path = "../illuminate-mcp" }
+illuminate-embed = { version = "0.8.0", path = "../illuminate-embed" }
+clap = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+colored = "3"
+dotenvy = "0.15"

@@ -1,0 +1,39 @@
+[package]
+name = "illuminate-extract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Extraction pipeline for illuminate — NER, relations, temporal parsing"
+exclude = [".fastembed_cache/", "models/"]
+
+[dependencies]
+chrono = { workspace = true }
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+indicatif = "0.17"
+dirs = "6"
+toml = { workspace = true }
+gline-rs = { workspace = true }
+ort = { workspace = true }
+orp = "0.9"
+composable = "0.9"
+ndarray = { workspace = true }
+tokenizers = "0.22"
+fastembed = { workspace = true }
+half = { workspace = true }
+cloakpipe-core = { version = "0.8", optional = true }
+anyhow = { version = "1", optional = true }
+
+[features]
+default = []
+cloakpipe = ["dep:cloakpipe-core", "dep:anyhow"]
+
+[dev-dependencies]
+tempfile = "3"
+sha2 = "0.10"
+dirs = "6"
