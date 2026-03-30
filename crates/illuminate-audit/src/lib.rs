@@ -249,7 +249,7 @@ fn extract_plan_entities(plan_text: &str, graph: &Graph) -> Vec<PlanEntity> {
 
 static TECH_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"\b(?:Redis|Memcached|PostgreSQL?|MongoDB|MySQL|SQLite|Kafka|RabbitMQ|gRPC|REST|GraphQL|Docker|Kubernetes|React|Vue|Angular|Express|Django|Flask|Spring|Tokio|Actix)\b"
+        r"(?i)\b(?:Redis|Memcached|PostgreSQL?|MongoDB|MySQL|SQLite|Kafka|RabbitMQ|gRPC|REST|GraphQL|Docker|Kubernetes|React|Vue|Angular|Express|Django|Flask|Spring|Tokio|Actix)\b"
     ).unwrap()
 });
 
