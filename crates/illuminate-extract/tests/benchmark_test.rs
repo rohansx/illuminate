@@ -269,7 +269,7 @@ fn test_f1_high_precision_low_recall() {
 /// This test is ignored by default because it requires ONNX model files.
 /// To run: download models, then `cargo test --test benchmark_test -- --ignored`
 ///
-/// Set `CTXGRAPH_MODELS_DIR` to point to your models directory.
+/// Set `ILLUMINATE_MODELS_DIR` to point to your models directory.
 #[test]
 #[ignore]
 fn test_extraction_f1_against_benchmark() {
@@ -277,7 +277,7 @@ fn test_extraction_f1_against_benchmark() {
     use illuminate_extract::pipeline::ExtractionPipeline;
     use illuminate_extract::schema::ExtractionSchema;
 
-    let models_dir = std::env::var("CTXGRAPH_MODELS_DIR").unwrap_or_else(|_| {
+    let models_dir = std::env::var("ILLUMINATE_MODELS_DIR").unwrap_or_else(|_| {
         let home = dirs::cache_dir().expect("no cache dir");
         home.join("illuminate").join("models").display().to_string()
     });
@@ -390,7 +390,7 @@ fn debug_extraction_for_episodes() {
     use illuminate_extract::pipeline::ExtractionPipeline;
     use illuminate_extract::schema::ExtractionSchema;
 
-    let models_dir = std::env::var("CTXGRAPH_MODELS_DIR").unwrap_or_else(|_| {
+    let models_dir = std::env::var("ILLUMINATE_MODELS_DIR").unwrap_or_else(|_| {
         let home = dirs::cache_dir().expect("no cache dir");
         home.join("illuminate").join("models").display().to_string()
     });

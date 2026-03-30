@@ -31,7 +31,7 @@ pub fn show(id: String) -> illuminate::Result<()> {
     let entity = graph.get_entity(&id)?.or(graph.get_entity_by_name(&id)?);
 
     let Some(entity) = entity else {
-        return Err(illuminate::CtxGraphError::NotFound(format!("entity '{id}'")));
+        return Err(illuminate::IlluminateError::NotFound(format!("entity '{id}'")));
     };
 
     let context = graph.get_entity_context(&entity.id)?;

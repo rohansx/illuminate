@@ -32,7 +32,7 @@ pub struct ExtractedRelation {
 /// 2. **Model-based**: GLiNER multitask ONNX model for typed relation extraction.
 /// 3. **Heuristic**: Pattern-based keyword + proximity extraction (~0.51 F1).
 ///
-/// Experimental (opt-in via `CTXGRAPH_RELEX=1`):
+/// Experimental (opt-in via `ILLUMINATE_RELEX=1`):
 /// - **Relex**: gliner-relex ONNX model (joint NER + relation extraction).
 pub enum RelEngine {
     /// GLiREL zero-shot relation extraction (highest quality).
@@ -180,7 +180,7 @@ impl RelEngine {
     /// extraction when GLiREL is not loaded.
     ///
     /// Environment variables:
-    /// - `CTXGRAPH_RELEX=1`: Enable experimental relex ONNX tier
+    /// - `ILLUMINATE_RELEX=1`: Enable experimental relex ONNX tier
     pub fn extract(
         &self,
         text: &str,
@@ -199,8 +199,8 @@ impl RelEngine {
             relations = glirel_rels;
         }
 
-        // Relex ONNX model (experimental — opt-in via CTXGRAPH_RELEX=1)
-        if std::env::var("CTXGRAPH_RELEX").is_ok() {
+        // Relex ONNX model (experimental — opt-in via ILLUMINATE_RELEX=1)
+        if std::env::var("ILLUMINATE_RELEX").is_ok() {
             let relex = RELEX_ENGINE.get_or_init(|| {
                 let mgr = crate::model_manager::ModelManager::new().ok()?;
                 let (model_path, tok_path) = mgr.find_relex_model()?;

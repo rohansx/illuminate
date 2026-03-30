@@ -3,6 +3,6 @@ pub mod graph;
 pub mod storage;
 pub mod types;
 
-pub use error::{CtxGraphError, Result};
+pub use error::{IlluminateError, Result};
 pub use graph::Graph;
 pub use types::*;

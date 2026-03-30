@@ -1,6 +1,6 @@
 //! Test extraction on real-world tech data: git commits, Sentry errors, PRs, Slack, ADRs.
 //!
-//! Run: OPENROUTER_API_KEY=... CTXGRAPH_MODELS_DIR=~/.cache/illuminate/models \
+//! Run: OPENROUTER_API_KEY=... ILLUMINATE_MODELS_DIR=~/.cache/illuminate/models \
 //!      cargo test --test real_world_test -- --ignored --nocapture
 
 use serde::Deserialize;
@@ -73,7 +73,7 @@ fn test_real_world_tech_extraction() {
     use illuminate_extract::pipeline::ExtractionPipeline;
     use illuminate_extract::schema::ExtractionSchema;
 
-    let models_dir = std::env::var("CTXGRAPH_MODELS_DIR").unwrap_or_else(|_| {
+    let models_dir = std::env::var("ILLUMINATE_MODELS_DIR").unwrap_or_else(|_| {
         dirs::cache_dir()
             .unwrap()
             .join("illuminate/models")

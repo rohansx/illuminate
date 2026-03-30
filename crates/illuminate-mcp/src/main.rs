@@ -5,11 +5,11 @@ use illuminate::Graph;
 use illuminate_embed::EmbedEngine;
 use illuminate_mcp::McpServer;
 
-/// Parse `--db <path>` from argv or fall back to CTXGRAPH_DB env var.
+/// Parse `--db <path>` from argv or fall back to ILLUMINATE_DB env var.
 /// Default: `.illuminate/graph.db` relative to the current directory.
 fn resolve_db_path() -> PathBuf {
     // Check env var first
-    if let Ok(val) = env::var("CTXGRAPH_DB") {
+    if let Ok(val) = env::var("ILLUMINATE_DB") {
         return PathBuf::from(val);
     }
 
@@ -30,11 +30,11 @@ fn resolve_db_path() -> PathBuf {
 }
 
 /// Locate models directory by checking (in order):
-/// 1. `CTXGRAPH_MODELS_DIR` env var
+/// 1. `ILLUMINATE_MODELS_DIR` env var
 /// 2. `~/.cache/illuminate/models`
 /// 3. `.illuminate/models` next to the database
 fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
-    if let Ok(val) = env::var("CTXGRAPH_MODELS_DIR") {
+    if let Ok(val) = env::var("ILLUMINATE_MODELS_DIR") {
         let p = PathBuf::from(val);
         if p.is_dir() {
             return Some(p);
@@ -97,9 +97,9 @@ async fn main() {
         }
     }
 
-    // If CTXGRAPH_NO_EMBED=1, skip embed engine (useful for testing/CI)
-    let embed = if env::var("CTXGRAPH_NO_EMBED").as_deref() == Ok("1") {
-        eprintln!("illuminate-mcp: embedding disabled (CTXGRAPH_NO_EMBED=1)");
+    // If ILLUMINATE_NO_EMBED=1, skip embed engine (useful for testing/CI)
+    let embed = if env::var("ILLUMINATE_NO_EMBED").as_deref() == Ok("1") {
+        eprintln!("illuminate-mcp: embedding disabled (ILLUMINATE_NO_EMBED=1)");
         None
     } else {
         eprintln!("illuminate-mcp: loading embedding model...");

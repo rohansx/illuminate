@@ -15,7 +15,13 @@ illuminate = { version = "0.8.0", path = "../illuminate-core" }
 illuminate-extract = { version = "0.8.0", path = "../illuminate-extract" }
 illuminate-mcp = { version = "0.8.0", path = "../illuminate-mcp" }
 illuminate-embed = { version = "0.8.0", path = "../illuminate-embed" }
+illuminate-watch = { version = "0.8.0", path = "../illuminate-watch" }
+illuminate-index = { version = "0.8.0", path = "../illuminate-index" }
+illuminate-audit = { version = "0.8.0", path = "../illuminate-audit" }
+illuminate-reflect = { version = "0.8.0", path = "../illuminate-reflect" }
+illuminate-route = { version = "0.8.0", path = "../illuminate-route" }
 clap = { workspace = true }
+rusqlite = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

@@ -1,0 +1,20 @@
+[package]
+name = "illuminate-watch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Auto-ingestion daemon for illuminate — git, GitHub PRs, webhooks"
+
+[dependencies]
+illuminate = { version = "0.8.0", path = "../illuminate-core" }
+illuminate-extract = { version = "0.8.0", path = "../illuminate-extract" }
+illuminate-embed = { version = "0.8.0", path = "../illuminate-embed" }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+uuid = { workspace = true }

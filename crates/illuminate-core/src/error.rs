@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum CtxGraphError {
+pub enum IlluminateError {
     #[error("storage error: {0}")]
     Storage(#[from] rusqlite::Error),
 
@@ -30,4 +30,4 @@ pub enum CtxGraphError {
     Io(#[from] std::io::Error),
 }
 
-pub type Result<T> = std::result::Result<T, CtxGraphError>;
+pub type Result<T> = std::result::Result<T, IlluminateError>;

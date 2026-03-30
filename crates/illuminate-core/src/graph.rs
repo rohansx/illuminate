@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::error::{CtxGraphError, Result};
+use crate::error::{IlluminateError, Result};
 use crate::storage::Storage;
 use crate::types::*;
 
@@ -22,7 +22,7 @@ impl Graph {
     /// Open an existing illuminate database.
     pub fn open(db_path: &Path) -> Result<Self> {
         if !db_path.exists() {
-            return Err(CtxGraphError::NotFound(format!(
+            return Err(IlluminateError::NotFound(format!(
                 "database not found at {}. Run `illuminate init` first.",
                 db_path.display()
             )));
@@ -43,7 +43,7 @@ impl Graph {
         let db_path = illuminate_dir.join("graph.db");
 
         if db_path.exists() {
-            return Err(CtxGraphError::AlreadyExists(format!(
+            return Err(IlluminateError::AlreadyExists(format!(
                 "illuminate already initialized at {}",
                 illuminate_dir.display()
             )));
@@ -98,7 +98,7 @@ impl Graph {
     #[cfg(feature = "extract")]
     pub fn load_extraction_pipeline(&mut self, models_dir: &Path) -> Result<()> {
         let pipeline = ExtractionPipeline::with_defaults(models_dir)
-            .map_err(|e| CtxGraphError::Extraction(e.to_string()))?;
+            .map_err(|e| IlluminateError::Extraction(e.to_string()))?;
         self.pipeline = Some(pipeline);
         Ok(())
     }
@@ -112,7 +112,7 @@ impl Graph {
         confidence_threshold: f64,
     ) -> Result<()> {
         let pipeline = ExtractionPipeline::new(schema, models_dir, confidence_threshold)
-            .map_err(|e| CtxGraphError::Extraction(e.to_string()))?;
+            .map_err(|e| IlluminateError::Extraction(e.to_string()))?;
         self.pipeline = Some(pipeline);
         Ok(())
     }
@@ -127,7 +127,7 @@ impl Graph {
         config_path: &Path,
     ) -> Result<()> {
         let config_content = std::fs::read_to_string(config_path).map_err(|e| {
-            CtxGraphError::Extraction(format!(
+            IlluminateError::Extraction(format!(
                 "failed to read {}: {e}",
                 config_path.display()
             ))
@@ -135,12 +135,12 @@ impl Graph {
 
         // Parse the full TOML
         let toml_value: toml::Value = toml::from_str(&config_content)
-            .map_err(|e| CtxGraphError::Extraction(format!("TOML parse error: {e}")))?;
+            .map_err(|e| IlluminateError::Extraction(format!("TOML parse error: {e}")))?;
 
         // Load schema section (or use defaults)
         let schema = if toml_value.get("schema").is_some() {
             ExtractionSchema::from_toml(&config_content)
-                .map_err(|e| CtxGraphError::Extraction(e.to_string()))?
+                .map_err(|e| IlluminateError::Extraction(e.to_string()))?
         } else {
             ExtractionSchema::default()
         };
@@ -168,7 +168,7 @@ impl Graph {
             confidence,
             &llm_config,
         )
-        .map_err(|e| CtxGraphError::Extraction(e.to_string()))?;
+        .map_err(|e| IlluminateError::Extraction(e.to_string()))?;
 
         self.pipeline = Some(pipeline);
         Ok(())
@@ -210,7 +210,7 @@ impl Graph {
     ) -> Result<EpisodeResult> {
         let result = pipeline
             .extract(&episode.content, episode.recorded_at)
-            .map_err(|e| CtxGraphError::Extraction(e.to_string()))?;
+            .map_err(|e| IlluminateError::Extraction(e.to_string()))?;
 
         let mut entities_extracted = 0;
         let mut edges_created = 0;
@@ -485,7 +485,7 @@ impl Graph {
         let entity = self
             .storage
             .get_entity(entity_id)?
-            .ok_or_else(|| CtxGraphError::NotFound(format!("entity {entity_id}")))?;
+            .ok_or_else(|| IlluminateError::NotFound(format!("entity {entity_id}")))?;
 
         let edges = self.storage.get_current_edges_for_entity(entity_id)?;
 

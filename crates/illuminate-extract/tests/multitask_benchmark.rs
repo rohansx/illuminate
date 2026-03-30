@@ -1,7 +1,7 @@
 //! Benchmark the GLiNER multitask model (gline-rs) for joint NER + relation extraction.
 //!
 //! This tests the ModelBasedRelEngine directly against both tech and cross-domain episodes.
-//! Run: CTXGRAPH_MODELS_DIR=~/.cache/illuminate/models cargo test --test multitask_benchmark -- --ignored --nocapture
+//! Run: ILLUMINATE_MODELS_DIR=~/.cache/illuminate/models cargo test --test multitask_benchmark -- --ignored --nocapture
 
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -103,7 +103,7 @@ fn test_multitask_tech_benchmark() {
     use illuminate_extract::rel::ModelBasedRelEngine;
     use illuminate_extract::schema::ExtractionSchema;
 
-    let models_dir = std::env::var("CTXGRAPH_MODELS_DIR").unwrap_or_else(|_| {
+    let models_dir = std::env::var("ILLUMINATE_MODELS_DIR").unwrap_or_else(|_| {
         dirs::cache_dir()
             .expect("no cache dir")
             .join("illuminate/models")
@@ -205,7 +205,7 @@ fn test_multitask_cross_domain_benchmark() {
     use illuminate_extract::rel::ModelBasedRelEngine;
     use illuminate_extract::schema::ExtractionSchema;
 
-    let models_dir = std::env::var("CTXGRAPH_MODELS_DIR").unwrap_or_else(|_| {
+    let models_dir = std::env::var("ILLUMINATE_MODELS_DIR").unwrap_or_else(|_| {
         dirs::cache_dir()
             .expect("no cache dir")
             .join("illuminate/models")

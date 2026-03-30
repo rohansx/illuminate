@@ -4,7 +4,7 @@
 //! produce low-confidence results. Activated by setting `OPENROUTER_API_KEY`.
 //!
 //! Default model: `google/gemini-2.0-flash-001` (~$0.0003/episode).
-//! Override with `CTXGRAPH_LLM_MODEL`.
+//! Override with `ILLUMINATE_LLM_MODEL`.
 
 use serde::{Deserialize, Serialize};
 
@@ -22,9 +22,9 @@ const DEFAULT_URL: &str = "https://api.openai.com/v1/chat/completions";
 /// any text is sent to the LLM, then entity names are mapped back after extraction.
 ///
 /// Configured via environment variables or illuminate.toml:
-/// - `CTXGRAPH_LLM_URL`: API base URL (default: localhost:4000 for nvidia-litellm-router)
-/// - `CTXGRAPH_LLM_KEY`: API key (or `OPENROUTER_API_KEY` for backward compat)
-/// - `CTXGRAPH_LLM_MODEL`: Model name (default: nvidia-auto)
+/// - `ILLUMINATE_LLM_URL`: API base URL (default: localhost:4000 for nvidia-litellm-router)
+/// - `ILLUMINATE_LLM_KEY`: API key (or `OPENROUTER_API_KEY` for backward compat)
+/// - `ILLUMINATE_LLM_MODEL`: Model name (default: nvidia-auto)
 pub struct LlmExtractor {
     client: reqwest::blocking::Client,
     api_key: String,
@@ -214,14 +214,14 @@ impl LlmExtractor {
     /// Create a new LLM extractor from environment variables.
     ///
     /// Tries in order:
-    /// 1. `CTXGRAPH_LLM_KEY` + `CTXGRAPH_LLM_URL` (explicit config)
+    /// 1. `ILLUMINATE_LLM_KEY` + `ILLUMINATE_LLM_URL` (explicit config)
     /// 2. `OPENAI_API_KEY` (OpenAI direct — default, best quality)
     /// 3. `ANTHROPIC_API_KEY` (Anthropic direct)
     /// 4. `OPENROUTER_API_KEY` (OpenRouter — multi-provider)
     ///
     /// Returns `None` if no API key is found.
     pub fn from_env() -> Option<Self> {
-        let (api_key, default_url) = if let Ok(key) = std::env::var("CTXGRAPH_LLM_KEY") {
+        let (api_key, default_url) = if let Ok(key) = std::env::var("ILLUMINATE_LLM_KEY") {
             if key.is_empty() {
                 return None;
             }
@@ -254,9 +254,9 @@ impl LlmExtractor {
             return None;
         };
 
-        let url = std::env::var("CTXGRAPH_LLM_URL").unwrap_or(default_url);
+        let url = std::env::var("ILLUMINATE_LLM_URL").unwrap_or(default_url);
         let model =
-            std::env::var("CTXGRAPH_LLM_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+            std::env::var("ILLUMINATE_LLM_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(60))

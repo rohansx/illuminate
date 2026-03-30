@@ -29,7 +29,7 @@ pub fn show(id: String) -> illuminate::Result<()> {
 
     let episode = graph.get_episode(&id)?;
     let Some(episode) = episode else {
-        return Err(illuminate::CtxGraphError::NotFound(format!("episode '{id}'")));
+        return Err(illuminate::IlluminateError::NotFound(format!("episode '{id}'")));
     };
 
     display::print_episode(&episode, None);

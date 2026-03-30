@@ -5,7 +5,7 @@ use illuminate_extract::model_manager::{
 
 pub fn download() -> illuminate::Result<()> {
     let manager = ModelManager::new().map_err(|e| {
-        illuminate::CtxGraphError::Extraction(format!("failed to initialize model manager: {e}"))
+        illuminate::IlluminateError::Extraction(format!("failed to initialize model manager: {e}"))
     })?;
 
     println!(
@@ -34,7 +34,7 @@ pub fn download() -> illuminate::Result<()> {
         } else {
             println!("  {label}: downloading...");
             manager.get_or_download(spec).map_err(|e| {
-                illuminate::CtxGraphError::Extraction(format!("download failed for {label}: {e}"))
+                illuminate::IlluminateError::Extraction(format!("download failed for {label}: {e}"))
             })?;
             println!("  {label}: done");
         }

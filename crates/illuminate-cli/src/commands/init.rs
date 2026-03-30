@@ -3,7 +3,7 @@ use std::env;
 use illuminate::Graph;
 
 pub fn run(name: Option<String>) -> illuminate::Result<()> {
-    let dir = env::current_dir().map_err(illuminate::CtxGraphError::Io)?;
+    let dir = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
     let _graph = Graph::init(&dir)?;
 
     let project_name = name.unwrap_or_else(|| {

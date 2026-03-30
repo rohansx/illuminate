@@ -1,0 +1,15 @@
+[package]
+name = "illuminate-reflect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reflexion loop for illuminate — capture agent failures as lessons"
+
+[dependencies]
+illuminate = { version = "0.8.0", path = "../illuminate-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }

@@ -3,7 +3,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 
-use crate::error::{CtxGraphError, Result};
+use crate::error::{IlluminateError, Result};
 use crate::storage::migrations::run_migrations;
 use crate::types::*;
 
@@ -324,7 +324,7 @@ impl Storage {
         )?;
 
         if changed == 0 {
-            return Err(CtxGraphError::NotFound(format!(
+            return Err(IlluminateError::NotFound(format!(
                 "edge {edge_id} not found or already invalidated"
             )));
         }

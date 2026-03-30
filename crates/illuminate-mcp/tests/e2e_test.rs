@@ -14,7 +14,7 @@ impl McpProcess {
         let mut child = Command::new(binary)
             .arg("--db")
             .arg(db_path)
-            .env("CTXGRAPH_NO_EMBED", "1")
+            .env("ILLUMINATE_NO_EMBED", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

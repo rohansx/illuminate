@@ -10,7 +10,7 @@ fn resolve_db_path(db: Option<String>) -> PathBuf {
     if let Some(p) = db {
         return PathBuf::from(p);
     }
-    if let Ok(val) = env::var("CTXGRAPH_DB") {
+    if let Ok(val) = env::var("ILLUMINATE_DB") {
         return PathBuf::from(val);
     }
     PathBuf::from(".illuminate/graph.db")
@@ -18,7 +18,7 @@ fn resolve_db_path(db: Option<String>) -> PathBuf {
 
 /// Locate models directory.
 fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
-    if let Ok(val) = env::var("CTXGRAPH_MODELS_DIR") {
+    if let Ok(val) = env::var("ILLUMINATE_MODELS_DIR") {
         let p = PathBuf::from(val);
         if p.is_dir() {
             return Some(p);
@@ -43,7 +43,7 @@ fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
 }
 
 pub fn start(db: Option<String>) -> illuminate::Result<()> {
-    let rt = tokio::runtime::Runtime::new().map_err(illuminate::CtxGraphError::Io)?;
+    let rt = tokio::runtime::Runtime::new().map_err(illuminate::IlluminateError::Io)?;
     rt.block_on(async {
         let db_path = resolve_db_path(db);
         eprintln!("illuminate mcp: using database at {}", db_path.display());
@@ -65,8 +65,8 @@ pub fn start(db: Option<String>) -> illuminate::Result<()> {
         }
 
         // Load embed engine
-        let embed = if env::var("CTXGRAPH_NO_EMBED").as_deref() == Ok("1") {
-            eprintln!("illuminate mcp: embedding disabled (CTXGRAPH_NO_EMBED=1)");
+        let embed = if env::var("ILLUMINATE_NO_EMBED").as_deref() == Ok("1") {
+            eprintln!("illuminate mcp: embedding disabled (ILLUMINATE_NO_EMBED=1)");
             None
         } else {
             eprintln!("illuminate mcp: loading embedding model...");

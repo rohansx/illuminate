@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod decisions;
 pub mod entities;
 pub mod init;
@@ -5,7 +6,9 @@ pub mod log;
 pub mod mcp;
 pub mod models;
 pub mod query;
+pub mod reflect;
 pub mod stats;
+pub mod watch;
 
 use std::env;
 use std::path::PathBuf;
@@ -51,12 +54,12 @@ pub fn open_graph() -> illuminate::Result<Graph> {
 }
 
 /// Locate models directory by checking (in order):
-/// 1. `CTXGRAPH_MODELS_DIR` env var
+/// 1. `ILLUMINATE_MODELS_DIR` env var
 /// 2. `~/.cache/illuminate/models`
 /// 3. `.illuminate/models` next to the database
 fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
     // 1. Env var override
-    if let Ok(val) = env::var("CTXGRAPH_MODELS_DIR") {
+    if let Ok(val) = env::var("ILLUMINATE_MODELS_DIR") {
         let p = PathBuf::from(val);
         if p.is_dir() {
             return Some(p);
@@ -83,7 +86,7 @@ fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
 }
 
 fn find_db() -> illuminate::Result<PathBuf> {
-    let mut dir = env::current_dir().map_err(illuminate::CtxGraphError::Io)?;
+    let mut dir = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
 
     loop {
         let candidate = dir.join(".illuminate").join("graph.db");
@@ -95,7 +98,7 @@ fn find_db() -> illuminate::Result<PathBuf> {
         }
     }
 
-    Err(illuminate::CtxGraphError::NotFound(
+    Err(illuminate::IlluminateError::NotFound(
         "no .illuminate/ found in current or parent directories. Run `illuminate init` first."
             .to_string(),
     ))

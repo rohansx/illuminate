@@ -224,7 +224,7 @@ impl ToolContext {
             Some(ref e) => e,
             None => {
                 return Ok(
-                    json!({"error": "embedding not available, start with CTXGRAPH_NO_EMBED unset"}),
+                    json!({"error": "embedding not available, start with ILLUMINATE_NO_EMBED unset"}),
                 );
             }
         };

@@ -1,0 +1,16 @@
+[package]
+name = "illuminate-route"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Subject-to-file routing for illuminate — tri-modal search and reading plans"
+
+[dependencies]
+illuminate = { version = "0.8.0", path = "../illuminate-core" }
+illuminate-index = { version = "0.8.0", path = "../illuminate-index" }
+illuminate-embed = { version = "0.8.0", path = "../illuminate-embed" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }

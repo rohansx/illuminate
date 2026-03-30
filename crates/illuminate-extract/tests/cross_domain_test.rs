@@ -92,7 +92,7 @@ fn load_cross_domain_episodes() -> Vec<CrossDomainEpisode> {
 /// and government episodes to validate cross-domain generalization.
 ///
 /// Run with:
-///   CTXGRAPH_MODELS_DIR=~/.cache/illuminate/models \
+///   ILLUMINATE_MODELS_DIR=~/.cache/illuminate/models \
 ///     cargo test --package illuminate-extract --test cross_domain_test -- --ignored --nocapture
 #[test]
 #[ignore]
@@ -101,7 +101,7 @@ fn test_cross_domain_extraction() {
     use illuminate_extract::pipeline::ExtractionPipeline;
     use illuminate_extract::schema::ExtractionSchema;
 
-    let models_dir = std::env::var("CTXGRAPH_MODELS_DIR").unwrap_or_else(|_| {
+    let models_dir = std::env::var("ILLUMINATE_MODELS_DIR").unwrap_or_else(|_| {
         let home = dirs::cache_dir().expect("no cache dir");
         home.join("illuminate").join("models").display().to_string()
     });

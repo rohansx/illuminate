@@ -5,7 +5,7 @@ use std::path::Path;
 #[test]
 #[ignore]
 fn test_glirel_standalone_quality() {
-    let dir = std::env::var("CTXGRAPH_MODELS_DIR").unwrap_or_else(|_| {
+    let dir = std::env::var("ILLUMINATE_MODELS_DIR").unwrap_or_else(|_| {
         dirs::cache_dir()
             .unwrap()
             .join("illuminate/models")

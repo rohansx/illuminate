@@ -78,13 +78,75 @@ enum Commands {
         #[command(subcommand)]
         action: McpAction,
     },
+
+    /// Start the MCP server (alias for `mcp start`)
+    Serve {
+        /// Path to the graph database
+        #[arg(long)]
+        db: Option<String>,
+    },
+
+    /// Watch git history and auto-ingest decisions
+    Watch {
+        /// Watch git commits
+        #[arg(long)]
+        git: bool,
+
+        /// Number of commits to backfill
+        #[arg(long, default_value = "100")]
+        backfill: usize,
+
+        /// Backfill since date (ISO-8601)
+        #[arg(long)]
+        backfill_since: Option<String>,
+
+        /// Only process commits touching this path
+        #[arg(long)]
+        path: Option<String>,
+
+        /// Minimum decision signal score (0.0-1.0)
+        #[arg(long, default_value = "0.3")]
+        threshold: f64,
+    },
+
+    /// Check a plan against the decision graph and policies
+    Audit {
+        /// Agent's proposed plan
+        plan: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Record an agent failure as a reflexion episode
+    Reflect {
+        /// What went wrong
+        failure: String,
+
+        /// Why it went wrong
+        #[arg(long)]
+        root_cause: Option<String>,
+
+        /// What to do instead
+        #[arg(long)]
+        fix: Option<String>,
+
+        /// Comma-separated affected file paths
+        #[arg(long)]
+        files: Option<String>,
+
+        /// Severity: low, medium, high, critical
+        #[arg(long)]
+        severity: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
 enum McpAction {
     /// Start the MCP server on stdio
     Start {
-        /// Path to the graph database (overrides CTXGRAPH_DB env var)
+        /// Path to the graph database (overrides ILLUMINATE_DB env var)
         #[arg(long)]
         db: Option<String>,
     },
@@ -174,6 +236,32 @@ fn main() {
         Commands::Mcp { action } => match action {
             McpAction::Start { db } => commands::mcp::start(db),
         },
+        Commands::Serve { db } => commands::mcp::start(db),
+        Commands::Watch {
+            git,
+            backfill,
+            backfill_since,
+            path,
+            threshold,
+        } => {
+            if !git {
+                eprintln!("error: specify --git to watch git history");
+                std::process::exit(1);
+            }
+            if let Some(since) = backfill_since {
+                commands::watch::run_git_since(&since, threshold)
+            } else {
+                commands::watch::run_git(backfill, path, threshold)
+            }
+        }
+        Commands::Audit { plan, json } => commands::audit::run(plan, json),
+        Commands::Reflect {
+            failure,
+            root_cause,
+            fix,
+            files,
+            severity,
+        } => commands::reflect::run(failure, root_cause, fix, files, severity),
     };
 
     if let Err(e) = result {
