@@ -3,17 +3,17 @@ use std::sync::{Arc, Mutex};
 
 use illuminate::{Episode, Graph};
 use illuminate_embed::EmbedEngine;
+use illuminate_audit::policy::IntentPolicy;
+use illuminate_reflect::Severity;
 use serde_json::{Value, json};
 
 pub struct ToolContext {
     pub graph: Arc<Mutex<Graph>>,
     pub embed: Option<Arc<EmbedEngine>>,
     /// In-memory embedding cache: episode_id → 384-dim vector.
-    ///
-    /// Populated lazily on the first `find_precedents` call, then kept warm.
-    /// Invalidated (new entry appended) when `add_episode` stores a new embedding
-    /// so subsequent searches never re-hit SQLite for already-loaded episodes.
     embedding_cache: Mutex<Option<HashMap<String, Vec<f32>>>>,
+    /// Intent policies loaded from illuminate.toml.
+    policies: Vec<IntentPolicy>,
 }
 
 impl ToolContext {
@@ -22,6 +22,16 @@ impl ToolContext {
             graph: Arc::new(Mutex::new(graph)),
             embed: embed.map(Arc::new),
             embedding_cache: Mutex::new(None),
+            policies: Vec::new(),
+        }
+    }
+
+    pub fn with_policies(graph: Graph, embed: Option<EmbedEngine>, policies: Vec<IntentPolicy>) -> Self {
+        Self {
+            graph: Arc::new(Mutex::new(graph)),
+            embed: embed.map(Arc::new),
+            embedding_cache: Mutex::new(None),
+            policies,
         }
     }
 
@@ -408,6 +418,215 @@ impl ToolContext {
             "edges": all_edges,
         }))
     }
+
+    // ── illuminate-specific tools ──
+
+    /// Tool: illuminate_audit
+    /// Cross-reference an agent's proposed plan against the decision graph and intent policies.
+    pub async fn illuminate_audit(&self, args: Value) -> Result<Value, String> {
+        let plan = args["plan"]
+            .as_str()
+            .ok_or("missing required field: plan")?
+            .to_string();
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+
+        // Build auditor with a clone-free approach: we need the graph for Auditor
+        // but it's behind a Mutex. Create a temporary in-memory graph for audit,
+        // or use the search API directly.
+        // For graph conflict detection, we search directly
+        let mut policy_violations = Vec::new();
+        let plan_lower = plan.to_lowercase();
+
+        // Check intent policies
+        for policy in &self.policies {
+            match policy {
+                IntentPolicy::MustUse { name, entity, reject, reason, severity } => {
+                    for rejected in reject {
+                        if plan_lower.contains(&rejected.to_lowercase()) {
+                            policy_violations.push(json!({
+                                "policy": name,
+                                "expected": entity,
+                                "found": rejected,
+                                "reason": reason,
+                                "severity": format!("{severity:?}").to_lowercase(),
+                            }));
+                        }
+                    }
+                }
+                IntentPolicy::Frozen { name, paths, reason, severity, expires } => {
+                    if let Some(exp) = expires {
+                        if chrono::Utc::now() > *exp { continue; }
+                    }
+                    for path in paths {
+                        let base = path.to_lowercase().replace("/**", "").replace("/*", "");
+                        if plan_lower.contains(&base) {
+                            policy_violations.push(json!({
+                                "policy": name,
+                                "frozen_path": path,
+                                "reason": reason,
+                                "severity": format!("{severity:?}").to_lowercase(),
+                            }));
+                        }
+                    }
+                }
+                IntentPolicy::RejectedPattern { name, pattern, reason, severity, .. } => {
+                    if plan_lower.contains(&pattern.to_lowercase()) {
+                        policy_violations.push(json!({
+                            "policy": name,
+                            "pattern": pattern,
+                            "reason": reason,
+                            "severity": format!("{severity:?}").to_lowercase(),
+                        }));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Search graph for decision conflicts
+        let mut decision_conflicts = Vec::new();
+        let search_results = graph.search(&plan, 20).map_err(|e| e.to_string())?;
+        for (episode, score) in &search_results {
+            let content_lower = episode.content.to_lowercase();
+            let has_rejection = ["rejected", "not ", "instead of", "over", "rather than", "avoid", "dropped"]
+                .iter()
+                .any(|kw| content_lower.contains(kw));
+
+            if has_rejection && *score > 0.0 {
+                decision_conflicts.push(json!({
+                    "id": episode.id,
+                    "content": episode.content,
+                    "source": episode.source,
+                    "recorded_at": episode.recorded_at.to_rfc3339(),
+                    "relevance_score": score,
+                }));
+            }
+        }
+
+        // Search reflexion episodes
+        let mut reflexions = Vec::new();
+        for (episode, _) in &search_results {
+            if episode.source.as_deref() == Some("reflexion") {
+                if let Some(meta) = &episode.metadata {
+                    if let Some(refl) = meta.get("reflexion") {
+                        reflexions.push(json!({
+                            "failure": refl.get("failure"),
+                            "root_cause": refl.get("root_cause"),
+                            "corrective_action": refl.get("corrective_action"),
+                            "severity": refl.get("severity"),
+                        }));
+                    }
+                }
+            }
+        }
+
+        let has_errors = !policy_violations.is_empty() || !decision_conflicts.is_empty();
+        let has_warnings = !reflexions.is_empty();
+        let status = if has_errors { "violation" } else if has_warnings { "warning" } else { "pass" };
+
+        Ok(json!({
+            "status": status,
+            "policy_violations": policy_violations,
+            "decision_conflicts": decision_conflicts,
+            "reflexions": reflexions,
+        }))
+    }
+
+    /// Tool: illuminate_reflect
+    /// Record a failure/lesson from the current agent session.
+    pub async fn illuminate_reflect(&self, args: Value) -> Result<Value, String> {
+        let failure = args["failure"]
+            .as_str()
+            .ok_or("missing required field: failure")?
+            .to_string();
+        let root_cause = args["root_cause"]
+            .as_str()
+            .ok_or("missing required field: root_cause")?
+            .to_string();
+        let corrective_action = args["corrective_action"]
+            .as_str()
+            .ok_or("missing required field: corrective_action")?
+            .to_string();
+
+        let files_affected: Vec<String> = args["files_affected"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        let severity = match args["severity"].as_str().unwrap_or("medium") {
+            "low" => Severity::Low,
+            "high" => Severity::High,
+            "critical" => Severity::Critical,
+            _ => Severity::Medium,
+        };
+
+        // Build the reflexion episode content and metadata
+        let content = format!(
+            "FAILURE: {failure}\nROOT CAUSE: {root_cause}\nCORRECTIVE ACTION: {corrective_action}"
+        );
+
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("reflexion".to_string(), json!({
+            "failure": failure,
+            "root_cause": root_cause,
+            "corrective_action": corrective_action,
+            "severity": severity,
+            "files_affected": files_affected,
+        }));
+
+        let episode = Episode {
+            id: uuid::Uuid::now_v7().to_string(),
+            content,
+            source: Some("reflexion".to_string()),
+            recorded_at: chrono::Utc::now(),
+            metadata: Some(Value::Object(metadata)),
+        };
+        let episode_id = episode.id.clone();
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        let result = graph.add_episode(episode).map_err(|e| e.to_string())?;
+
+        Ok(json!({
+            "episode_id": episode_id,
+            "entities_extracted": result.entities_extracted,
+            "edges_created": result.edges_created,
+            "message": "Reflexion recorded. Future audits will surface this lesson.",
+        }))
+    }
+
+    /// Tool: illuminate_route
+    /// Given a subject, return a ranked reading plan of decisions and files.
+    pub async fn illuminate_route(&self, args: Value) -> Result<Value, String> {
+        let subject = args["subject"]
+            .as_str()
+            .ok_or("missing required field: subject")?
+            .to_string();
+        let limit = args["limit"].as_u64().unwrap_or(10) as usize;
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        let embed_ref = self.embed.as_deref();
+
+        let plan = illuminate_route::route(&graph, embed_ref, &subject, limit)
+            .map_err(|e| e.to_string())?;
+
+        Ok(serde_json::to_value(plan).map_err(|e| e.to_string())?)
+    }
+
+    /// Tool: illuminate_stats
+    /// Graph statistics: episodes, entities, edges, sources, DB size.
+    pub async fn illuminate_stats(&self, _args: Value) -> Result<Value, String> {
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        let stats = graph.stats().map_err(|e| e.to_string())?;
+
+        Ok(json!({
+            "episodes": stats.episode_count,
+            "entities": stats.entity_count,
+            "edges": stats.edge_count,
+            "sources": stats.sources,
+            "db_size_bytes": stats.db_size_bytes,
+        }))
+    }
 }
 
 /// Wrap a tool result into an MCP content array.
@@ -525,6 +744,52 @@ pub fn tools_list() -> Value {
                         "include_episodes": {"type": "boolean", "description": "Include episodes in export (default false)"},
                         "limit": {"type": "integer", "description": "Max entities to export (default 10000)"}
                     }
+                }
+            },
+            {
+                "name": "illuminate_audit",
+                "description": "Cross-reference an agent's proposed plan against the decision graph and intent policies. Returns structured warnings with source attribution. Use this BEFORE writing code to check for architectural conflicts.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "plan": {"type": "string", "description": "The agent's proposed plan or action in natural language"}
+                    },
+                    "required": ["plan"]
+                }
+            },
+            {
+                "name": "illuminate_reflect",
+                "description": "Record a failure or lesson from the current session. Creates a reflexion episode so future agents don't repeat the same mistake.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "failure": {"type": "string", "description": "What went wrong"},
+                        "root_cause": {"type": "string", "description": "Why it went wrong"},
+                        "corrective_action": {"type": "string", "description": "What to do instead"},
+                        "files_affected": {"type": "array", "items": {"type": "string"}, "description": "Affected file paths"},
+                        "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"], "description": "Failure severity (default: medium)"}
+                    },
+                    "required": ["failure", "root_cause", "corrective_action"]
+                }
+            },
+            {
+                "name": "illuminate_route",
+                "description": "Given a subject, return a ranked reading plan of decisions and files. Helps agents understand unfamiliar parts of the codebase.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "subject": {"type": "string", "description": "Topic or subject to explore"},
+                        "limit": {"type": "integer", "description": "Max entries (default 10)"}
+                    },
+                    "required": ["subject"]
+                }
+            },
+            {
+                "name": "illuminate_stats",
+                "description": "Graph statistics: episode count, entity count, edge count, source breakdown, database size.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
                 }
             }
         ]

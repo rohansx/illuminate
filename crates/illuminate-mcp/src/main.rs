@@ -115,6 +115,34 @@ async fn main() {
         }
     };
 
-    let server = McpServer::new(graph, embed);
+    // Load intent policies from illuminate.toml if present
+    let policies = load_policies(&db_path);
+
+    let server = if policies.is_empty() {
+        McpServer::new(graph, embed)
+    } else {
+        eprintln!("illuminate-mcp: loaded {} intent policies", policies.len());
+        McpServer::with_policies(graph, embed, policies)
+    };
     server.run().await;
+}
+
+/// Load intent policies from illuminate.toml next to the .illuminate/ directory.
+fn load_policies(db_path: &std::path::Path) -> Vec<illuminate_audit::policy::IntentPolicy> {
+    let config_path = db_path
+        .parent()                    // .illuminate/
+        .and_then(|p| p.parent())    // project root
+        .map(|p| p.join("illuminate.toml"));
+
+    if let Some(path) = config_path {
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                match illuminate_audit::policy::parse_policies(&content) {
+                    Ok(policies) => return policies,
+                    Err(e) => eprintln!("illuminate-mcp: policy parse error: {e}"),
+                }
+            }
+        }
+    }
+    Vec::new()
 }

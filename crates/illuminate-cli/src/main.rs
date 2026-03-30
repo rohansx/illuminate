@@ -18,6 +18,18 @@ enum Commands {
         /// Project name
         #[arg(short, long)]
         name: Option<String>,
+
+        /// Auto-configure Claude Code MCP integration
+        #[arg(long)]
+        claude: bool,
+
+        /// Auto-configure Cursor MCP integration
+        #[arg(long)]
+        cursor: bool,
+
+        /// Auto-configure Windsurf MCP integration
+        #[arg(long)]
+        windsurf: bool,
     },
 
     /// Log a decision or event
@@ -207,7 +219,7 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { name } => commands::init::run(name),
+        Commands::Init { name, claude, cursor, windsurf } => commands::init::run(name, claude, cursor, windsurf),
         Commands::Log { text, source, tags } => commands::log::run(text, source, tags),
         Commands::Query {
             text,

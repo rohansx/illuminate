@@ -17,12 +17,17 @@ path = "src/main.rs"
 [dependencies]
 illuminate = { path = "../illuminate-core", version = "0.8.0" }
 illuminate-embed = { path = "../illuminate-embed", version = "0.8.0" }
+illuminate-audit = { path = "../illuminate-audit", version = "0.8.0" }
+illuminate-reflect = { path = "../illuminate-reflect", version = "0.8.0" }
+illuminate-route = { path = "../illuminate-route", version = "0.8.0" }
+toml = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 dotenvy = "0.15"
+uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

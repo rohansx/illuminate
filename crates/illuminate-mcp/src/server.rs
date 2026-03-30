@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use illuminate::Graph;
+use illuminate_audit::policy::IntentPolicy;
 use illuminate_embed::EmbedEngine;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -16,6 +17,12 @@ impl McpServer {
     pub fn new(graph: Graph, embed: Option<EmbedEngine>) -> Self {
         Self {
             ctx: Arc::new(ToolContext::new(graph, embed)),
+        }
+    }
+
+    pub fn with_policies(graph: Graph, embed: Option<EmbedEngine>, policies: Vec<IntentPolicy>) -> Self {
+        Self {
+            ctx: Arc::new(ToolContext::with_policies(graph, embed, policies)),
         }
     }
 
@@ -103,6 +110,10 @@ impl McpServer {
                     "find_precedents" => ctx.find_precedents(args).await,
                     "list_entities" => ctx.list_entities(args).await,
                     "export_graph" => ctx.export_graph(args).await,
+                    "illuminate_audit" => ctx.illuminate_audit(args).await,
+                    "illuminate_reflect" => ctx.illuminate_reflect(args).await,
+                    "illuminate_route" => ctx.illuminate_route(args).await,
+                    "illuminate_stats" => ctx.illuminate_stats(args).await,
                     other => Err(format!("unknown tool: {other}")),
                 };
 
