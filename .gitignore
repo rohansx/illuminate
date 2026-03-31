@@ -1,3 +1,5 @@
-_ctxgraph_upstream/
 target/
 .illuminate/
+.env
+*.db-shm
+*.db-wal

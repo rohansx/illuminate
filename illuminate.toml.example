@@ -1,28 +1,54 @@
-# illuminate.toml — Extraction schema configuration
+# illuminate.toml - configuration for your project
 #
-# Defines which entity types and relation types illuminate extracts from text.
-# Entity labels are passed to GLiNER at inference time (zero-shot).
-# Relation labels constrain which entity pairs can form edges.
-#
-# Copy this file to .illuminate/illuminate.toml to customize.
+# copy this to illuminate.toml in your project root.
+# illuminate init generates a default version automatically.
 
+[project]
+name = "my-project"
+
+# extraction pipeline settings
+[extraction]
+confidence_threshold = 0.5   # below this, llm fallback fires (~30% of episodes)
+# offline_only = false        # set true to never call llm
+
+# llm fallback for low-confidence extraction
+# [extraction.llm]
+# provider = "openai"
+# model = "gpt-4o-mini"
+# api_key_env = "OPENAI_API_KEY"
+
+# auto-ingestion settings
+[watch]
+git = true
+git_backfill = 100
+
+# github pr ingestion
+# [watch.github]
+# enabled = false
+# token_env = "ILLUMINATE_GITHUB_TOKEN"
+# repo = "owner/repo"
+
+# webhook receiver
+# [watch.webhook]
+# enabled = false
+# port = 8421
+
+# entity and relation type schema
 [schema]
 name = "default"
 
-# Entity types: Label = "description (helps the model understand context)"
 [schema.entities]
-Person = "A person who made or was involved in a decision"
-Component = "A software component, tool, library, framework, or technology"
-Service = "A service, system, or application"
-Language = "A programming language"
-Database = "A database system"
-Infrastructure = "Infrastructure or DevOps tooling"
-Decision = "An explicit choice or judgment that was made"
-Constraint = "A limitation, requirement, or condition"
-Metric = "A quantifiable performance or business metric"
-Pattern = "A design pattern or architectural pattern"
+Person = "a person who made or was involved in a decision"
+Component = "a software component, tool, library, framework, or technology"
+Service = "a service, system, or application"
+Language = "a programming language"
+Database = "a database system"
+Infrastructure = "infrastructure or devops tooling"
+Decision = "an explicit choice or judgment that was made"
+Constraint = "a limitation, requirement, or condition"
+Metric = "a quantifiable performance or business metric"
+Pattern = "a design pattern or architectural pattern"
 
-# Relation types: name = { head = [allowed types], tail = [allowed types], description = "..." }
 [schema.relations]
 chose = { head = ["Person"], tail = ["Component", "Database", "Language"], description = "person chose a technology" }
 rejected = { head = ["Person"], tail = ["Component", "Database"], description = "person rejected an alternative" }
@@ -33,3 +59,25 @@ introduced = { head = ["Person"], tail = ["Component", "Pattern"], description =
 deprecated = { head = ["Person", "Decision"], tail = ["Component", "Pattern"], description = "deprecation action" }
 caused = { head = ["Component", "Decision"], tail = ["Metric", "Constraint"], description = "causal relationship" }
 constrained_by = { head = ["Decision", "Component"], tail = ["Constraint"], description = "decision constrained by" }
+
+# intent policies - machine-enforceable architectural rules
+#
+# [policies.caching]
+# rule = "must_use"
+# entity = "Memcached"
+# reject = ["Redis", "Dragonfly"]
+# reason = "vpc overhead - see adr #42"
+# severity = "error"
+#
+# [policies.auth_module]
+# rule = "frozen"
+# paths = ["src/auth/**"]
+# reason = "security audit in progress"
+# severity = "error"
+# expires = "2026-04-15"
+#
+# [policies.no_microservices]
+# rule = "rejected_pattern"
+# pattern = "microservice split"
+# reason = "tried in 2024, reverted due to latency"
+# severity = "error"
