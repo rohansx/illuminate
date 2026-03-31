@@ -719,6 +719,68 @@ impl ToolContext {
             "total_decisions": decisions.len(),
         }))
     }
+
+    /// Tool: illuminate_symbols
+    /// Look up code symbols by name with linked decisions.
+    pub async fn illuminate_symbols(&self, args: Value) -> Result<Value, String> {
+        let name = args["name"]
+            .as_str()
+            .ok_or("missing required field: name")?
+            .to_string();
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+
+        // find anchors matching this symbol name
+        let anchors = graph
+            .get_anchors_for_symbol(&name)
+            .map_err(|e| e.to_string())?;
+
+        let mut results = Vec::new();
+        for anchor in &anchors {
+            let mut entry = json!({
+                "file": anchor.file_path,
+                "symbol": anchor.symbol_name,
+                "lines": format!(
+                    "{}-{}",
+                    anchor.line_start.unwrap_or(0),
+                    anchor.line_end.unwrap_or(0)
+                ),
+            });
+
+            if let Ok(Some(ep)) = graph.get_episode(&anchor.episode_id) {
+                entry["decision"] = json!({
+                    "id": ep.id,
+                    "content": ep.content,
+                    "source": ep.source,
+                });
+            }
+
+            results.push(entry);
+        }
+
+        // also search entities with this name
+        if let Ok(entities) = graph.search_entities(&name, 5) {
+            for (entity, _) in entities {
+                let context = graph
+                    .get_entity_context(&entity.id)
+                    .map_err(|e| e.to_string())?;
+
+                results.push(json!({
+                    "entity": {
+                        "name": entity.name,
+                        "type": entity.entity_type,
+                        "edges": context.edges.len(),
+                        "neighbors": context.neighbors.iter().map(|n| &n.name).collect::<Vec<_>>(),
+                    }
+                }));
+            }
+        }
+
+        Ok(json!({
+            "symbol": name,
+            "results": results,
+        }))
+    }
 }
 
 /// Wrap a tool result into an MCP content array.
@@ -904,6 +966,17 @@ pub fn tools_list() -> Value {
                         "path": {"type": "string", "description": "File path to explain"}
                     },
                     "required": ["path"]
+                }
+            },
+            {
+                "name": "illuminate_symbols",
+                "description": "Look up code symbols by name. Returns file path, line number, and linked decisions.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Symbol name to search for"}
+                    },
+                    "required": ["name"]
                 }
             }
         ]

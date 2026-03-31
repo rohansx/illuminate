@@ -116,6 +116,7 @@ impl McpServer {
                     "illuminate_stats" => ctx.illuminate_stats(args).await,
                     "illuminate_impact" => ctx.illuminate_impact(args).await,
                     "illuminate_explain" => ctx.illuminate_explain(args).await,
+                    "illuminate_symbols" => ctx.illuminate_symbols(args).await,
                     other => Err(format!("unknown tool: {other}")),
                 };
 

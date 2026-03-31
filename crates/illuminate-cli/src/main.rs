@@ -141,6 +141,27 @@ enum Commands {
         threshold: f64,
     },
 
+    /// Build or rebuild the code symbol index
+    Index {
+        /// Enrich existing anchors with symbol info after indexing
+        #[arg(long)]
+        enrich: bool,
+    },
+
+    /// Search code symbols and their linked decisions
+    Symbols {
+        /// Symbol name to search
+        name: Option<String>,
+
+        /// Filter by type: function, struct, class, interface, enum, trait, import
+        #[arg(short = 't', long = "type")]
+        symbol_type: Option<String>,
+
+        /// Max results
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+    },
+
     /// Check a plan against the decision graph and policies
     Audit {
         /// Agent's proposed plan
@@ -297,6 +318,10 @@ fn main() {
                 commands::watch::run_git(backfill, path, threshold)
             }
         }
+        Commands::Index { enrich } => commands::index::run().and_then(|_| {
+            if enrich { commands::index::enrich() } else { Ok(()) }
+        }),
+        Commands::Symbols { name, symbol_type, limit } => commands::symbols::run(name, symbol_type, limit),
         Commands::Audit { plan, json } => commands::audit::run(plan, json),
         Commands::Reflect {
             failure,

@@ -457,3 +457,151 @@ fn storage_symbol_count() {
 
     assert_eq!(storage::symbol_count(&conn).unwrap(), 1);
 }
+
+// ── CodeIndex tests ──
+
+use illuminate_index::indexer::CodeIndex;
+
+#[test]
+fn code_index_in_memory() {
+    let index = CodeIndex::in_memory().unwrap();
+    assert_eq!(index.symbol_count().unwrap(), 0);
+}
+
+#[test]
+fn code_index_open_creates_db() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db_path = tmp.path().join("index.db");
+
+    let index = CodeIndex::open(&db_path).unwrap();
+    assert_eq!(index.symbol_count().unwrap(), 0);
+    assert!(db_path.exists());
+}
+
+#[test]
+fn code_index_indexes_project() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    // create a rust file in the temp dir
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("lib.rs"),
+        "pub fn hello() {}\nstruct Config {}\n",
+    ).unwrap();
+
+    let mut index = CodeIndex::in_memory().unwrap();
+    let stats = index.index_project(tmp.path()).unwrap();
+
+    assert_eq!(stats.files_scanned, 1);
+    assert_eq!(stats.files_indexed, 1);
+    assert!(stats.symbols_extracted >= 2, "should extract fn + struct");
+}
+
+#[test]
+fn code_index_incremental_skips_unchanged() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("lib.rs"), "pub fn hello() {}\n").unwrap();
+
+    let db_path = tmp.path().join("index.db");
+    let mut index = CodeIndex::open(&db_path).unwrap();
+
+    // first index
+    let stats1 = index.index_project(tmp.path()).unwrap();
+    assert_eq!(stats1.files_indexed, 1);
+    assert_eq!(stats1.files_skipped, 0);
+
+    // reopen and index again - should skip
+    drop(index);
+    let mut index2 = CodeIndex::open(&db_path).unwrap();
+    let stats2 = index2.index_project(tmp.path()).unwrap();
+    assert_eq!(stats2.files_indexed, 0);
+    assert_eq!(stats2.files_skipped, 1);
+}
+
+#[test]
+fn code_index_skips_hidden_and_target_dirs() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    // create files in dirs that should be skipped
+    let target_dir = tmp.path().join("target").join("debug");
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::write(target_dir.join("main.rs"), "fn main() {}\n").unwrap();
+
+    let hidden_dir = tmp.path().join(".git");
+    std::fs::create_dir_all(&hidden_dir).unwrap();
+    std::fs::write(hidden_dir.join("config.rs"), "fn config() {}\n").unwrap();
+
+    // create a file that should be indexed
+    std::fs::write(tmp.path().join("lib.rs"), "pub fn hello() {}\n").unwrap();
+
+    let mut index = CodeIndex::in_memory().unwrap();
+    let stats = index.index_project(tmp.path()).unwrap();
+
+    assert_eq!(stats.files_scanned, 1, "only lib.rs should be scanned");
+    assert_eq!(stats.files_indexed, 1);
+}
+
+#[test]
+fn code_index_enrich_anchor_by_entity_name() {
+    let mut index = CodeIndex::in_memory().unwrap();
+
+    // manually insert a symbol
+    let sym = illuminate_index::symbols::Symbol {
+        file_path: "src/cache.rs".to_string(),
+        name: "MemcachedClient".to_string(),
+        symbol_type: SymbolType::Struct,
+        signature: None,
+        visibility: Visibility::Public,
+        line_start: 42,
+        line_end: 89,
+        hash: "abc123".to_string(),
+        language: "rust".to_string(),
+    };
+    storage::upsert_symbols(
+        &rusqlite::Connection::open_in_memory().unwrap(), // won't work - need internal conn
+        "src/cache.rs",
+        &[sym],
+    ).ok(); // this won't actually write to the index's conn
+
+    // test with a real project dir
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("cache.rs"),
+        "pub struct MemcachedClient {\n    ttl: u64,\n}\n\npub fn connect() {}\n",
+    ).unwrap();
+
+    let mut index = CodeIndex::in_memory().unwrap();
+    index.index_project(tmp.path()).unwrap();
+
+    let mut anchor = illuminate::Anchor::new("ep-1", "cache.rs");
+    let enriched = index
+        .enrich_anchor(&mut anchor, &["Memcached".to_string()])
+        .unwrap();
+
+    assert!(enriched, "should match MemcachedClient via entity name 'Memcached'");
+    assert_eq!(anchor.symbol_name.as_deref(), Some("MemcachedClient"));
+    assert_eq!(anchor.line_start, Some(1));
+}
+
+#[test]
+fn code_index_enrich_anchor_fallback_to_first_public() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("server.rs"),
+        "pub fn start_server() {}\nfn internal() {}\n",
+    ).unwrap();
+
+    let mut index = CodeIndex::in_memory().unwrap();
+    index.index_project(tmp.path()).unwrap();
+
+    let mut anchor = illuminate::Anchor::new("ep-1", "server.rs");
+    let enriched = index
+        .enrich_anchor(&mut anchor, &["unrelated".to_string()])
+        .unwrap();
+
+    assert!(enriched, "should fallback to first public symbol");
+    assert_eq!(anchor.symbol_name.as_deref(), Some("start_server"));
+}
