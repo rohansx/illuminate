@@ -111,7 +111,56 @@ fn configure_claude(dir: &Path) -> illuminate::Result<()> {
     let json_str = serde_json::to_string_pretty(&config)
         .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
     fs::write(&config_path, json_str).map_err(illuminate::IlluminateError::Io)?;
+
+    // generate CLAUDE.md with illuminate instructions
+    let claude_md_path = dir.join("CLAUDE.md");
+    if !claude_md_path.exists() {
+        fs::write(&claude_md_path, claude_md_content())
+            .map_err(illuminate::IlluminateError::Io)?;
+    }
+
     Ok(())
+}
+
+fn claude_md_content() -> &'static str {
+    r#"# illuminate integration
+
+This project uses [illuminate](https://github.com/rohansx/illuminate) for architectural decision tracking.
+
+## before writing code
+
+Call `illuminate_audit` with your proposed plan to check for architectural conflicts:
+
+```
+illuminate_audit({ "plan": "description of what you intend to do" })
+```
+
+If the audit returns violations, adjust your plan before proceeding.
+
+## after a failure
+
+If something breaks or doesn't work as expected, record it:
+
+```
+illuminate_reflect({
+  "failure": "what went wrong",
+  "root_cause": "why it happened",
+  "corrective_action": "what to do instead"
+})
+```
+
+## exploring the codebase
+
+- `illuminate_search` - find decisions about a topic
+- `illuminate_explain` - understand why a file was built this way
+- `illuminate_route` - get a reading plan for a subject
+- `illuminate_symbols` - look up code symbols and linked decisions
+- `illuminate_impact` - see what code depends on a decision
+
+## intent policies
+
+Check `illuminate.toml` for active policies. These are machine-enforced architectural rules.
+"#
 }
 
 fn configure_cursor(dir: &Path) -> illuminate::Result<()> {

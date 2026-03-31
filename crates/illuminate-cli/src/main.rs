@@ -162,6 +162,20 @@ enum Commands {
         limit: usize,
     },
 
+    /// Export the decision graph
+    Export {
+        /// Output format: json or csv
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
+
+    /// Show a summary of the project's decision history
+    Summary {
+        /// Number of recent decisions to show
+        #[arg(short, long, default_value = "10")]
+        limit: usize,
+    },
+
     /// Check a plan against the decision graph and policies
     Audit {
         /// Agent's proposed plan
@@ -322,6 +336,8 @@ fn main() {
             if enrich { commands::index::enrich() } else { Ok(()) }
         }),
         Commands::Symbols { name, symbol_type, limit } => commands::symbols::run(name, symbol_type, limit),
+        Commands::Export { format } => commands::export::run(&format),
+        Commands::Summary { limit } => commands::summary::run(limit),
         Commands::Audit { plan, json } => commands::audit::run(plan, json),
         Commands::Reflect {
             failure,

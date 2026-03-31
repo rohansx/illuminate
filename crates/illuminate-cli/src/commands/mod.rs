@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod decisions;
 pub mod entities;
+pub mod export;
 pub mod index;
 pub mod init;
 pub mod log;
@@ -9,6 +10,7 @@ pub mod models;
 pub mod query;
 pub mod reflect;
 pub mod stats;
+pub mod summary;
 pub mod symbols;
 pub mod watch;
 
