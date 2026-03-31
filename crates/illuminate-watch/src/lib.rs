@@ -2,8 +2,11 @@
 //!
 //! Monitors development workflow and feeds decision-relevant text into the extraction pipeline.
 
+pub mod daemon;
 pub mod git;
+pub mod github;
 pub mod signal;
+pub mod webhook;
 
 use thiserror::Error;
 
@@ -20,6 +23,9 @@ pub enum WatchError {
 
     #[error("parse error: {0}")]
     Parse(String),
+
+    #[error("http error: {0}")]
+    Http(String),
 }
 
 pub type Result<T> = std::result::Result<T, WatchError>;

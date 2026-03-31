@@ -98,11 +98,23 @@ enum Commands {
         db: Option<String>,
     },
 
-    /// Watch git history and auto-ingest decisions
+    /// Watch dev workflow and auto-ingest decisions
     Watch {
         /// Watch git commits
         #[arg(long)]
         git: bool,
+
+        /// Watch GitHub PRs (requires ILLUMINATE_GITHUB_TOKEN)
+        #[arg(long)]
+        github: bool,
+
+        /// Start HTTP webhook receiver
+        #[arg(long)]
+        webhook: bool,
+
+        /// Run as background daemon
+        #[arg(long)]
+        daemon: bool,
 
         /// Number of commits to backfill
         #[arg(long, default_value = "100")]
@@ -115,6 +127,14 @@ enum Commands {
         /// Only process commits touching this path
         #[arg(long)]
         path: Option<String>,
+
+        /// GitHub repository (owner/repo)
+        #[arg(long)]
+        repo: Option<String>,
+
+        /// Webhook server port
+        #[arg(long, default_value = "8421")]
+        port: u16,
 
         /// Minimum decision signal score (0.0-1.0)
         #[arg(long, default_value = "0.3")]
@@ -251,16 +271,27 @@ fn main() {
         Commands::Serve { db } => commands::mcp::start(db),
         Commands::Watch {
             git,
+            github,
+            webhook,
+            daemon,
             backfill,
             backfill_since,
             path,
+            repo,
+            port,
             threshold,
         } => {
-            if !git {
-                eprintln!("error: specify --git to watch git history");
+            if !git && !github && !webhook {
+                eprintln!("error: specify --git, --github, or --webhook");
                 std::process::exit(1);
             }
-            if let Some(since) = backfill_since {
+            if github {
+                commands::watch::run_github(repo, threshold)
+            } else if webhook {
+                commands::watch::run_webhook(port, threshold)
+            } else if daemon {
+                commands::watch::run_daemon(threshold)
+            } else if let Some(since) = backfill_since {
                 commands::watch::run_git_since(&since, threshold)
             } else {
                 commands::watch::run_git(backfill, path, threshold)
