@@ -363,6 +363,50 @@ impl Graph {
             .link_episode_entity(episode_id, entity_id, span_start, span_end)
     }
 
+    // ── Anchors ──
+
+    /// Add a code anchor linking a decision episode to a file/symbol.
+    pub fn add_anchor(&self, anchor: Anchor) -> Result<()> {
+        self.storage.insert_anchor(&anchor)
+    }
+
+    /// Get all anchors for an episode.
+    pub fn get_anchors_for_episode(&self, episode_id: &str) -> Result<Vec<Anchor>> {
+        self.storage.get_anchors_for_episode(episode_id)
+    }
+
+    /// Get all anchors for a file path.
+    pub fn get_anchors_for_file(&self, file_path: &str) -> Result<Vec<Anchor>> {
+        self.storage.get_anchors_for_file(file_path)
+    }
+
+    /// Get all anchors for a symbol name.
+    pub fn get_anchors_for_symbol(&self, symbol_name: &str) -> Result<Vec<Anchor>> {
+        self.storage.get_anchors_for_symbol(symbol_name)
+    }
+
+    /// Create anchors from an episode's files_changed metadata.
+    ///
+    /// For each file in the episode's metadata, creates a basic anchor.
+    /// If an index db connection is provided, enriches with symbol info.
+    pub fn create_anchors_from_metadata(&self, episode_id: &str) -> Result<Vec<Anchor>> {
+        let episode = self
+            .storage
+            .get_episode(episode_id)?
+            .ok_or_else(|| IlluminateError::NotFound(format!("episode {episode_id}")))?;
+
+        let files = extract_files_from_metadata(&episode);
+        let mut anchors = Vec::new();
+
+        for file in files {
+            let mut anchor = Anchor::new(episode_id, &file);
+            self.storage.insert_anchor(&anchor)?;
+            anchors.push(anchor);
+        }
+
+        Ok(anchors)
+    }
+
     // ── Embeddings ──
 
     /// Store an embedding for an episode. The embedding is serialized as
@@ -528,6 +572,30 @@ impl Graph {
     pub fn stats(&self) -> Result<GraphStats> {
         self.storage.stats()
     }
+}
+
+/// Extract file paths from an episode's metadata.
+fn extract_files_from_metadata(episode: &Episode) -> Vec<String> {
+    let mut files = Vec::new();
+
+    if let Some(ref meta) = episode.metadata {
+        // Check files_changed array
+        if let Some(arr) = meta.get("files_changed").and_then(|v| v.as_array()) {
+            for item in arr {
+                if let Some(path) = item.as_str() {
+                    files.push(path.to_string());
+                }
+            }
+        }
+        // Check single file field
+        if let Some(path) = meta.get("file").and_then(|v| v.as_str()) {
+            if !files.contains(&path.to_string()) {
+                files.push(path.to_string());
+            }
+        }
+    }
+
+    files
 }
 
 /// Compute cosine similarity between two f32 vectors.

@@ -354,6 +354,72 @@ impl Storage {
         Ok(())
     }
 
+    // ── Anchors ──
+
+    pub fn insert_anchor(&self, anchor: &Anchor) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO anchors (id, episode_id, file_path, symbol_name, symbol_hash, line_start, line_end, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                anchor.id,
+                anchor.episode_id,
+                anchor.file_path,
+                anchor.symbol_name,
+                anchor.symbol_hash,
+                anchor.line_start.map(|v| v as i64),
+                anchor.line_end.map(|v| v as i64),
+                anchor.created_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_anchors_for_episode(&self, episode_id: &str) -> Result<Vec<Anchor>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, episode_id, file_path, symbol_name, symbol_hash, line_start, line_end, created_at
+             FROM anchors WHERE episode_id = ?1 ORDER BY file_path",
+        )?;
+
+        let anchors = stmt
+            .query_map(params![episode_id], map_anchor_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(anchors)
+    }
+
+    pub fn get_anchors_for_file(&self, file_path: &str) -> Result<Vec<Anchor>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, episode_id, file_path, symbol_name, symbol_hash, line_start, line_end, created_at
+             FROM anchors WHERE file_path = ?1 ORDER BY line_start",
+        )?;
+
+        let anchors = stmt
+            .query_map(params![file_path], map_anchor_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(anchors)
+    }
+
+    pub fn get_anchors_for_symbol(&self, symbol_name: &str) -> Result<Vec<Anchor>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, episode_id, file_path, symbol_name, symbol_hash, line_start, line_end, created_at
+             FROM anchors WHERE symbol_name = ?1",
+        )?;
+
+        let anchors = stmt
+            .query_map(params![symbol_name], map_anchor_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(anchors)
+    }
+
+    pub fn anchor_count(&self) -> Result<usize> {
+        let count: usize = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM anchors", [], |row| row.get(0))?;
+        Ok(count)
+    }
+
     // ── FTS5 Search ──
 
     pub fn search_episodes(&self, query: &str, limit: usize) -> Result<Vec<(Episode, f64)>> {
@@ -473,6 +539,10 @@ impl Storage {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
+        let anchor_count: usize = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM anchors", [], |row| row.get(0))?;
+
         let db_size_bytes: u64 = self.conn.query_row(
             "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
             [],
@@ -483,6 +553,7 @@ impl Storage {
             episode_count,
             entity_count,
             edge_count,
+            anchor_count,
             sources,
             db_size_bytes,
         })
@@ -629,6 +700,19 @@ fn map_edge_row(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
         metadata: row
             .get::<_, Option<String>>(10)?
             .and_then(|s| serde_json::from_str(&s).ok()),
+    })
+}
+
+fn map_anchor_row(row: &rusqlite::Row) -> rusqlite::Result<Anchor> {
+    Ok(Anchor {
+        id: row.get(0)?,
+        episode_id: row.get(1)?,
+        file_path: row.get(2)?,
+        symbol_name: row.get(3)?,
+        symbol_hash: row.get(4)?,
+        line_start: row.get::<_, Option<i64>>(5)?.map(|v| v as u32),
+        line_end: row.get::<_, Option<i64>>(6)?.map(|v| v as u32),
+        created_at: parse_datetime(&row.get::<_, String>(7)?),
     })
 }
 

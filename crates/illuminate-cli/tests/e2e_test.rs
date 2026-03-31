@@ -37,6 +37,7 @@ fn e2e_git_ingest_to_audit_violation() {
     let stats = ingest_commits(&graph, &commits, 0.3).unwrap();
     assert_eq!(stats.episodes_created, 1, "only the decision commit should be ingested");
     assert_eq!(stats.below_threshold, 1, "typo fix filtered out");
+    assert_eq!(stats.anchors_created, 1, "decision commit should create anchor for changed file");
 
     // 3. verify the decision is searchable
     let results = graph.search("memcached", 5).unwrap();

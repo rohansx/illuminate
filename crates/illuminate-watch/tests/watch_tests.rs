@@ -214,6 +214,7 @@ fn ingest_stats_display() {
         episodes_created: 3,
         entities_extracted: 5,
         edges_created: 2,
+        anchors_created: 4,
     };
     let display = format!("{stats}");
     assert!(display.contains("10 commits"));

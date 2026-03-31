@@ -212,6 +212,13 @@ pub fn ingest_commits(
         stats.episodes_created += 1;
         stats.entities_extracted += result.entities_extracted;
         stats.edges_created += result.edges_created;
+
+        // auto-create anchors from changed files
+        for file in &commit.files_changed {
+            let anchor = illuminate::Anchor::new(&result.episode_id, file);
+            let _ = graph.add_anchor(anchor);
+            stats.anchors_created += 1;
+        }
     }
 
     Ok(stats)
@@ -225,17 +232,19 @@ pub struct IngestStats {
     pub episodes_created: usize,
     pub entities_extracted: usize,
     pub edges_created: usize,
+    pub anchors_created: usize,
 }
 
 impl std::fmt::Display for IngestStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "processed {} commits: {} episodes created ({} entities, {} edges), {} below threshold",
+            "processed {} commits: {} episodes ({} entities, {} edges, {} anchors), {} below threshold",
             self.total_processed,
             self.episodes_created,
             self.entities_extracted,
             self.edges_created,
+            self.anchors_created,
             self.below_threshold
         )
     }

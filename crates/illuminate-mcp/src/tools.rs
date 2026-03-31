@@ -623,8 +623,100 @@ impl ToolContext {
             "episodes": stats.episode_count,
             "entities": stats.entity_count,
             "edges": stats.edge_count,
+            "anchors": stats.anchor_count,
             "sources": stats.sources,
             "db_size_bytes": stats.db_size_bytes,
+        }))
+    }
+
+    /// Tool: illuminate_impact
+    /// Given a decision ID, show every file and symbol anchored to that decision.
+    pub async fn illuminate_impact(&self, args: Value) -> Result<Value, String> {
+        let decision_id = args["decision_id"]
+            .as_str()
+            .ok_or("missing required field: decision_id")?
+            .to_string();
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+
+        let episode = graph
+            .get_episode(&decision_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("decision not found: {decision_id}"))?;
+
+        let anchors = graph
+            .get_anchors_for_episode(&decision_id)
+            .map_err(|e| e.to_string())?;
+
+        let anchors_json: Vec<Value> = anchors
+            .iter()
+            .map(|a| {
+                json!({
+                    "file": a.file_path,
+                    "symbol": a.symbol_name,
+                    "lines": format!(
+                        "{}-{}",
+                        a.line_start.unwrap_or(0),
+                        a.line_end.unwrap_or(0)
+                    ),
+                })
+            })
+            .collect();
+
+        Ok(json!({
+            "decision": {
+                "id": episode.id,
+                "content": episode.content,
+                "source": episode.source,
+                "recorded_at": episode.recorded_at.to_rfc3339(),
+            },
+            "anchors": anchors_json,
+            "total_files_affected": anchors.len(),
+        }))
+    }
+
+    /// Tool: illuminate_explain
+    /// Given a file path, return all linked decisions via anchors.
+    pub async fn illuminate_explain(&self, args: Value) -> Result<Value, String> {
+        let path = args["path"]
+            .as_str()
+            .ok_or("missing required field: path")?
+            .to_string();
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+
+        let anchors = graph
+            .get_anchors_for_file(&path)
+            .map_err(|e| e.to_string())?;
+
+        let mut decisions = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+
+        for anchor in &anchors {
+            if seen_ids.insert(anchor.episode_id.clone()) {
+                if let Ok(Some(episode)) = graph.get_episode(&anchor.episode_id) {
+                    decisions.push(json!({
+                        "id": episode.id,
+                        "content": episode.content,
+                        "source": episode.source,
+                        "recorded_at": episode.recorded_at.to_rfc3339(),
+                        "anchor": {
+                            "symbol": anchor.symbol_name,
+                            "lines": format!(
+                                "{}-{}",
+                                anchor.line_start.unwrap_or(0),
+                                anchor.line_end.unwrap_or(0)
+                            ),
+                        }
+                    }));
+                }
+            }
+        }
+
+        Ok(json!({
+            "path": path,
+            "decisions": decisions,
+            "total_decisions": decisions.len(),
         }))
     }
 }
@@ -786,10 +878,32 @@ pub fn tools_list() -> Value {
             },
             {
                 "name": "illuminate_stats",
-                "description": "Graph statistics: episode count, entity count, edge count, source breakdown, database size.",
+                "description": "Graph statistics: episode count, entity count, edge count, anchor count, source breakdown, database size.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {}
+                }
+            },
+            {
+                "name": "illuminate_impact",
+                "description": "Given a decision ID, show every file and symbol anchored to that decision. Answers: what code breaks if we reverse this decision?",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "decision_id": {"type": "string", "description": "Episode/decision UUID"}
+                    },
+                    "required": ["decision_id"]
+                }
+            },
+            {
+                "name": "illuminate_explain",
+                "description": "Given a file path, return all linked decisions and their context. Answers: why was this file built this way?",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path to explain"}
+                    },
+                    "required": ["path"]
                 }
             }
         ]

@@ -588,4 +588,111 @@ fn test_empty_database_operations() {
     assert_eq!(stats.episode_count, 0);
     assert_eq!(stats.entity_count, 0);
     assert_eq!(stats.edge_count, 0);
+    assert_eq!(stats.anchor_count, 0);
+}
+
+// ── Code Anchors ──
+
+#[test]
+fn test_anchor_insert_and_retrieve() {
+    let graph = test_graph();
+
+    let episode = Episode::builder("chose memcached over redis").source("git").build();
+    let ep_id = episode.id.clone();
+    graph.add_episode(episode).unwrap();
+
+    let mut anchor = Anchor::new(&ep_id, "src/cache/provider.rs");
+    anchor.symbol_name = Some("MemcachedClient".to_string());
+    anchor.line_start = Some(42);
+    anchor.line_end = Some(89);
+    graph.add_anchor(anchor).unwrap();
+
+    let anchors = graph.get_anchors_for_episode(&ep_id).unwrap();
+    assert_eq!(anchors.len(), 1);
+    assert_eq!(anchors[0].file_path, "src/cache/provider.rs");
+    assert_eq!(anchors[0].symbol_name.as_deref(), Some("MemcachedClient"));
+    assert_eq!(anchors[0].line_start, Some(42));
+    assert_eq!(anchors[0].line_end, Some(89));
+}
+
+#[test]
+fn test_anchor_lookup_by_file() {
+    let graph = test_graph();
+
+    let ep1 = Episode::builder("decision 1").build();
+    let ep2 = Episode::builder("decision 2").build();
+    let id1 = ep1.id.clone();
+    let id2 = ep2.id.clone();
+    graph.add_episode(ep1).unwrap();
+    graph.add_episode(ep2).unwrap();
+
+    graph.add_anchor(Anchor::new(&id1, "src/billing.rs")).unwrap();
+    graph.add_anchor(Anchor::new(&id2, "src/billing.rs")).unwrap();
+    graph.add_anchor(Anchor::new(&id1, "src/cache.rs")).unwrap();
+
+    let billing_anchors = graph.get_anchors_for_file("src/billing.rs").unwrap();
+    assert_eq!(billing_anchors.len(), 2);
+
+    let cache_anchors = graph.get_anchors_for_file("src/cache.rs").unwrap();
+    assert_eq!(cache_anchors.len(), 1);
+
+    let none_anchors = graph.get_anchors_for_file("src/nonexistent.rs").unwrap();
+    assert!(none_anchors.is_empty());
+}
+
+#[test]
+fn test_anchor_lookup_by_symbol() {
+    let graph = test_graph();
+
+    let episode = Episode::builder("cache decision").build();
+    let ep_id = episode.id.clone();
+    graph.add_episode(episode).unwrap();
+
+    let mut anchor = Anchor::new(&ep_id, "src/cache.rs");
+    anchor.symbol_name = Some("CacheClient".to_string());
+    graph.add_anchor(anchor).unwrap();
+
+    let results = graph.get_anchors_for_symbol("CacheClient").unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].episode_id, ep_id);
+}
+
+#[test]
+fn test_create_anchors_from_metadata() {
+    let graph = test_graph();
+
+    let episode = Episode {
+        id: uuid::Uuid::now_v7().to_string(),
+        content: "switched from rest to grpc".to_string(),
+        source: Some("git".to_string()),
+        recorded_at: Utc::now(),
+        metadata: Some(serde_json::json!({
+            "files_changed": ["src/api/handler.rs", "src/api/router.rs"],
+            "commit_hash": "abc123"
+        })),
+    };
+    let ep_id = episode.id.clone();
+    graph.add_episode(episode).unwrap();
+
+    let anchors = graph.create_anchors_from_metadata(&ep_id).unwrap();
+    assert_eq!(anchors.len(), 2);
+
+    // verify they are persisted
+    let stored = graph.get_anchors_for_episode(&ep_id).unwrap();
+    assert_eq!(stored.len(), 2);
+}
+
+#[test]
+fn test_anchor_count_in_stats() {
+    let graph = test_graph();
+
+    let episode = Episode::builder("test").build();
+    let ep_id = episode.id.clone();
+    graph.add_episode(episode).unwrap();
+
+    graph.add_anchor(Anchor::new(&ep_id, "file1.rs")).unwrap();
+    graph.add_anchor(Anchor::new(&ep_id, "file2.rs")).unwrap();
+
+    let stats = graph.stats().unwrap();
+    assert_eq!(stats.anchor_count, 2);
 }

@@ -175,6 +175,7 @@ pub struct GraphStats {
     pub episode_count: usize,
     pub entity_count: usize,
     pub edge_count: usize,
+    pub anchor_count: usize,
     pub sources: Vec<(String, usize)>,
     pub db_size_bytes: u64,
 }
@@ -185,6 +186,34 @@ pub struct EntityContext {
     pub entity: Entity,
     pub edges: Vec<Edge>,
     pub neighbors: Vec<Entity>,
+}
+
+/// A code anchor linking a decision episode to a specific code location.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Anchor {
+    pub id: String,
+    pub episode_id: String,
+    pub file_path: String,
+    pub symbol_name: Option<String>,
+    pub symbol_hash: Option<String>,
+    pub line_start: Option<u32>,
+    pub line_end: Option<u32>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl Anchor {
+    pub fn new(episode_id: &str, file_path: &str) -> Self {
+        Self {
+            id: uuid::Uuid::now_v7().to_string(),
+            episode_id: episode_id.to_string(),
+            file_path: file_path.to_string(),
+            symbol_name: None,
+            symbol_hash: None,
+            line_start: None,
+            line_end: None,
+            created_at: Utc::now(),
+        }
+    }
 }
 
 /// Options for search filtering.

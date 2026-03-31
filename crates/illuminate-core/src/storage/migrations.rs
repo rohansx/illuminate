@@ -153,6 +153,25 @@ const MIGRATIONS: &[(&str, &str)] = &[
     -- We use a Rust-side check since SQLite ALTER TABLE ADD COLUMN is not idempotent
     "#,
     ),
+    (
+        "003_anchors",
+        r#"
+    CREATE TABLE IF NOT EXISTS anchors (
+        id          TEXT PRIMARY KEY,
+        episode_id  TEXT NOT NULL REFERENCES episodes(id),
+        file_path   TEXT NOT NULL,
+        symbol_name TEXT,
+        symbol_hash TEXT,
+        line_start  INTEGER,
+        line_end    INTEGER,
+        created_at  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_anchors_episode ON anchors(episode_id);
+    CREATE INDEX IF NOT EXISTS idx_anchors_file ON anchors(file_path);
+    CREATE INDEX IF NOT EXISTS idx_anchors_symbol ON anchors(symbol_name);
+    "#,
+    ),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
