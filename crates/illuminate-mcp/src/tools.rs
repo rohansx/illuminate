@@ -472,9 +472,10 @@ impl ToolContext {
                     expires,
                 } => {
                     if let Some(exp) = expires
-                        && chrono::Utc::now() > *exp {
-                            continue;
-                        }
+                        && chrono::Utc::now() > *exp
+                    {
+                        continue;
+                    }
                     for path in paths {
                         let base = path.to_lowercase().replace("/**", "").replace("/*", "");
                         if plan_lower.contains(&base) {
@@ -540,14 +541,15 @@ impl ToolContext {
         for (episode, _) in &search_results {
             if episode.source.as_deref() == Some("reflexion")
                 && let Some(meta) = &episode.metadata
-                    && let Some(refl) = meta.get("reflexion") {
-                        reflexions.push(json!({
-                            "failure": refl.get("failure"),
-                            "root_cause": refl.get("root_cause"),
-                            "corrective_action": refl.get("corrective_action"),
-                            "severity": refl.get("severity"),
-                        }));
-                    }
+                && let Some(refl) = meta.get("reflexion")
+            {
+                reflexions.push(json!({
+                    "failure": refl.get("failure"),
+                    "root_cause": refl.get("root_cause"),
+                    "corrective_action": refl.get("corrective_action"),
+                    "severity": refl.get("severity"),
+                }));
+            }
         }
 
         let has_errors = !policy_violations.is_empty() || !decision_conflicts.is_empty();
@@ -736,22 +738,23 @@ impl ToolContext {
 
         for anchor in &anchors {
             if seen_ids.insert(anchor.episode_id.clone())
-                && let Ok(Some(episode)) = graph.get_episode(&anchor.episode_id) {
-                    decisions.push(json!({
-                        "id": episode.id,
-                        "content": episode.content,
-                        "source": episode.source,
-                        "recorded_at": episode.recorded_at.to_rfc3339(),
-                        "anchor": {
-                            "symbol": anchor.symbol_name,
-                            "lines": format!(
-                                "{}-{}",
-                                anchor.line_start.unwrap_or(0),
-                                anchor.line_end.unwrap_or(0)
-                            ),
-                        }
-                    }));
-                }
+                && let Ok(Some(episode)) = graph.get_episode(&anchor.episode_id)
+            {
+                decisions.push(json!({
+                    "id": episode.id,
+                    "content": episode.content,
+                    "source": episode.source,
+                    "recorded_at": episode.recorded_at.to_rfc3339(),
+                    "anchor": {
+                        "symbol": anchor.symbol_name,
+                        "lines": format!(
+                            "{}-{}",
+                            anchor.line_start.unwrap_or(0),
+                            anchor.line_end.unwrap_or(0)
+                        ),
+                    }
+                }));
+            }
         }
 
         Ok(json!({

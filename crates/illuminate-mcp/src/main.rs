@@ -136,11 +136,12 @@ fn load_policies(db_path: &std::path::Path) -> Vec<illuminate_audit::policy::Int
 
     if let Some(path) = config_path
         && path.exists()
-            && let Ok(content) = std::fs::read_to_string(&path) {
-                match illuminate_audit::policy::parse_policies(&content) {
-                    Ok(policies) => return policies,
-                    Err(e) => eprintln!("illuminate-mcp: policy parse error: {e}"),
-                }
-            }
+        && let Ok(content) = std::fs::read_to_string(&path)
+    {
+        match illuminate_audit::policy::parse_policies(&content) {
+            Ok(policies) => return policies,
+            Err(e) => eprintln!("illuminate-mcp: policy parse error: {e}"),
+        }
+    }
     Vec::new()
 }

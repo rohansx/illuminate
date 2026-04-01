@@ -114,12 +114,12 @@ impl ReflexionStore {
             for (episode, _score) in search_results {
                 if episode.source.as_deref() == Some("reflexion")
                     && let Some(refl) = parse_reflexion(&episode)
-                        && !results
-                            .iter()
-                            .any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id)
-                        {
-                            results.push(refl);
-                        }
+                    && !results
+                        .iter()
+                        .any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id)
+                {
+                    results.push(refl);
+                }
             }
         }
 
@@ -128,19 +128,20 @@ impl ReflexionStore {
             let search_results = self.graph.search(file, limit * 2)?;
             for (episode, _score) in search_results {
                 if episode.source.as_deref() == Some("reflexion")
-                    && let Some(refl) = parse_reflexion(&episode) {
-                        // Check if any affected file matches
-                        let file_matches = refl.files_affected.iter().any(|f| {
-                            f == file || file.contains(f.as_str()) || f.contains(file.as_str())
-                        });
-                        if file_matches
-                            && !results
-                                .iter()
-                                .any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id)
-                        {
-                            results.push(refl);
-                        }
+                    && let Some(refl) = parse_reflexion(&episode)
+                {
+                    // Check if any affected file matches
+                    let file_matches = refl.files_affected.iter().any(|f| {
+                        f == file || file.contains(f.as_str()) || f.contains(file.as_str())
+                    });
+                    if file_matches
+                        && !results
+                            .iter()
+                            .any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id)
+                    {
+                        results.push(refl);
                     }
+                }
             }
         }
 

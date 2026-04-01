@@ -127,9 +127,10 @@ impl Auditor {
                 } => {
                     // Check if policy has expired
                     if let Some(exp) = expires
-                        && chrono::Utc::now() > *exp {
-                            continue;
-                        }
+                        && chrono::Utc::now() > *exp
+                    {
+                        continue;
+                    }
                     // Check if plan mentions frozen paths
                     for path_pattern in paths {
                         let pattern_lower = path_pattern.to_lowercase();

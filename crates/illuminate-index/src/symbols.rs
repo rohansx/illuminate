@@ -260,21 +260,22 @@ fn extract_go_symbol(
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 if child.kind() == "type_spec"
-                    && let Some(name_node) = child_by_field(child, "name") {
-                        let name = node_text(name_node, source).to_string();
-                        let hash = symbol_hash("go", &SymbolType::Struct, &name, None);
-                        out.push(Symbol {
-                            file_path: file_path.to_string(),
-                            name,
-                            symbol_type: SymbolType::Struct,
-                            signature: None,
-                            visibility: Visibility::Public,
-                            line_start: child.start_position().row as u32 + 1,
-                            line_end: child.end_position().row as u32 + 1,
-                            hash,
-                            language: "go".to_string(),
-                        });
-                    }
+                    && let Some(name_node) = child_by_field(child, "name")
+                {
+                    let name = node_text(name_node, source).to_string();
+                    let hash = symbol_hash("go", &SymbolType::Struct, &name, None);
+                    out.push(Symbol {
+                        file_path: file_path.to_string(),
+                        name,
+                        symbol_type: SymbolType::Struct,
+                        signature: None,
+                        visibility: Visibility::Public,
+                        line_start: child.start_position().row as u32 + 1,
+                        line_end: child.end_position().row as u32 + 1,
+                        hash,
+                        language: "go".to_string(),
+                    });
+                }
             }
         }
         _ => {}

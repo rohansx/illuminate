@@ -47,17 +47,18 @@ pub fn route(
 
     // Fused search if embeddings available, otherwise FTS5 only
     if let Some(embed_engine) = embed
-        && let Ok(query_embedding) = embed_engine.embed(subject) {
-            let results = graph.search_fused(subject, &query_embedding, limit)?;
-            for r in results {
-                decisions.push(DecisionEntry {
-                    id: r.episode.id,
-                    content: r.episode.content,
-                    source: r.episode.source,
-                    score: r.score,
-                });
-            }
+        && let Ok(query_embedding) = embed_engine.embed(subject)
+    {
+        let results = graph.search_fused(subject, &query_embedding, limit)?;
+        for r in results {
+            decisions.push(DecisionEntry {
+                id: r.episode.id,
+                content: r.episode.content,
+                source: r.episode.source,
+                score: r.score,
+            });
         }
+    }
 
     // Fallback to FTS5-only if no fused results
     if decisions.is_empty() {
@@ -78,20 +79,22 @@ pub fn route(
         // Check if decision metadata contains files_changed
         if let Ok(Some(ep)) = graph.get_episode(&decision.id)
             && let Some(ref meta) = ep.metadata
-                && let Some(files) = meta.get("files_changed").and_then(|v| v.as_array()) {
-                    for file in files {
-                        if let Some(path) = file.as_str()
-                            && !code_files.iter().any(|f: &FileEntry| f.path == path) {
-                                let estimated_tokens = estimate_tokens_for_file(path);
-                                code_files.push(FileEntry {
-                                    path: path.to_string(),
-                                    symbols: Vec::new(),
-                                    priority: 2,
-                                    estimated_tokens,
-                                });
-                            }
-                    }
+            && let Some(files) = meta.get("files_changed").and_then(|v| v.as_array())
+        {
+            for file in files {
+                if let Some(path) = file.as_str()
+                    && !code_files.iter().any(|f: &FileEntry| f.path == path)
+                {
+                    let estimated_tokens = estimate_tokens_for_file(path);
+                    code_files.push(FileEntry {
+                        path: path.to_string(),
+                        symbols: Vec::new(),
+                        priority: 2,
+                        estimated_tokens,
+                    });
                 }
+            }
+        }
     }
 
     let total_tokens: usize = decisions.len() * 100 // ~100 tokens per decision
