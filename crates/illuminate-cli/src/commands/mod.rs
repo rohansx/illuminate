@@ -2,6 +2,7 @@ pub mod audit;
 pub mod decisions;
 pub mod entities;
 pub mod export;
+pub mod hook;
 pub mod index;
 pub mod init;
 pub mod log;

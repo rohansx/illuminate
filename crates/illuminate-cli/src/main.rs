@@ -30,6 +30,10 @@ enum Commands {
         /// Auto-configure Windsurf MCP integration
         #[arg(long)]
         windsurf: bool,
+
+        /// Install PreToolUse hooks for auto-audit on Write/Edit
+        #[arg(long)]
+        hooks: bool,
     },
 
     /// Log a decision or event
@@ -186,6 +190,9 @@ enum Commands {
         json: bool,
     },
 
+    /// PreToolUse hook - auto-audit Write/Edit calls (reads from stdin)
+    AuditHook,
+
     /// Record an agent failure as a reflexion episode
     Reflect {
         /// What went wrong
@@ -274,7 +281,7 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { name, claude, cursor, windsurf } => commands::init::run(name, claude, cursor, windsurf),
+        Commands::Init { name, claude, cursor, windsurf, hooks } => commands::init::run(name, claude, cursor, windsurf, hooks),
         Commands::Log { text, source, tags } => commands::log::run(text, source, tags),
         Commands::Query {
             text,
@@ -338,6 +345,7 @@ fn main() {
         Commands::Symbols { name, symbol_type, limit } => commands::symbols::run(name, symbol_type, limit),
         Commands::Export { format } => commands::export::run(&format),
         Commands::Summary { limit } => commands::summary::run(limit),
+        Commands::AuditHook => commands::hook::run_audit_hook(),
         Commands::Audit { plan, json } => commands::audit::run(plan, json),
         Commands::Reflect {
             failure,

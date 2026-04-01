@@ -4,7 +4,7 @@ use std::path::Path;
 
 use illuminate::Graph;
 
-pub fn run(name: Option<String>, claude: bool, cursor: bool, windsurf: bool) -> illuminate::Result<()> {
+pub fn run(name: Option<String>, claude: bool, cursor: bool, windsurf: bool, hooks: bool) -> illuminate::Result<()> {
     let dir = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
     let _graph = Graph::init(&dir)?;
 
@@ -42,12 +42,17 @@ pub fn run(name: Option<String>, claude: bool, cursor: bool, windsurf: bool) -> 
     println!("  illuminate watch --git --backfill 100   Ingest git history");
     println!("  illuminate serve                        Start MCP server");
 
-    if claude || cursor || windsurf {
+    if hooks {
+        configure_hooks(&dir)?;
+    }
+
+    if claude || cursor || windsurf || hooks {
         println!();
         println!("Agent configuration:");
-        if claude { println!("  Claude Code: .claude.json updated"); }
-        if cursor { println!("  Cursor: .cursor/mcp.json updated"); }
-        if windsurf { println!("  Windsurf: .windsurf/mcp.json updated"); }
+        if claude { println!("  Claude Code: .claude.json + CLAUDE.md"); }
+        if cursor { println!("  Cursor: .cursor/mcp.json"); }
+        if windsurf { println!("  Windsurf: .windsurf/mcp.json"); }
+        if hooks { println!("  Hooks: .claude/settings.json (auto-audit on Write/Edit)"); }
     }
 
     Ok(())
@@ -161,6 +166,60 @@ illuminate_reflect({
 
 Check `illuminate.toml` for active policies. These are machine-enforced architectural rules.
 "#
+}
+
+fn configure_hooks(dir: &Path) -> illuminate::Result<()> {
+    let claude_dir = dir.join(".claude");
+    fs::create_dir_all(&claude_dir).map_err(illuminate::IlluminateError::Io)?;
+
+    let settings_path = claude_dir.join("settings.json");
+
+    let config = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path).map_err(illuminate::IlluminateError::Io)?;
+        let mut value: serde_json::Value = serde_json::from_str(&content)
+            .unwrap_or_else(|_| serde_json::json!({}));
+        // add illuminate hook
+        let hooks = value
+            .as_object_mut()
+            .unwrap()
+            .entry("hooks")
+            .or_insert_with(|| serde_json::json!({}));
+        let pre_hooks = hooks
+            .as_object_mut()
+            .unwrap()
+            .entry("PreToolUse")
+            .or_insert_with(|| serde_json::json!([]));
+        if let Some(arr) = pre_hooks.as_array_mut() {
+            let already = arr.iter().any(|h| {
+                h.get("command")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|c| c.contains("illuminate"))
+            });
+            if !already {
+                arr.push(serde_json::json!({
+                    "matcher": "Write|Edit|MultiEdit",
+                    "command": "illuminate audit-hook --stdin"
+                }));
+            }
+        }
+        value
+    } else {
+        serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Write|Edit|MultiEdit",
+                        "command": "illuminate audit-hook --stdin"
+                    }
+                ]
+            }
+        })
+    };
+
+    let json_str = serde_json::to_string_pretty(&config)
+        .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
+    fs::write(&settings_path, json_str).map_err(illuminate::IlluminateError::Io)?;
+    Ok(())
 }
 
 fn configure_cursor(dir: &Path) -> illuminate::Result<()> {
