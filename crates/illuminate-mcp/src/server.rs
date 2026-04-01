@@ -20,7 +20,11 @@ impl McpServer {
         }
     }
 
-    pub fn with_policies(graph: Graph, embed: Option<EmbedEngine>, policies: Vec<IntentPolicy>) -> Self {
+    pub fn with_policies(
+        graph: Graph,
+        embed: Option<EmbedEngine>,
+        policies: Vec<IntentPolicy>,
+    ) -> Self {
         Self {
             ctx: Arc::new(ToolContext::with_policies(graph, embed, policies)),
         }

@@ -65,7 +65,11 @@ pub fn get_commits_since(repo_path: &Path, since: &str) -> Result<Vec<GitCommit>
 }
 
 /// Get commits touching a specific path.
-pub fn get_commits_for_path(repo_path: &Path, count: usize, file_path: &str) -> Result<Vec<GitCommit>> {
+pub fn get_commits_for_path(
+    repo_path: &Path,
+    count: usize,
+    file_path: &str,
+) -> Result<Vec<GitCommit>> {
     let output = Command::new("git")
         .args([
             "log",

@@ -3,7 +3,11 @@ use std::env;
 use illuminate_index::indexer::CodeIndex;
 
 /// List or search code symbols.
-pub fn run(name: Option<String>, symbol_type: Option<String>, limit: usize) -> illuminate::Result<()> {
+pub fn run(
+    name: Option<String>,
+    symbol_type: Option<String>,
+    limit: usize,
+) -> illuminate::Result<()> {
     let cwd = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
     let index_path = cwd.join(".illuminate").join("index.db");
 
@@ -46,10 +50,7 @@ pub fn run(name: Option<String>, symbol_type: Option<String>, limit: usize) -> i
 
         println!(
             "  {} ({}) {}:{}",
-            sym.name,
-            sym.symbol_type,
-            sym.file_path,
-            sym.line_start
+            sym.name, sym.symbol_type, sym.file_path, sym.line_start
         );
 
         // show linked decisions

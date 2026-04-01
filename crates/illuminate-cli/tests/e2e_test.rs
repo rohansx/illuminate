@@ -3,9 +3,9 @@
 //! Proves the full product loop works without ONNX models.
 
 use illuminate::{Episode, Graph};
+use illuminate_audit::Auditor;
 use illuminate_audit::policy::{IntentPolicy, parse_policies};
 use illuminate_audit::response::{AuditStatus, Severity};
-use illuminate_audit::Auditor;
 use illuminate_reflect::{ReflexionInput, ReflexionStore, Severity as ReflSeverity};
 use illuminate_watch::git::{GitCommit, IngestStats, ingest_commits};
 use illuminate_watch::signal::score_decision_signal;
@@ -35,13 +35,22 @@ fn e2e_git_ingest_to_audit_violation() {
 
     // 2. ingest - only high-signal commits make it through
     let stats = ingest_commits(&graph, &commits, 0.3).unwrap();
-    assert_eq!(stats.episodes_created, 1, "only the decision commit should be ingested");
+    assert_eq!(
+        stats.episodes_created, 1,
+        "only the decision commit should be ingested"
+    );
     assert_eq!(stats.below_threshold, 1, "typo fix filtered out");
-    assert_eq!(stats.anchors_created, 1, "decision commit should create anchor for changed file");
+    assert_eq!(
+        stats.anchors_created, 1,
+        "decision commit should create anchor for changed file"
+    );
 
     // 3. verify the decision is searchable
     let results = graph.search("memcached", 5).unwrap();
-    assert!(!results.is_empty(), "decision should be findable via search");
+    assert!(
+        !results.is_empty(),
+        "decision should be findable via search"
+    );
     assert!(results[0].0.content.contains("memcached"));
 
     // 4. audit a conflicting plan - agent wants to use redis
@@ -54,10 +63,15 @@ fn e2e_git_ingest_to_audit_violation() {
     }];
 
     let auditor = Auditor::new(graph, policies);
-    let result = auditor.audit("add redis caching layer to billing service").unwrap();
+    let result = auditor
+        .audit("add redis caching layer to billing service")
+        .unwrap();
 
     assert_eq!(result.status, AuditStatus::Violation);
-    assert!(!result.policy_violations.is_empty(), "should catch redis policy violation");
+    assert!(
+        !result.policy_violations.is_empty(),
+        "should catch redis policy violation"
+    );
     assert_eq!(result.policy_violations[0].found.as_deref(), Some("Redis"));
 }
 
@@ -68,13 +82,16 @@ fn e2e_reflexion_loop() {
 
     // 1. record a reflexion
     let store = ReflexionStore::new(graph);
-    let id = store.record(&ReflexionInput {
-        failure: "redis connection pool exhaustion in staging".to_string(),
-        root_cause: "vpc limits concurrent connections to 50".to_string(),
-        corrective_action: "use memcached instead, do not attempt redis without vpc reconfig".to_string(),
-        files_affected: vec!["src/cache/provider.rs".to_string()],
-        severity: ReflSeverity::High,
-    }).unwrap();
+    let id = store
+        .record(&ReflexionInput {
+            failure: "redis connection pool exhaustion in staging".to_string(),
+            root_cause: "vpc limits concurrent connections to 50".to_string(),
+            corrective_action: "use memcached instead, do not attempt redis without vpc reconfig"
+                .to_string(),
+            files_affected: vec!["src/cache/provider.rs".to_string()],
+            severity: ReflSeverity::High,
+        })
+        .unwrap();
     assert!(!id.is_empty());
 
     // 2. search finds the reflexion
@@ -100,8 +117,14 @@ fn e2e_frozen_path_blocks_then_expires() {
     }];
 
     let auditor = Auditor::new(graph, policies_active);
-    let result = auditor.audit("refactor src/auth module to use oauth2").unwrap();
-    assert_eq!(result.status, AuditStatus::Violation, "active freeze should block");
+    let result = auditor
+        .audit("refactor src/auth module to use oauth2")
+        .unwrap();
+    assert_eq!(
+        result.status,
+        AuditStatus::Violation,
+        "active freeze should block"
+    );
 
     // expired policy
     let graph2 = Graph::in_memory().unwrap();
@@ -115,8 +138,14 @@ fn e2e_frozen_path_blocks_then_expires() {
     }];
 
     let auditor2 = Auditor::new(graph2, policies_expired);
-    let result2 = auditor2.audit("refactor src/auth module to use oauth2").unwrap();
-    assert_eq!(result2.status, AuditStatus::Pass, "expired freeze should pass");
+    let result2 = auditor2
+        .audit("refactor src/auth module to use oauth2")
+        .unwrap();
+    assert_eq!(
+        result2.status,
+        AuditStatus::Pass,
+        "expired freeze should pass"
+    );
 }
 
 /// Policy parsing from toml config
@@ -191,12 +220,22 @@ fn internal_helper() {}
         std::path::Path::new("src/cache.rs"),
         source,
         illuminate_index::Language::Rust,
-    ).unwrap();
+    )
+    .unwrap();
 
     // should find struct, 2 functions, 1 import
-    let structs: Vec<_> = symbols.iter().filter(|s| s.symbol_type == illuminate_index::symbols::SymbolType::Struct).collect();
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == illuminate_index::symbols::SymbolType::Function).collect();
-    let imports: Vec<_> = symbols.iter().filter(|s| s.symbol_type == illuminate_index::symbols::SymbolType::Import).collect();
+    let structs: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == illuminate_index::symbols::SymbolType::Struct)
+        .collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == illuminate_index::symbols::SymbolType::Function)
+        .collect();
+    let imports: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == illuminate_index::symbols::SymbolType::Import)
+        .collect();
 
     assert_eq!(structs.len(), 1);
     assert_eq!(structs[0].name, "CacheConfig");
@@ -216,5 +255,8 @@ fn e2e_route_finds_decisions() {
     graph.add_episode(ep).unwrap();
 
     let plan = illuminate_route::route(&graph, None, "postgres", 10).unwrap();
-    assert!(!plan.decisions.is_empty(), "should find postgres-related decisions");
+    assert!(
+        !plan.decisions.is_empty(),
+        "should find postgres-related decisions"
+    );
 }

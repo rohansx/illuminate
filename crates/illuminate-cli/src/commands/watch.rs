@@ -4,7 +4,11 @@ use super::open_graph;
 use illuminate_watch::git;
 
 /// Run the git watch/backfill command.
-pub fn run_git(backfill: usize, path: Option<String>, signal_threshold: f64) -> illuminate::Result<()> {
+pub fn run_git(
+    backfill: usize,
+    path: Option<String>,
+    signal_threshold: f64,
+) -> illuminate::Result<()> {
     let graph = open_graph()?;
     let cwd = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
 
@@ -20,7 +24,10 @@ pub fn run_git(backfill: usize, path: Option<String>, signal_threshold: f64) -> 
         return Ok(());
     }
 
-    println!("processing {} commits (signal threshold: {signal_threshold})...", commits.len());
+    println!(
+        "processing {} commits (signal threshold: {signal_threshold})...",
+        commits.len()
+    );
 
     let stats = git::ingest_commits(&graph, &commits, signal_threshold)?;
     println!("{stats}");
@@ -72,10 +79,7 @@ pub fn run_github(repo: Option<String>, signal_threshold: f64) -> illuminate::Re
 
     let prs = rt
         .block_on(illuminate_watch::github::fetch_pull_requests(
-            &repo,
-            &token,
-            30,
-            "all",
+            &repo, &token, 30, "all",
         ))
         .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
 
@@ -84,7 +88,10 @@ pub fn run_github(repo: Option<String>, signal_threshold: f64) -> illuminate::Re
         return Ok(());
     }
 
-    println!("processing {} prs (signal threshold: {signal_threshold})...", prs.len());
+    println!(
+        "processing {} prs (signal threshold: {signal_threshold})...",
+        prs.len()
+    );
 
     let stats = illuminate_watch::github::ingest_pull_requests(&graph, &prs, signal_threshold)?;
     println!("{stats}");
@@ -98,8 +105,12 @@ pub fn run_webhook(port: u16, signal_threshold: f64) -> illuminate::Result<()> {
 
     let rt = tokio::runtime::Runtime::new().map_err(illuminate::IlluminateError::Io)?;
 
-    rt.block_on(illuminate_watch::webhook::serve(graph, port, signal_threshold))
-        .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
+    rt.block_on(illuminate_watch::webhook::serve(
+        graph,
+        port,
+        signal_threshold,
+    ))
+    .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
 
     Ok(())
 }
@@ -116,8 +127,10 @@ pub fn run_daemon(signal_threshold: f64) -> illuminate::Result<()> {
 
     let rt = tokio::runtime::Runtime::new().map_err(illuminate::IlluminateError::Io)?;
 
-    rt.block_on(illuminate_watch::daemon::run_git_daemon(&graph, &cwd, &config))
-        .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
+    rt.block_on(illuminate_watch::daemon::run_git_daemon(
+        &graph, &cwd, &config,
+    ))
+    .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
 
     Ok(())
 }

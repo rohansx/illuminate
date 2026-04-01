@@ -84,10 +84,7 @@ impl CodeIndex {
             }
 
             // detect language
-            let ext = file_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
+            let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let lang = match Language::from_extension(ext) {
                 Some(l) => l,
                 None => continue,
@@ -217,8 +214,12 @@ fn collect_recursive(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
         let name_str = name.to_string_lossy();
 
         // skip hidden dirs and common non-source dirs
-        if name_str.starts_with('.') || name_str == "target" || name_str == "node_modules"
-            || name_str == "__pycache__" || name_str == "vendor" || name_str == "dist"
+        if name_str.starts_with('.')
+            || name_str == "target"
+            || name_str == "node_modules"
+            || name_str == "__pycache__"
+            || name_str == "vendor"
+            || name_str == "dist"
             || name_str == "build"
         {
             continue;

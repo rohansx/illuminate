@@ -1,8 +1,8 @@
 //! Tests for illuminate-index: tree-sitter symbol extraction and storage.
 
-use illuminate_index::{Language, index_file};
-use illuminate_index::symbols::{SymbolType, Visibility, symbol_hash};
 use illuminate_index::storage;
+use illuminate_index::symbols::{SymbolType, Visibility, symbol_hash};
+use illuminate_index::{Language, index_file};
 
 // ── Language detection ──
 
@@ -49,8 +49,18 @@ fn unknown_extension_returns_none() {
 
 #[test]
 fn symbol_hash_is_deterministic() {
-    let h1 = symbol_hash("rust", &SymbolType::Function, "process_payment", Some("fn process_payment()"));
-    let h2 = symbol_hash("rust", &SymbolType::Function, "process_payment", Some("fn process_payment()"));
+    let h1 = symbol_hash(
+        "rust",
+        &SymbolType::Function,
+        "process_payment",
+        Some("fn process_payment()"),
+    );
+    let h2 = symbol_hash(
+        "rust",
+        &SymbolType::Function,
+        "process_payment",
+        Some("fn process_payment()"),
+    );
     assert_eq!(h1, h2);
 }
 
@@ -83,7 +93,10 @@ fn extract_rust_function() {
     let path = std::path::Path::new("src/billing.rs");
     let symbols = index_file(path, source, Language::Rust).unwrap();
 
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Function).collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Function)
+        .collect();
     assert_eq!(fns.len(), 1);
     assert_eq!(fns[0].name, "process_payment");
     assert_eq!(fns[0].visibility, Visibility::Public);
@@ -97,7 +110,10 @@ fn extract_rust_struct() {
     let path = std::path::Path::new("src/cache.rs");
     let symbols = index_file(path, source, Language::Rust).unwrap();
 
-    let structs: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Struct).collect();
+    let structs: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Struct)
+        .collect();
     assert_eq!(structs.len(), 1);
     assert_eq!(structs[0].name, "CacheConfig");
     assert_eq!(structs[0].visibility, Visibility::Public);
@@ -109,7 +125,10 @@ fn extract_rust_enum() {
     let path = std::path::Path::new("src/cache.rs");
     let symbols = index_file(path, source, Language::Rust).unwrap();
 
-    let enums: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Enum).collect();
+    let enums: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Enum)
+        .collect();
     assert_eq!(enums.len(), 1);
     assert_eq!(enums[0].name, "CacheProvider");
 }
@@ -120,7 +139,10 @@ fn extract_rust_use_declaration() {
     let path = std::path::Path::new("src/main.rs");
     let symbols = index_file(path, source, Language::Rust).unwrap();
 
-    let imports: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Import).collect();
+    let imports: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Import)
+        .collect();
     assert_eq!(imports.len(), 1);
     assert!(imports[0].name.contains("HashMap"));
 }
@@ -131,7 +153,10 @@ fn extract_rust_private_function() {
     let path = std::path::Path::new("src/lib.rs");
     let symbols = index_file(path, source, Language::Rust).unwrap();
 
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Function).collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Function)
+        .collect();
     assert_eq!(fns.len(), 1);
     assert_eq!(fns[0].visibility, Visibility::Private);
 }
@@ -152,9 +177,21 @@ fn internal() {}
     let path = std::path::Path::new("src/server.rs");
     let symbols = index_file(path, source, Language::Rust).unwrap();
 
-    assert!(symbols.iter().any(|s| s.name == "Server" && s.symbol_type == SymbolType::Struct));
-    assert!(symbols.iter().any(|s| s.name == "start" && s.symbol_type == SymbolType::Function));
-    assert!(symbols.iter().any(|s| s.name == "internal" && s.symbol_type == SymbolType::Function));
+    assert!(
+        symbols
+            .iter()
+            .any(|s| s.name == "Server" && s.symbol_type == SymbolType::Struct)
+    );
+    assert!(
+        symbols
+            .iter()
+            .any(|s| s.name == "start" && s.symbol_type == SymbolType::Function)
+    );
+    assert!(
+        symbols
+            .iter()
+            .any(|s| s.name == "internal" && s.symbol_type == SymbolType::Function)
+    );
     assert!(symbols.iter().any(|s| s.symbol_type == SymbolType::Import));
 }
 
@@ -174,7 +211,10 @@ fn extract_go_function() {
     let path = std::path::Path::new("billing.go");
     let symbols = index_file(path, source, Language::Go).unwrap();
 
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Function).collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Function)
+        .collect();
     assert_eq!(fns.len(), 1);
     assert_eq!(fns[0].name, "ProcessPayment");
     assert_eq!(fns[0].visibility, Visibility::Public); // uppercase = exported
@@ -186,7 +226,10 @@ fn extract_go_unexported_function() {
     let path = std::path::Path::new("util.go");
     let symbols = index_file(path, source, Language::Go).unwrap();
 
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Function).collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Function)
+        .collect();
     assert_eq!(fns.len(), 1);
     assert_eq!(fns[0].name, "helper");
     assert_eq!(fns[0].visibility, Visibility::Private);
@@ -200,7 +243,10 @@ fn extract_python_function() {
     let path = std::path::Path::new("billing.py");
     let symbols = index_file(path, source, Language::Python).unwrap();
 
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Function).collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Function)
+        .collect();
     assert_eq!(fns.len(), 1);
     assert_eq!(fns[0].name, "process_payment");
     assert_eq!(fns[0].visibility, Visibility::Public);
@@ -212,7 +258,10 @@ fn extract_python_private_function() {
     let path = std::path::Path::new("util.py");
     let symbols = index_file(path, source, Language::Python).unwrap();
 
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Function).collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Function)
+        .collect();
     assert_eq!(fns.len(), 1);
     assert_eq!(fns[0].visibility, Visibility::Private);
 }
@@ -223,7 +272,10 @@ fn extract_python_class() {
     let path = std::path::Path::new("billing.py");
     let symbols = index_file(path, source, Language::Python).unwrap();
 
-    let classes: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Class).collect();
+    let classes: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Class)
+        .collect();
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].name, "BillingService");
 }
@@ -234,7 +286,10 @@ fn extract_python_import() {
     let path = std::path::Path::new("app.py");
     let symbols = index_file(path, source, Language::Python).unwrap();
 
-    let imports: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Import).collect();
+    let imports: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Import)
+        .collect();
     assert_eq!(imports.len(), 1);
     assert!(imports[0].name.contains("datetime"));
 }
@@ -247,7 +302,10 @@ fn extract_ts_function() {
     let path = std::path::Path::new("billing.ts");
     let symbols = index_file(path, source, Language::TypeScript).unwrap();
 
-    let fns: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Function).collect();
+    let fns: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Function)
+        .collect();
     assert_eq!(fns.len(), 1);
     assert_eq!(fns[0].name, "processPayment");
 }
@@ -258,7 +316,10 @@ fn extract_ts_class() {
     let path = std::path::Path::new("billing.ts");
     let symbols = index_file(path, source, Language::TypeScript).unwrap();
 
-    let classes: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Class).collect();
+    let classes: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Class)
+        .collect();
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].name, "BillingService");
 }
@@ -269,7 +330,10 @@ fn extract_ts_interface() {
     let path = std::path::Path::new("types.ts");
     let symbols = index_file(path, source, Language::TypeScript).unwrap();
 
-    let ifaces: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Interface).collect();
+    let ifaces: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Interface)
+        .collect();
     assert_eq!(ifaces.len(), 1);
     assert_eq!(ifaces[0].name, "PaymentGateway");
 }
@@ -280,7 +344,10 @@ fn extract_ts_import() {
     let path = std::path::Path::new("app.ts");
     let symbols = index_file(path, source, Language::TypeScript).unwrap();
 
-    let imports: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Import).collect();
+    let imports: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Import)
+        .collect();
     assert_eq!(imports.len(), 1);
 }
 
@@ -292,7 +359,10 @@ fn extract_java_class() {
     let path = std::path::Path::new("BillingService.java");
     let symbols = index_file(path, source, Language::Java).unwrap();
 
-    let classes: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Class).collect();
+    let classes: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Class)
+        .collect();
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].name, "BillingService");
 }
@@ -305,7 +375,10 @@ fn extract_c_include() {
     let path = std::path::Path::new("main.c");
     let symbols = index_file(path, source, Language::C).unwrap();
 
-    let imports: Vec<_> = symbols.iter().filter(|s| s.symbol_type == SymbolType::Import).collect();
+    let imports: Vec<_> = symbols
+        .iter()
+        .filter(|s| s.symbol_type == SymbolType::Import)
+        .collect();
     assert_eq!(imports.len(), 1);
     assert!(imports[0].name.contains("stdio.h"));
 }
@@ -488,7 +561,8 @@ fn code_index_indexes_project() {
     std::fs::write(
         src_dir.join("lib.rs"),
         "pub fn hello() {}\nstruct Config {}\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut index = CodeIndex::in_memory().unwrap();
     let stats = index.index_project(tmp.path()).unwrap();
@@ -564,14 +638,16 @@ fn code_index_enrich_anchor_by_entity_name() {
         &rusqlite::Connection::open_in_memory().unwrap(), // won't work - need internal conn
         "src/cache.rs",
         &[sym],
-    ).ok(); // this won't actually write to the index's conn
+    )
+    .ok(); // this won't actually write to the index's conn
 
     // test with a real project dir
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
         tmp.path().join("cache.rs"),
         "pub struct MemcachedClient {\n    ttl: u64,\n}\n\npub fn connect() {}\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut index = CodeIndex::in_memory().unwrap();
     index.index_project(tmp.path()).unwrap();
@@ -581,7 +657,10 @@ fn code_index_enrich_anchor_by_entity_name() {
         .enrich_anchor(&mut anchor, &["Memcached".to_string()])
         .unwrap();
 
-    assert!(enriched, "should match MemcachedClient via entity name 'Memcached'");
+    assert!(
+        enriched,
+        "should match MemcachedClient via entity name 'Memcached'"
+    );
     assert_eq!(anchor.symbol_name.as_deref(), Some("MemcachedClient"));
     assert_eq!(anchor.line_start, Some(1));
 }
@@ -592,7 +671,8 @@ fn code_index_enrich_anchor_fallback_to_first_public() {
     std::fs::write(
         tmp.path().join("server.rs"),
         "pub fn start_server() {}\nfn internal() {}\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut index = CodeIndex::in_memory().unwrap();
     index.index_project(tmp.path()).unwrap();

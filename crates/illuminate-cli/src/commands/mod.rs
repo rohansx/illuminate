@@ -29,8 +29,8 @@ pub fn open_graph() -> illuminate::Result<Graph> {
     if let Some(models_dir) = find_models_dir(&db_path) {
         // Look for illuminate.toml next to .illuminate/ directory
         let config_path = db_path
-            .parent()                    // .illuminate/
-            .and_then(|p| p.parent())    // project root
+            .parent() // .illuminate/
+            .and_then(|p| p.parent()) // project root
             .map(|p| p.join("illuminate.toml"));
 
         let result = if let Some(ref cfg) = config_path {

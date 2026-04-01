@@ -2,8 +2,8 @@
 
 use rusqlite::Connection;
 
-use crate::symbols::Symbol;
 use crate::Result;
+use crate::symbols::Symbol;
 
 /// Create the symbols table in the index database.
 pub fn create_schema(conn: &Connection) -> Result<()> {

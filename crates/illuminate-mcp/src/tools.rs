@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use illuminate::{Episode, Graph};
-use illuminate_embed::EmbedEngine;
 use illuminate_audit::policy::IntentPolicy;
+use illuminate_embed::EmbedEngine;
 use illuminate_reflect::Severity;
 use serde_json::{Value, json};
 
@@ -26,7 +26,11 @@ impl ToolContext {
         }
     }
 
-    pub fn with_policies(graph: Graph, embed: Option<EmbedEngine>, policies: Vec<IntentPolicy>) -> Self {
+    pub fn with_policies(
+        graph: Graph,
+        embed: Option<EmbedEngine>,
+        policies: Vec<IntentPolicy>,
+    ) -> Self {
         Self {
             graph: Arc::new(Mutex::new(graph)),
             embed: embed.map(Arc::new),
@@ -441,7 +445,13 @@ impl ToolContext {
         // Check intent policies
         for policy in &self.policies {
             match policy {
-                IntentPolicy::MustUse { name, entity, reject, reason, severity } => {
+                IntentPolicy::MustUse {
+                    name,
+                    entity,
+                    reject,
+                    reason,
+                    severity,
+                } => {
                     for rejected in reject {
                         if plan_lower.contains(&rejected.to_lowercase()) {
                             policy_violations.push(json!({
@@ -454,9 +464,17 @@ impl ToolContext {
                         }
                     }
                 }
-                IntentPolicy::Frozen { name, paths, reason, severity, expires } => {
+                IntentPolicy::Frozen {
+                    name,
+                    paths,
+                    reason,
+                    severity,
+                    expires,
+                } => {
                     if let Some(exp) = expires {
-                        if chrono::Utc::now() > *exp { continue; }
+                        if chrono::Utc::now() > *exp {
+                            continue;
+                        }
                     }
                     for path in paths {
                         let base = path.to_lowercase().replace("/**", "").replace("/*", "");
@@ -470,7 +488,13 @@ impl ToolContext {
                         }
                     }
                 }
-                IntentPolicy::RejectedPattern { name, pattern, reason, severity, .. } => {
+                IntentPolicy::RejectedPattern {
+                    name,
+                    pattern,
+                    reason,
+                    severity,
+                    ..
+                } => {
                     if plan_lower.contains(&pattern.to_lowercase()) {
                         policy_violations.push(json!({
                             "policy": name,
@@ -489,9 +513,17 @@ impl ToolContext {
         let search_results = graph.search(&plan, 20).map_err(|e| e.to_string())?;
         for (episode, score) in &search_results {
             let content_lower = episode.content.to_lowercase();
-            let has_rejection = ["rejected", "not ", "instead of", "over", "rather than", "avoid", "dropped"]
-                .iter()
-                .any(|kw| content_lower.contains(kw));
+            let has_rejection = [
+                "rejected",
+                "not ",
+                "instead of",
+                "over",
+                "rather than",
+                "avoid",
+                "dropped",
+            ]
+            .iter()
+            .any(|kw| content_lower.contains(kw));
 
             if has_rejection && *score > 0.0 {
                 decision_conflicts.push(json!({
@@ -523,7 +555,13 @@ impl ToolContext {
 
         let has_errors = !policy_violations.is_empty() || !decision_conflicts.is_empty();
         let has_warnings = !reflexions.is_empty();
-        let status = if has_errors { "violation" } else if has_warnings { "warning" } else { "pass" };
+        let status = if has_errors {
+            "violation"
+        } else if has_warnings {
+            "warning"
+        } else {
+            "pass"
+        };
 
         Ok(json!({
             "status": status,
@@ -551,7 +589,11 @@ impl ToolContext {
 
         let files_affected: Vec<String> = args["files_affected"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let severity = match args["severity"].as_str().unwrap_or("medium") {
@@ -567,13 +609,16 @@ impl ToolContext {
         );
 
         let mut metadata = serde_json::Map::new();
-        metadata.insert("reflexion".to_string(), json!({
-            "failure": failure,
-            "root_cause": root_cause,
-            "corrective_action": corrective_action,
-            "severity": severity,
-            "files_affected": files_affected,
-        }));
+        metadata.insert(
+            "reflexion".to_string(),
+            json!({
+                "failure": failure,
+                "root_cause": root_cause,
+                "corrective_action": corrective_action,
+                "severity": severity,
+                "files_affected": files_affected,
+            }),
+        );
 
         let episode = Episode {
             id: uuid::Uuid::now_v7().to_string(),

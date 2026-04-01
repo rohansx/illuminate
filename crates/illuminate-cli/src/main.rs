@@ -281,7 +281,13 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { name, claude, cursor, windsurf, hooks } => commands::init::run(name, claude, cursor, windsurf, hooks),
+        Commands::Init {
+            name,
+            claude,
+            cursor,
+            windsurf,
+            hooks,
+        } => commands::init::run(name, claude, cursor, windsurf, hooks),
         Commands::Log { text, source, tags } => commands::log::run(text, source, tags),
         Commands::Query {
             text,
@@ -340,9 +346,17 @@ fn main() {
             }
         }
         Commands::Index { enrich } => commands::index::run().and_then(|_| {
-            if enrich { commands::index::enrich() } else { Ok(()) }
+            if enrich {
+                commands::index::enrich()
+            } else {
+                Ok(())
+            }
         }),
-        Commands::Symbols { name, symbol_type, limit } => commands::symbols::run(name, symbol_type, limit),
+        Commands::Symbols {
+            name,
+            symbol_type,
+            limit,
+        } => commands::symbols::run(name, symbol_type, limit),
         Commands::Export { format } => commands::export::run(&format),
         Commands::Summary { limit } => commands::summary::run(limit),
         Commands::AuditHook => commands::hook::run_audit_hook(),

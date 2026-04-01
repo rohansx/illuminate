@@ -1,7 +1,7 @@
 //! Symbol extraction from tree-sitter AST nodes.
 
-use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::Language;
 
@@ -58,7 +58,12 @@ pub enum Visibility {
 ///
 /// The hash is based on language + symbol_type + name + signature,
 /// normalized to be stable across formatting changes.
-pub fn symbol_hash(lang: &str, symbol_type: &SymbolType, name: &str, signature: Option<&str>) -> String {
+pub fn symbol_hash(
+    lang: &str,
+    symbol_type: &SymbolType,
+    name: &str,
+    signature: Option<&str>,
+) -> String {
     let normalized = format!(
         "{}:{}:{}:{}",
         lang,
@@ -226,7 +231,11 @@ fn extract_go_symbol(
         "function_declaration" => {
             if let Some(name_node) = child_by_field(node, "name") {
                 let name = node_text(name_node, source).to_string();
-                let sig = node_text(node, source).lines().next().unwrap_or("").to_string();
+                let sig = node_text(node, source)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 let vis = if name.chars().next().is_some_and(|c| c.is_uppercase()) {
                     Visibility::Public
                 } else {
@@ -284,7 +293,11 @@ fn extract_ts_symbol(
         "function_declaration" | "method_definition" => {
             if let Some(name_node) = child_by_field(node, "name") {
                 let name = node_text(name_node, source).to_string();
-                let sig = node_text(node, source).lines().next().unwrap_or("").to_string();
+                let sig = node_text(node, source)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 let hash = symbol_hash("typescript", &SymbolType::Function, &name, Some(&sig));
                 out.push(Symbol {
                     file_path: file_path.to_string(),
@@ -363,7 +376,11 @@ fn extract_python_symbol(
         "function_definition" => {
             if let Some(name_node) = child_by_field(node, "name") {
                 let name = node_text(name_node, source).to_string();
-                let sig = node_text(node, source).lines().next().unwrap_or("").to_string();
+                let sig = node_text(node, source)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 let vis = if name.starts_with('_') {
                     Visibility::Private
                 } else {
@@ -430,7 +447,11 @@ fn extract_java_symbol(
         "method_declaration" => {
             if let Some(name_node) = child_by_field(node, "name") {
                 let name = node_text(name_node, source).to_string();
-                let sig = node_text(node, source).lines().next().unwrap_or("").to_string();
+                let sig = node_text(node, source)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 let vis = if sig.contains("public") {
                     Visibility::Public
                 } else {
@@ -501,7 +522,11 @@ fn extract_c_symbol(
                 // For C, the function name is nested inside the declarator
                 if let Some(name_node) = child_by_field(declarator, "declarator") {
                     let name = node_text(name_node, source).to_string();
-                    let sig = node_text(node, source).lines().next().unwrap_or("").to_string();
+                    let sig = node_text(node, source)
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
                     let hash = symbol_hash("c", &SymbolType::Function, &name, Some(&sig));
                     out.push(Symbol {
                         file_path: file_path.to_string(),

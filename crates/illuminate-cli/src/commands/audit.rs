@@ -1,8 +1,8 @@
 use std::env;
 
 use super::open_graph;
-use illuminate_audit::policy::parse_policies;
 use illuminate_audit::Auditor;
+use illuminate_audit::policy::parse_policies;
 
 /// Run the audit command.
 pub fn run(plan_text: String, json: bool) -> illuminate::Result<()> {
@@ -35,10 +35,7 @@ pub fn run(plan_text: String, json: bool) -> illuminate::Result<()> {
         }
 
         for v in &result.policy_violations {
-            println!(
-                "\n  Policy: {}",
-                v.policy_name
-            );
+            println!("\n  Policy: {}", v.policy_name);
             if let Some(ref expected) = v.expected {
                 println!("  Expected: {expected}");
             }

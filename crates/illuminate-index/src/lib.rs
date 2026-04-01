@@ -104,21 +104,17 @@ pub fn index_file(path: &Path, source: &[u8], lang: Language) -> Result<Vec<symb
             message: e.to_string(),
         })?;
 
-    let tree = parser.parse(source, None).ok_or_else(|| IndexError::Parser {
-        language: lang.to_string(),
-        message: "failed to parse file".to_string(),
-    })?;
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| IndexError::Parser {
+            language: lang.to_string(),
+            message: "failed to parse file".to_string(),
+        })?;
 
     let file_path = path.to_string_lossy().to_string();
     let mut extracted = Vec::new();
 
-    symbols::extract_symbols(
-        tree.root_node(),
-        source,
-        &file_path,
-        lang,
-        &mut extracted,
-    );
+    symbols::extract_symbols(tree.root_node(), source, &file_path, lang, &mut extracted);
 
     Ok(extracted)
 }

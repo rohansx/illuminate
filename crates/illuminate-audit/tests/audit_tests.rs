@@ -1,8 +1,8 @@
 //! Tests for illuminate-audit: contextual linter and policy engine.
 
+use illuminate_audit::Auditor;
 use illuminate_audit::policy::{IntentPolicy, parse_policies};
 use illuminate_audit::response::{AuditStatus, Severity};
-use illuminate_audit::Auditor;
 
 fn make_graph_with_decision(content: &str) -> illuminate::Graph {
     let graph = illuminate::Graph::in_memory().unwrap();
@@ -72,9 +72,7 @@ expires = "2026-04-15"
     let policies = parse_policies(toml).unwrap();
     assert_eq!(policies.len(), 1);
     match &policies[0] {
-        IntentPolicy::Frozen {
-            paths, expires, ..
-        } => {
+        IntentPolicy::Frozen { paths, expires, .. } => {
             assert_eq!(paths, &["src/auth/**"]);
             assert!(expires.is_some());
         }
@@ -119,9 +117,7 @@ severity = "warning"
     let policies = parse_policies(toml).unwrap();
     assert_eq!(policies.len(), 1);
     match &policies[0] {
-        IntentPolicy::Convention {
-            pattern, scope, ..
-        } => {
+        IntentPolicy::Convention { pattern, scope, .. } => {
             assert_eq!(pattern, "snake_case");
             assert_eq!(scope, "api_endpoints");
         }
@@ -207,10 +203,7 @@ fn audit_detects_must_use_policy_violation() {
     assert_eq!(result.status, AuditStatus::Violation);
     assert_eq!(result.policy_violations.len(), 1);
     assert_eq!(result.policy_violations[0].policy_name, "caching");
-    assert_eq!(
-        result.policy_violations[0].found.as_deref(),
-        Some("Redis")
-    );
+    assert_eq!(result.policy_violations[0].found.as_deref(), Some("Redis"));
 }
 
 #[test]

@@ -54,7 +54,9 @@ pub async fn fetch_pull_requests(
     state: &str,
 ) -> Result<Vec<PullRequest>> {
     let client = reqwest::Client::new();
-    let url = format!("https://api.github.com/repos/{repo}/pulls?state={state}&per_page={limit}&sort=updated&direction=desc");
+    let url = format!(
+        "https://api.github.com/repos/{repo}/pulls?state={state}&per_page={limit}&sort=updated&direction=desc"
+    );
 
     let resp = client
         .get(&url)
@@ -116,12 +118,11 @@ async fn fetch_pr_files(
         .await;
 
     match resp {
-        Ok(r) if r.status().is_success() => {
-            r.json::<Vec<GhFile>>()
-                .await
-                .map(|files| files.into_iter().map(|f| f.filename).collect())
-                .unwrap_or_default()
-        }
+        Ok(r) if r.status().is_success() => r
+            .json::<Vec<GhFile>>()
+            .await
+            .map(|files| files.into_iter().map(|f| f.filename).collect())
+            .unwrap_or_default(),
         _ => Vec::new(),
     }
 }

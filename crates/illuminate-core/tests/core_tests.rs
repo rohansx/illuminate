@@ -597,7 +597,9 @@ fn test_empty_database_operations() {
 fn test_anchor_insert_and_retrieve() {
     let graph = test_graph();
 
-    let episode = Episode::builder("chose memcached over redis").source("git").build();
+    let episode = Episode::builder("chose memcached over redis")
+        .source("git")
+        .build();
     let ep_id = episode.id.clone();
     graph.add_episode(episode).unwrap();
 
@@ -626,8 +628,12 @@ fn test_anchor_lookup_by_file() {
     graph.add_episode(ep1).unwrap();
     graph.add_episode(ep2).unwrap();
 
-    graph.add_anchor(Anchor::new(&id1, "src/billing.rs")).unwrap();
-    graph.add_anchor(Anchor::new(&id2, "src/billing.rs")).unwrap();
+    graph
+        .add_anchor(Anchor::new(&id1, "src/billing.rs"))
+        .unwrap();
+    graph
+        .add_anchor(Anchor::new(&id2, "src/billing.rs"))
+        .unwrap();
     graph.add_anchor(Anchor::new(&id1, "src/cache.rs")).unwrap();
 
     let billing_anchors = graph.get_anchors_for_file("src/billing.rs").unwrap();

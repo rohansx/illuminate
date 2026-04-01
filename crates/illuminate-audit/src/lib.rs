@@ -44,9 +44,15 @@ impl Auditor {
             .chain(decision_violations.iter().map(|v| &v.severity))
             .collect();
 
-        let status = if all_violations.iter().any(|s| **s == response::Severity::Error) {
+        let status = if all_violations
+            .iter()
+            .any(|s| **s == response::Severity::Error)
+        {
             AuditStatus::Violation
-        } else if all_violations.iter().any(|s| **s == response::Severity::Warning) {
+        } else if all_violations
+            .iter()
+            .any(|s| **s == response::Severity::Warning)
+        {
             AuditStatus::Warning
         } else {
             AuditStatus::Pass
@@ -98,7 +104,10 @@ impl Auditor {
                 } => {
                     for rejected in reject {
                         let rejected_lower = rejected.to_lowercase();
-                        if entities.iter().any(|e| e.name.to_lowercase() == rejected_lower) {
+                        if entities
+                            .iter()
+                            .any(|e| e.name.to_lowercase() == rejected_lower)
+                        {
                             violations.push(PolicyViolation {
                                 policy_name: name.clone(),
                                 expected: Some(entity.clone()),
@@ -163,10 +172,7 @@ impl Auditor {
         violations
     }
 
-    fn check_graph_conflicts(
-        &self,
-        entities: &[PlanEntity],
-    ) -> illuminate::Result<Vec<Violation>> {
+    fn check_graph_conflicts(&self, entities: &[PlanEntity]) -> illuminate::Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
         for entity in entities {
@@ -178,16 +184,13 @@ impl Auditor {
                 let entity_lower = entity.name.to_lowercase();
 
                 // Check for rejection patterns
-                let is_rejected = REJECTION_INDICATORS
-                    .iter()
-                    .any(|pattern| {
-                        let check = format!("{pattern} {entity_lower}");
-                        content_lower.contains(&check)
-                    })
-                    || REJECTION_INDICATORS.iter().any(|pattern| {
-                        let check = format!("{entity_lower} {pattern}");
-                        content_lower.contains(&check)
-                    });
+                let is_rejected = REJECTION_INDICATORS.iter().any(|pattern| {
+                    let check = format!("{pattern} {entity_lower}");
+                    content_lower.contains(&check)
+                }) || REJECTION_INDICATORS.iter().any(|pattern| {
+                    let check = format!("{entity_lower} {pattern}");
+                    content_lower.contains(&check)
+                });
 
                 if is_rejected {
                     violations.push(Violation {
@@ -229,9 +232,7 @@ fn extract_plan_entities(plan_text: &str, graph: &Graph) -> Vec<PlanEntity> {
         let plan_lower = plan_text.to_lowercase();
         for entity in known {
             if plan_lower.contains(&entity.name.to_lowercase()) {
-                entities.push(PlanEntity {
-                    name: entity.name,
-                });
+                entities.push(PlanEntity { name: entity.name });
             }
         }
     }
@@ -239,7 +240,10 @@ fn extract_plan_entities(plan_text: &str, graph: &Graph) -> Vec<PlanEntity> {
     // Also extract common technology names via regex
     for cap in TECH_PATTERN.captures_iter(plan_text) {
         let name = cap[0].to_string();
-        if !entities.iter().any(|e| e.name.to_lowercase() == name.to_lowercase()) {
+        if !entities
+            .iter()
+            .any(|e| e.name.to_lowercase() == name.to_lowercase())
+        {
             entities.push(PlanEntity { name });
         }
     }

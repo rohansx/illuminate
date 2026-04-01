@@ -130,8 +130,8 @@ async fn main() {
 /// Load intent policies from illuminate.toml next to the .illuminate/ directory.
 fn load_policies(db_path: &std::path::Path) -> Vec<illuminate_audit::policy::IntentPolicy> {
     let config_path = db_path
-        .parent()                    // .illuminate/
-        .and_then(|p| p.parent())    // project root
+        .parent() // .illuminate/
+        .and_then(|p| p.parent()) // project root
         .map(|p| p.join("illuminate.toml"));
 
     if let Some(path) = config_path {

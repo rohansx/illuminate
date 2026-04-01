@@ -1,27 +1,30 @@
 //! Tests for illuminate-route: search routing and reading plans.
 
-use illuminate_route::{route, ReadingPlan};
+use illuminate_route::{ReadingPlan, route};
 
 fn make_graph_with_episodes() -> illuminate::Graph {
     let graph = illuminate::Graph::in_memory().unwrap();
 
     // Add some decision episodes
-    let ep1 = illuminate::Episode::builder("Chose Postgres over MongoDB for ACID compliance in billing")
-        .source("git")
-        .tag("database")
-        .build();
+    let ep1 =
+        illuminate::Episode::builder("Chose Postgres over MongoDB for ACID compliance in billing")
+            .source("git")
+            .tag("database")
+            .build();
     graph.add_episode(ep1).unwrap();
 
-    let ep2 = illuminate::Episode::builder("Use Memcached for caching, not Redis, due to VPC overhead")
-        .source("github-pr")
-        .tag("caching")
-        .build();
+    let ep2 =
+        illuminate::Episode::builder("Use Memcached for caching, not Redis, due to VPC overhead")
+            .source("github-pr")
+            .tag("caching")
+            .build();
     graph.add_episode(ep2).unwrap();
 
-    let ep3 = illuminate::Episode::builder("Auth module frozen for PCI compliance audit until April")
-        .source("manual")
-        .tag("security")
-        .build();
+    let ep3 =
+        illuminate::Episode::builder("Auth module frozen for PCI compliance audit until April")
+            .source("manual")
+            .tag("security")
+            .build();
     graph.add_episode(ep3).unwrap();
 
     graph

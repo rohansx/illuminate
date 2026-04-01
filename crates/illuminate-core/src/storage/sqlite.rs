@@ -539,9 +539,9 @@ impl Storage {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
-        let anchor_count: usize = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM anchors", [], |row| row.get(0))?;
+        let anchor_count: usize =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM anchors", [], |row| row.get(0))?;
 
         let db_size_bytes: u64 = self.conn.query_row(
             "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",

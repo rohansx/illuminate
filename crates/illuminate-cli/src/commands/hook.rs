@@ -1,8 +1,8 @@
 use std::io::Read;
 
 use super::open_graph;
-use illuminate_audit::policy::parse_policies;
 use illuminate_audit::Auditor;
+use illuminate_audit::policy::parse_policies;
 
 /// PreToolUse hook: reads tool call context from stdin, runs audit.
 ///
@@ -28,10 +28,7 @@ pub fn run_audit_hook() -> illuminate::Result<()> {
         return Ok(());
     }
 
-    let tool_input = hook_data
-        .get("tool_input")
-        .cloned()
-        .unwrap_or_default();
+    let tool_input = hook_data.get("tool_input").cloned().unwrap_or_default();
 
     // extract file path from tool input
     let file_path = tool_input

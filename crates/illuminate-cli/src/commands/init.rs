@@ -4,7 +4,13 @@ use std::path::Path;
 
 use illuminate::Graph;
 
-pub fn run(name: Option<String>, claude: bool, cursor: bool, windsurf: bool, hooks: bool) -> illuminate::Result<()> {
+pub fn run(
+    name: Option<String>,
+    claude: bool,
+    cursor: bool,
+    windsurf: bool,
+    hooks: bool,
+) -> illuminate::Result<()> {
     let dir = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
     let _graph = Graph::init(&dir)?;
 
@@ -49,17 +55,26 @@ pub fn run(name: Option<String>, claude: bool, cursor: bool, windsurf: bool, hoo
     if claude || cursor || windsurf || hooks {
         println!();
         println!("Agent configuration:");
-        if claude { println!("  Claude Code: .claude.json + CLAUDE.md"); }
-        if cursor { println!("  Cursor: .cursor/mcp.json"); }
-        if windsurf { println!("  Windsurf: .windsurf/mcp.json"); }
-        if hooks { println!("  Hooks: .claude/settings.json (auto-audit on Write/Edit)"); }
+        if claude {
+            println!("  Claude Code: .claude.json + CLAUDE.md");
+        }
+        if cursor {
+            println!("  Cursor: .cursor/mcp.json");
+        }
+        if windsurf {
+            println!("  Windsurf: .windsurf/mcp.json");
+        }
+        if hooks {
+            println!("  Hooks: .claude/settings.json (auto-audit on Write/Edit)");
+        }
     }
 
     Ok(())
 }
 
 fn default_config(project_name: &str) -> String {
-    format!(r#"# illuminate.toml — configuration for {project_name}
+    format!(
+        r#"# illuminate.toml — configuration for {project_name}
 
 [project]
 name = "{project_name}"
@@ -86,7 +101,8 @@ git_backfill = 100
 # reason = "Security audit in progress"
 # severity = "error"
 # expires = "2026-06-01"
-"#)
+"#
+    )
 }
 
 fn configure_claude(dir: &Path) -> illuminate::Result<()> {
@@ -94,8 +110,8 @@ fn configure_claude(dir: &Path) -> illuminate::Result<()> {
 
     let config = if config_path.exists() {
         let content = fs::read_to_string(&config_path).map_err(illuminate::IlluminateError::Io)?;
-        let mut value: serde_json::Value = serde_json::from_str(&content)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let mut value: serde_json::Value =
+            serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
         // Add illuminate MCP server
         value["mcpServers"]["illuminate"] = serde_json::json!({
             "command": "illuminate",
@@ -120,8 +136,7 @@ fn configure_claude(dir: &Path) -> illuminate::Result<()> {
     // generate CLAUDE.md with illuminate instructions
     let claude_md_path = dir.join("CLAUDE.md");
     if !claude_md_path.exists() {
-        fs::write(&claude_md_path, claude_md_content())
-            .map_err(illuminate::IlluminateError::Io)?;
+        fs::write(&claude_md_path, claude_md_content()).map_err(illuminate::IlluminateError::Io)?;
     }
 
     Ok(())
@@ -175,9 +190,10 @@ fn configure_hooks(dir: &Path) -> illuminate::Result<()> {
     let settings_path = claude_dir.join("settings.json");
 
     let config = if settings_path.exists() {
-        let content = fs::read_to_string(&settings_path).map_err(illuminate::IlluminateError::Io)?;
-        let mut value: serde_json::Value = serde_json::from_str(&content)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let content =
+            fs::read_to_string(&settings_path).map_err(illuminate::IlluminateError::Io)?;
+        let mut value: serde_json::Value =
+            serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
         // add illuminate hook
         let hooks = value
             .as_object_mut()

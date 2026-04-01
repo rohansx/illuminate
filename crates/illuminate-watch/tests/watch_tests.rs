@@ -1,7 +1,7 @@
 //! Tests for illuminate-watch: signal scoring and git ingestion.
 
-use illuminate_watch::signal::score_decision_signal;
 use illuminate_watch::git;
+use illuminate_watch::signal::score_decision_signal;
 
 // ── Signal scoring: choice patterns ──
 
@@ -74,7 +74,10 @@ fn signal_replaced() {
 #[test]
 fn signal_because() {
     let score = score_decision_signal("added retry logic because the payment service times out");
-    assert!(score >= 0.2, "expected at least weak signal for 'because', got {score}");
+    assert!(
+        score >= 0.2,
+        "expected at least weak signal for 'because', got {score}"
+    );
 }
 
 #[test]
@@ -133,14 +136,23 @@ fn signal_empty_string() {
 
 #[test]
 fn signal_compound_choice_and_reason() {
-    let score = score_decision_signal("chose Postgres over MongoDB because we need ACID compliance for billing");
-    assert!(score >= 0.7, "expected very high signal for compound match, got {score}");
+    let score = score_decision_signal(
+        "chose Postgres over MongoDB because we need ACID compliance for billing",
+    );
+    assert!(
+        score >= 0.7,
+        "expected very high signal for compound match, got {score}"
+    );
 }
 
 #[test]
 fn signal_compound_migration_and_reason() {
-    let score = score_decision_signal("switched from Redis to Memcached due to VPC connection limits");
-    assert!(score >= 0.6, "expected high signal for compound match, got {score}");
+    let score =
+        score_decision_signal("switched from Redis to Memcached due to VPC connection limits");
+    assert!(
+        score >= 0.6,
+        "expected high signal for compound match, got {score}"
+    );
 }
 
 // ── Git log parsing ──
@@ -169,8 +181,14 @@ fn ingest_commits_filters_by_threshold() {
     let stats = git::ingest_commits(&graph, &commits, 0.3).unwrap();
 
     assert_eq!(stats.total_processed, 2);
-    assert_eq!(stats.episodes_created, 1, "only high-signal commit should be ingested");
-    assert_eq!(stats.below_threshold, 1, "typo fix should be below threshold");
+    assert_eq!(
+        stats.episodes_created, 1,
+        "only high-signal commit should be ingested"
+    );
+    assert_eq!(
+        stats.below_threshold, 1,
+        "typo fix should be below threshold"
+    );
 }
 
 #[test]

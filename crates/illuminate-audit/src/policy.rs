@@ -126,18 +126,11 @@ pub fn parse_policies(toml_content: &str) -> Result<Vec<IntentPolicy>, String> {
                             .collect()
                     })
                     .unwrap_or_default();
-                let expires = val
-                    .get("expires")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| {
-                        chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
-                            .ok()
-                            .map(|d| {
-                                d.and_hms_opt(23, 59, 59)
-                                    .unwrap()
-                                    .and_utc()
-                            })
-                    });
+                let expires = val.get("expires").and_then(|v| v.as_str()).and_then(|s| {
+                    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                        .ok()
+                        .map(|d| d.and_hms_opt(23, 59, 59).unwrap().and_utc())
+                });
 
                 policies.push(IntentPolicy::Frozen {
                     name: key.clone(),
@@ -186,7 +179,9 @@ pub fn parse_policies(toml_content: &str) -> Result<Vec<IntentPolicy>, String> {
                 });
             }
             other => {
-                return Err(format!("unknown policy rule type: '{other}' in policy '{key}'"));
+                return Err(format!(
+                    "unknown policy rule type: '{other}' in policy '{key}'"
+                ));
             }
         }
     }

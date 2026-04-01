@@ -86,10 +86,7 @@ pub async fn serve(
     }
 }
 
-async fn handle_request(
-    raw: &str,
-    state: &Arc<Mutex<WebhookState>>,
-) -> (String, String) {
+async fn handle_request(raw: &str, state: &Arc<Mutex<WebhookState>>) -> (String, String) {
     let lines: Vec<&str> = raw.lines().collect();
     let first_line = lines.first().unwrap_or(&"");
 
@@ -116,11 +113,7 @@ async fn handle_request(
 
 async fn handle_health(state: &Arc<Mutex<WebhookState>>) -> (String, String) {
     let state = state.lock().await;
-    let episodes = state
-        .graph
-        .stats()
-        .map(|s| s.episode_count)
-        .unwrap_or(0);
+    let episodes = state.graph.stats().map(|s| s.episode_count).unwrap_or(0);
 
     let resp = HealthResponse {
         status: "healthy".to_string(),
@@ -134,10 +127,7 @@ async fn handle_health(state: &Arc<Mutex<WebhookState>>) -> (String, String) {
     )
 }
 
-async fn handle_ingest(
-    body: &str,
-    state: &Arc<Mutex<WebhookState>>,
-) -> (String, String) {
+async fn handle_ingest(body: &str, state: &Arc<Mutex<WebhookState>>) -> (String, String) {
     let payload: WebhookPayload = match serde_json::from_str(body) {
         Ok(p) => p,
         Err(e) => {
@@ -155,7 +145,10 @@ async fn handle_ingest(
     if score < state.signal_threshold {
         return (
             "200 OK".to_string(),
-            format!(r#"{{"status":"skipped","reason":"below signal threshold ({score:.2} < {})"}}"#, state.signal_threshold),
+            format!(
+                r#"{{"status":"skipped","reason":"below signal threshold ({score:.2} < {})"}}"#,
+                state.signal_threshold
+            ),
         );
     }
 
@@ -216,7 +209,10 @@ mod tests {
         }"#;
 
         let payload: WebhookPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.text, "team decided to freeze auth module for pci audit");
+        assert_eq!(
+            payload.text,
+            "team decided to freeze auth module for pci audit"
+        );
         assert_eq!(payload.source.as_deref(), Some("slack"));
         assert_eq!(payload.author.as_deref(), Some("priya"));
         assert_eq!(payload.tags.as_ref().unwrap().len(), 2);

@@ -113,7 +113,10 @@ impl ReflexionStore {
             for (episode, _score) in search_results {
                 if episode.source.as_deref() == Some("reflexion") {
                     if let Some(refl) = parse_reflexion(&episode) {
-                        if !results.iter().any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id) {
+                        if !results
+                            .iter()
+                            .any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id)
+                        {
                             results.push(refl);
                         }
                     }
@@ -131,7 +134,11 @@ impl ReflexionStore {
                         let file_matches = refl.files_affected.iter().any(|f| {
                             f == file || file.contains(f.as_str()) || f.contains(file.as_str())
                         });
-                        if file_matches && !results.iter().any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id) {
+                        if file_matches
+                            && !results
+                                .iter()
+                                .any(|r: &ReflexionEpisode| r.episode_id == refl.episode_id)
+                        {
                             results.push(refl);
                         }
                     }
