@@ -35,11 +35,10 @@ impl std::fmt::Display for IndexStats {
 impl CodeIndex {
     /// Open or create an index database at the given path.
     pub fn open(db_path: &Path) -> Result<Self> {
-        if let Some(parent) = db_path.parent() {
-            if !parent.exists() {
+        if let Some(parent) = db_path.parent()
+            && !parent.exists() {
                 std::fs::create_dir_all(parent)?;
             }
-        }
         let conn = Connection::open(db_path)?;
         storage::create_schema(&conn)?;
         Ok(Self { conn })
@@ -76,12 +75,11 @@ impl CodeIndex {
                 .to_string_lossy()
                 .to_string();
 
-            if let Some(stored_hash) = storage::get_file_hash(&self.conn, &rel_path)? {
-                if stored_hash == content_hash {
+            if let Some(stored_hash) = storage::get_file_hash(&self.conn, &rel_path)?
+                && stored_hash == content_hash {
                     stats.files_skipped += 1;
                     continue;
                 }
-            }
 
             // detect language
             let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -146,14 +144,13 @@ impl CodeIndex {
         // strategy 1: anchor already has a symbol name
         if let Some(ref name) = anchor.symbol_name {
             let matches = storage::lookup_symbol(&self.conn, name, 1)?;
-            if let Some(sym) = matches.first() {
-                if sym.file_path == anchor.file_path {
+            if let Some(sym) = matches.first()
+                && sym.file_path == anchor.file_path {
                     anchor.symbol_hash = Some(sym.hash.clone());
                     anchor.line_start = Some(sym.line_start);
                     anchor.line_end = Some(sym.line_end);
                     return Ok(true);
                 }
-            }
         }
 
         // strategy 2: match entity names against symbols in this file
@@ -198,11 +195,11 @@ impl CodeIndex {
 /// Collect all source files in a directory tree.
 fn collect_source_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    collect_recursive(root, root, &mut files);
+    collect_recursive(root, &mut files);
     files
 }
 
-fn collect_recursive(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
+fn collect_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -226,13 +223,11 @@ fn collect_recursive(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
         }
 
         if path.is_dir() {
-            collect_recursive(root, &path, files);
-        } else if path.is_file() {
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if Language::from_extension(ext).is_some() {
+            collect_recursive(&path, files);
+        } else if path.is_file()
+            && let Some(ext) = path.extension().and_then(|e| e.to_str())
+                && Language::from_extension(ext).is_some() {
                     files.push(path);
                 }
-            }
-        }
     }
 }

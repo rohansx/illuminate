@@ -42,11 +42,10 @@ pub fn run(
 
     for sym in &symbols {
         // filter by type if specified
-        if let Some(ref t) = symbol_type {
-            if sym.symbol_type.to_string() != *t {
+        if let Some(ref t) = symbol_type
+            && sym.symbol_type.to_string() != *t {
                 continue;
             }
-        }
 
         println!(
             "  {} ({}) {}:{}",

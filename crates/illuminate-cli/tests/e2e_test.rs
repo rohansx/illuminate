@@ -7,7 +7,7 @@ use illuminate_audit::Auditor;
 use illuminate_audit::policy::{IntentPolicy, parse_policies};
 use illuminate_audit::response::{AuditStatus, Severity};
 use illuminate_reflect::{ReflexionInput, ReflexionStore, Severity as ReflSeverity};
-use illuminate_watch::git::{GitCommit, IngestStats, ingest_commits};
+use illuminate_watch::git::{GitCommit, ingest_commits};
 use illuminate_watch::signal::score_decision_signal;
 
 /// Full product loop: decisions flow from git -> graph -> audit catches violation

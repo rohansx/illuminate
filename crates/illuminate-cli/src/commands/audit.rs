@@ -48,9 +48,8 @@ pub fn run(plan_text: String, json: bool) -> illuminate::Result<()> {
 
         for v in &result.violations {
             println!(
-                "\n  Conflict: {} ({})",
-                v.plan_entity,
-                format!("{:?}", v.violation_type)
+                "\n  Conflict: {} ({:?})",
+                v.plan_entity, v.violation_type
             );
             if let Some(ref decision) = v.conflicting_decision {
                 println!("  Decision: {}", decision.content);

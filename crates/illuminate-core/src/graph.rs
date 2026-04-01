@@ -389,7 +389,7 @@ impl Graph {
         let mut anchors = Vec::new();
 
         for file in files {
-            let mut anchor = Anchor::new(episode_id, &file);
+            let anchor = Anchor::new(episode_id, &file);
             self.storage.insert_anchor(&anchor)?;
             anchors.push(anchor);
         }
@@ -578,10 +578,10 @@ fn extract_files_from_metadata(episode: &Episode) -> Vec<String> {
             }
         }
         // Check single file field
-        if let Some(path) = meta.get("file").and_then(|v| v.as_str()) {
-            if !files.contains(&path.to_string()) {
-                files.push(path.to_string());
-            }
+        if let Some(path) = meta.get("file").and_then(|v| v.as_str())
+            && !files.contains(&path.to_string())
+        {
+            files.push(path.to_string());
         }
     }
 

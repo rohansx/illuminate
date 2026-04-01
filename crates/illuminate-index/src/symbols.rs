@@ -259,8 +259,8 @@ fn extract_go_symbol(
             // Walk children to find type_spec
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if child.kind() == "type_spec" {
-                    if let Some(name_node) = child_by_field(child, "name") {
+                if child.kind() == "type_spec"
+                    && let Some(name_node) = child_by_field(child, "name") {
                         let name = node_text(name_node, source).to_string();
                         let hash = symbol_hash("go", &SymbolType::Struct, &name, None);
                         out.push(Symbol {
@@ -275,7 +275,6 @@ fn extract_go_symbol(
                             language: "go".to_string(),
                         });
                     }
-                }
             }
         }
         _ => {}

@@ -620,7 +620,7 @@ fn code_index_skips_hidden_and_target_dirs() {
 
 #[test]
 fn code_index_enrich_anchor_by_entity_name() {
-    let mut index = CodeIndex::in_memory().unwrap();
+    let _index = CodeIndex::in_memory().unwrap();
 
     // manually insert a symbol
     let sym = illuminate_index::symbols::Symbol {

@@ -119,7 +119,7 @@ fn test_cross_domain_extraction() {
         std::collections::BTreeMap::new();
 
     let mut total_entity_f1 = 0.0;
-    let mut total_entity_text_f1 = 0.0;
+    let mut _total_entity_text_f1 = 0.0;
     let mut total_relation_f1 = 0.0;
 
     for (i, ep) in episodes.iter().enumerate() {
@@ -204,7 +204,7 @@ fn test_cross_domain_extraction() {
         eprintln!();
 
         total_entity_f1 += entity_f1;
-        total_entity_text_f1 += entity_strict_f1;
+        _total_entity_text_f1 += entity_strict_f1;
         total_relation_f1 += relation_f1;
 
         domain_scores

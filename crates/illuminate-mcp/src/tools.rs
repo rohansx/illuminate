@@ -471,11 +471,10 @@ impl ToolContext {
                     severity,
                     expires,
                 } => {
-                    if let Some(exp) = expires {
-                        if chrono::Utc::now() > *exp {
+                    if let Some(exp) = expires
+                        && chrono::Utc::now() > *exp {
                             continue;
                         }
-                    }
                     for path in paths {
                         let base = path.to_lowercase().replace("/**", "").replace("/*", "");
                         if plan_lower.contains(&base) {
@@ -539,9 +538,9 @@ impl ToolContext {
         // Search reflexion episodes
         let mut reflexions = Vec::new();
         for (episode, _) in &search_results {
-            if episode.source.as_deref() == Some("reflexion") {
-                if let Some(meta) = &episode.metadata {
-                    if let Some(refl) = meta.get("reflexion") {
+            if episode.source.as_deref() == Some("reflexion")
+                && let Some(meta) = &episode.metadata
+                    && let Some(refl) = meta.get("reflexion") {
                         reflexions.push(json!({
                             "failure": refl.get("failure"),
                             "root_cause": refl.get("root_cause"),
@@ -549,8 +548,6 @@ impl ToolContext {
                             "severity": refl.get("severity"),
                         }));
                     }
-                }
-            }
         }
 
         let has_errors = !policy_violations.is_empty() || !decision_conflicts.is_empty();
@@ -655,7 +652,7 @@ impl ToolContext {
         let plan = illuminate_route::route(&graph, embed_ref, &subject, limit)
             .map_err(|e| e.to_string())?;
 
-        Ok(serde_json::to_value(plan).map_err(|e| e.to_string())?)
+        serde_json::to_value(plan).map_err(|e| e.to_string())
     }
 
     /// Tool: illuminate_stats
@@ -738,8 +735,8 @@ impl ToolContext {
         let mut seen_ids = std::collections::HashSet::new();
 
         for anchor in &anchors {
-            if seen_ids.insert(anchor.episode_id.clone()) {
-                if let Ok(Some(episode)) = graph.get_episode(&anchor.episode_id) {
+            if seen_ids.insert(anchor.episode_id.clone())
+                && let Ok(Some(episode)) = graph.get_episode(&anchor.episode_id) {
                     decisions.push(json!({
                         "id": episode.id,
                         "content": episode.content,
@@ -755,7 +752,6 @@ impl ToolContext {
                         }
                     }));
                 }
-            }
         }
 
         Ok(json!({

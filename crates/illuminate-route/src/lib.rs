@@ -46,8 +46,8 @@ pub fn route(
     let mut decisions = Vec::new();
 
     // Fused search if embeddings available, otherwise FTS5 only
-    if let Some(embed_engine) = embed {
-        if let Ok(query_embedding) = embed_engine.embed(subject) {
+    if let Some(embed_engine) = embed
+        && let Ok(query_embedding) = embed_engine.embed(subject) {
             let results = graph.search_fused(subject, &query_embedding, limit)?;
             for r in results {
                 decisions.push(DecisionEntry {
@@ -58,7 +58,6 @@ pub fn route(
                 });
             }
         }
-    }
 
     // Fallback to FTS5-only if no fused results
     if decisions.is_empty() {
@@ -77,12 +76,12 @@ pub fn route(
     let mut code_files = Vec::new();
     for decision in &decisions {
         // Check if decision metadata contains files_changed
-        if let Ok(Some(ep)) = graph.get_episode(&decision.id) {
-            if let Some(ref meta) = ep.metadata {
-                if let Some(files) = meta.get("files_changed").and_then(|v| v.as_array()) {
+        if let Ok(Some(ep)) = graph.get_episode(&decision.id)
+            && let Some(ref meta) = ep.metadata
+                && let Some(files) = meta.get("files_changed").and_then(|v| v.as_array()) {
                     for file in files {
-                        if let Some(path) = file.as_str() {
-                            if !code_files.iter().any(|f: &FileEntry| f.path == path) {
+                        if let Some(path) = file.as_str()
+                            && !code_files.iter().any(|f: &FileEntry| f.path == path) {
                                 let estimated_tokens = estimate_tokens_for_file(path);
                                 code_files.push(FileEntry {
                                     path: path.to_string(),
@@ -91,11 +90,8 @@ pub fn route(
                                     estimated_tokens,
                                 });
                             }
-                        }
                     }
                 }
-            }
-        }
     }
 
     let total_tokens: usize = decisions.len() * 100 // ~100 tokens per decision
