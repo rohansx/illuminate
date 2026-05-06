@@ -9,3 +9,11 @@ enabled = true
 claude_code = true
 cursor = false
 codex = false
+
+# We do not introduce Redis or other stateful sidecars to the binary.
+# See .illuminate/wiki/decisions/agent-claude-md-caching-never-use-redis.md.
+[policies.no_stateful_sidecars]
+rule = "rejected_pattern"
+pattern = "Redis"
+reason = "single-binary deploy story; LRU+TTL is the in-memory pattern"
+severity = "error"
