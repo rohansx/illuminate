@@ -208,6 +208,15 @@ enum Commands {
     /// Populate the wiki from existing repo signals (CLAUDE.md, ADRs)
     Bootstrap,
 
+    /// Manage recorded failures
+    Failures {
+        #[command(subcommand)]
+        cmd: commands::failures::FailuresCmd,
+    },
+
+    /// Show local installation state
+    Status,
+
     /// Record an agent failure as a reflexion episode
     Reflect {
         /// What went wrong
@@ -379,6 +388,8 @@ fn main() {
         Commands::Trail { cmd } => commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io),
         Commands::Wiki { cmd } => commands::wiki::run(cmd).map_err(illuminate::IlluminateError::Io),
         Commands::Bootstrap => commands::bootstrap::run().map_err(illuminate::IlluminateError::Io),
+        Commands::Failures { cmd } => commands::failures::run(cmd).map_err(illuminate::IlluminateError::Io),
+        Commands::Status => commands::status::run().map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,
             root_cause,
