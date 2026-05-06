@@ -8,8 +8,9 @@
 //! See `docs/INGESTION.md` for the full ingestion pipeline.
 
 pub mod claude;
-pub mod cursor;
 pub mod codex;
+pub mod cursor;
+pub mod import;
 pub mod normalize;
 pub mod raw;
 pub mod record;
