@@ -70,13 +70,28 @@ pub fn run(plan_text: String, json: bool) -> illuminate::Result<()> {
 
 fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
     let cwd = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
-    let config_path = cwd.join("illuminate.toml");
-
-    if !config_path.exists() {
-        return Ok(Vec::new());
+    let mut cur = Some(cwd.as_path());
+    while let Some(d) = cur {
+        let candidate = d.join(".illuminate").join("illuminate.toml");
+        if candidate.is_file() {
+            return parse_file(&candidate);
+        }
+        cur = d.parent();
     }
 
-    let content = std::fs::read_to_string(&config_path).map_err(illuminate::IlluminateError::Io)?;
+    // Legacy fallback: cwd/illuminate.toml
+    let legacy = cwd.join("illuminate.toml");
+    if legacy.is_file() {
+        return parse_file(&legacy);
+    }
+
+    Ok(Vec::new())
+}
+
+fn parse_file(
+    path: &std::path::Path,
+) -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
+    let content = std::fs::read_to_string(path).map_err(illuminate::IlluminateError::Io)?;
     parse_policies(&content)
         .map_err(|e| illuminate::IlluminateError::Extraction(format!("policy parse error: {e}")))
 }
