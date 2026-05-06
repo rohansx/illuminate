@@ -6,6 +6,7 @@
 pub mod agent_files;
 pub mod adr;
 pub mod candidate;
+pub mod orchestrate;
 
 use thiserror::Error;
 

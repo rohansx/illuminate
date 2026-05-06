@@ -22,6 +22,7 @@ illuminate-reflect = { version = "0.8.0", path = "../illuminate-reflect" }
 illuminate-route = { version = "0.8.0", path = "../illuminate-route" }
 illuminate-trail = { version = "0.8.0", path = "../illuminate-trail" }
 illuminate-wiki = { version = "0.8.0", path = "../illuminate-wiki" }
+illuminate-bootstrap = { version = "0.8.0", path = "../illuminate-bootstrap" }
 clap = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }

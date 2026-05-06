@@ -205,6 +205,9 @@ enum Commands {
         cmd: commands::wiki::WikiCmd,
     },
 
+    /// Populate the wiki from existing repo signals (CLAUDE.md, ADRs)
+    Bootstrap,
+
     /// Record an agent failure as a reflexion episode
     Reflect {
         /// What went wrong
@@ -375,6 +378,7 @@ fn main() {
         Commands::Audit { plan, json } => commands::audit::run(plan, json),
         Commands::Trail { cmd } => commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io),
         Commands::Wiki { cmd } => commands::wiki::run(cmd).map_err(illuminate::IlluminateError::Io),
+        Commands::Bootstrap => commands::bootstrap::run().map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,
             root_cause,

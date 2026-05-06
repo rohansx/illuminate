@@ -1445,6 +1445,7 @@ dependencies = [
  "dotenvy",
  "illuminate",
  "illuminate-audit",
+ "illuminate-bootstrap",
  "illuminate-embed",
  "illuminate-extract",
  "illuminate-index",

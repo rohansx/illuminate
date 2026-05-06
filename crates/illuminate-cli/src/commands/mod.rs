@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod bootstrap;
 pub mod decisions;
 pub mod entities;
 pub mod export;
