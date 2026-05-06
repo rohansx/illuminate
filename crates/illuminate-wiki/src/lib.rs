@@ -5,6 +5,7 @@
 //! parses, validates, and (later) renders them, plus offers helpers to
 //! register pages into the [`illuminate::Graph`] as episodes.
 
+pub mod lint;
 pub mod page;
 
 use thiserror::Error;
