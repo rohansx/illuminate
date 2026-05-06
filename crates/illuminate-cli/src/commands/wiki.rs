@@ -25,6 +25,14 @@ pub enum WikiCmd {
         #[arg(long, default_value = "8765")]
         port: u16,
     },
+    /// Search the wiki by keyword (grep + FTS5)
+    Search {
+        /// Search query
+        query: String,
+        /// Max results
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
 }
 
 pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
@@ -34,6 +42,7 @@ pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
         WikiCmd::List => cmd_list(),
         WikiCmd::Init => cmd_init(),
         WikiCmd::Serve { port } => cmd_serve(port),
+        WikiCmd::Search { query, limit } => cmd_search(&query, limit),
     }
 }
 
@@ -149,6 +158,101 @@ fn cmd_rebuild() -> std::io::Result<()> {
 fn cmd_serve(port: u16) -> std::io::Result<()> {
     let dir = wiki_dir()?;
     illuminate_wiki::serve::serve(&dir, port)
+}
+
+fn cmd_search(query: &str, limit: usize) -> std::io::Result<()> {
+    let dir = wiki_dir()?;
+    let walked = illuminate_wiki::walk::walk_wiki(&dir)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let pages: Vec<illuminate_wiki::page::WikiPage> = walked
+        .into_iter()
+        .filter_map(|w| w.page.ok())
+        .collect();
+
+    // 1. wiki grep
+    let lower_q = query.to_lowercase();
+    let mut scored: Vec<(f32, &illuminate_wiki::page::WikiPage)> = pages
+        .iter()
+        .filter_map(|p| {
+            let title_hits = p.front.title.to_lowercase().matches(&lower_q[..]).count() as f32;
+            let body_hits = p.body.to_lowercase().matches(&lower_q[..]).count() as f32;
+            let score = title_hits * 3.0 + body_hits;
+            if score > 0.0 {
+                Some((score, p))
+            } else {
+                None
+            }
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    println!("== wiki grep ({} matches) ==", scored.len());
+    for (score, page) in scored.iter().take(limit) {
+        let snippet = first_match_snippet(&page.body, &lower_q, 100);
+        println!(
+            "  [{}] {} ({:.0})\n    {}",
+            page.front.id, page.front.title, score, snippet
+        );
+    }
+
+    // 2. graph FTS5
+    println!();
+    println!("== graph FTS5 ==");
+    let repo = repo_root().ok();
+    if let Some(root) = repo {
+        let db = root.join(".illuminate").join("graph.db");
+        if db.is_file() {
+            match illuminate::Graph::open(&db) {
+                Ok(graph) => match graph.search(query, limit) {
+                    Ok(results) => {
+                        if results.is_empty() {
+                            println!("  (no matches)");
+                        } else {
+                            for (episode, _score) in results.iter().take(limit) {
+                                let snippet: String = episode.content.chars().take(120).collect();
+                                println!(
+                                    "  [{}] {} — {}",
+                                    episode.id,
+                                    episode.source.as_deref().unwrap_or("?"),
+                                    snippet
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => println!("  search error: {e}"),
+                },
+                Err(e) => println!("  graph open error: {e}"),
+            }
+        } else {
+            println!("  (no graph.db; run `illuminate wiki rebuild` to populate)");
+        }
+    } else {
+        println!("  (no .illuminate found)");
+    }
+
+    Ok(())
+}
+
+fn first_match_snippet(text: &str, query: &str, window: usize) -> String {
+    let lower = text.to_lowercase();
+    if let Some(pos) = lower.find(query) {
+        let start = pos.saturating_sub(window / 2);
+        let end = (pos + query.len() + window / 2).min(text.len());
+        // Clamp to char boundaries
+        let mut s = start;
+        while !text.is_char_boundary(s) && s < text.len() {
+            s += 1;
+        }
+        let mut e = end;
+        while !text.is_char_boundary(e) && e > s {
+            e -= 1;
+        }
+        let prefix = if s > 0 { "..." } else { "" };
+        let suffix = if e < text.len() { "..." } else { "" };
+        format!("{prefix}{}{suffix}", text[s..e].replace('\n', " "))
+    } else {
+        String::new()
+    }
 }
 
 fn register_pages(
