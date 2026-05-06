@@ -193,6 +193,12 @@ enum Commands {
     /// PreToolUse hook - auto-audit Write/Edit calls (reads from stdin)
     AuditHook,
 
+    /// Capture and inspect Claude Code prompt-trails
+    Trail {
+        #[command(subcommand)]
+        cmd: commands::trail::TrailCmd,
+    },
+
     /// Record an agent failure as a reflexion episode
     Reflect {
         /// What went wrong
@@ -361,6 +367,7 @@ fn main() {
         Commands::Summary { limit } => commands::summary::run(limit),
         Commands::AuditHook => commands::hook::run_audit_hook(),
         Commands::Audit { plan, json } => commands::audit::run(plan, json),
+        Commands::Trail { cmd } => commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,
             root_cause,

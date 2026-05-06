@@ -13,6 +13,7 @@ pub mod reflect;
 pub mod stats;
 pub mod summary;
 pub mod symbols;
+pub mod trail;
 pub mod watch;
 
 use std::env;
