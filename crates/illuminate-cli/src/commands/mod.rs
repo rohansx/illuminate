@@ -15,6 +15,7 @@ pub mod summary;
 pub mod symbols;
 pub mod trail;
 pub mod watch;
+pub mod wiki;
 
 use std::env;
 use std::path::PathBuf;

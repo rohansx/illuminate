@@ -199,6 +199,12 @@ enum Commands {
         cmd: commands::trail::TrailCmd,
     },
 
+    /// Manage the markdown wiki
+    Wiki {
+        #[command(subcommand)]
+        cmd: commands::wiki::WikiCmd,
+    },
+
     /// Record an agent failure as a reflexion episode
     Reflect {
         /// What went wrong
@@ -368,6 +374,7 @@ fn main() {
         Commands::AuditHook => commands::hook::run_audit_hook(),
         Commands::Audit { plan, json } => commands::audit::run(plan, json),
         Commands::Trail { cmd } => commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io),
+        Commands::Wiki { cmd } => commands::wiki::run(cmd).map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,
             root_cause,
