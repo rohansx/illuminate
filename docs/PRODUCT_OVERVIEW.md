@@ -4,6 +4,8 @@
 **Tagline:** Compounding context for AI-coding teams.
 **Secondary line:** ESLint for intent — the linter, the wiki, and the memory your agents are missing.
 
+> **Status:** v0.1 closed loop shipped May 2026. Trail capture (Claude Code), wiki layer, bootstrap, audit, MCP, GitHub Action all live. v0.2 (Cursor + auto-distill) and v0.3 (pre-write hook + adoption polish) on the roadmap. See `ROADMAP.md`.
+
 ---
 
 ## The Problem
