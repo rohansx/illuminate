@@ -155,6 +155,9 @@ fn configure_claude(dir: &Path) -> illuminate::Result<()> {
         fs::write(&claude_md_path, claude_md_content()).map_err(illuminate::IlluminateError::Io)?;
     }
 
+    // append pre-write directive (idempotent)
+    write_claude_directive(&claude_md_path)?;
+
     Ok(())
 }
 
@@ -289,5 +292,31 @@ fn configure_windsurf(dir: &Path) -> illuminate::Result<()> {
     let json_str = serde_json::to_string_pretty(&config)
         .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
     fs::write(ws_dir.join("mcp.json"), json_str).map_err(illuminate::IlluminateError::Io)?;
+    Ok(())
+}
+
+const CLAUDE_DIRECTIVE_MARKER: &str = "## illuminate: required pre-write step";
+const CLAUDE_DIRECTIVE: &str = r#"
+## illuminate: required pre-write step
+
+Before writing or modifying any source file in this repository, invoke the
+`illuminate_audit` MCP tool with your plan, the files you intend to modify,
+and your rationale. Surface the response to the user before proceeding.
+
+If `status` is `block`, do not proceed without explicit user approval.
+If `status` is `warn`, surface the warnings to the user before writing.
+"#;
+
+fn write_claude_directive(path: &std::path::Path) -> illuminate::Result<()> {
+    let mut existing = fs::read_to_string(path).unwrap_or_default();
+    if existing.contains(CLAUDE_DIRECTIVE_MARKER) {
+        return Ok(());
+    }
+    if !existing.is_empty() && !existing.ends_with('\n') {
+        existing.push('\n');
+    }
+    existing.push_str(CLAUDE_DIRECTIVE);
+    fs::write(path, existing).map_err(illuminate::IlluminateError::Io)?;
+    println!("  Appended illuminate audit directive to CLAUDE.md");
     Ok(())
 }
