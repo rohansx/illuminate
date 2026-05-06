@@ -14,7 +14,7 @@ use crate::{Result, TrailError};
 // ---------------------------------------------------------------------------
 
 /// A single line parsed from a Claude Code session JSONL file.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RawRecord {
     /// A `"type":"user"` entry — a human turn.
     User {
@@ -57,7 +57,7 @@ pub enum RawRecord {
 }
 
 /// The `message` block shared by `User` and `Assistant` records.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct MessageBlock {
     pub role: String,
     /// Content can be a plain string or an array of typed blocks.
@@ -68,38 +68,10 @@ pub struct MessageBlock {
 // Internal deserialization helpers
 // ---------------------------------------------------------------------------
 
-/// Strongly-typed internal representation for the four known variants.
-/// We use this intermediate step so we can fall back to `Unknown` for any
-/// line that doesn't match — without relying on `#[serde(other)]` (which
-/// only works on unit variants and cannot capture data).
+/// Shared fields for `"type":"user"` and `"type":"assistant"` records.
+/// Both variants have identical structure, so one struct backs both.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-enum TypedRecord {
-    User(UserFields),
-    Assistant(AssistantFields),
-    Attachment(AttachmentFields),
-    Summary(SummaryFields),
-}
-
-#[derive(Debug, Deserialize)]
-struct UserFields {
-    uuid: String,
-    timestamp: DateTime<Utc>,
-    #[serde(default)]
-    cwd: Option<String>,
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    message: MessageBlock,
-    #[serde(rename = "parentUuid", default)]
-    parent_uuid: Option<String>,
-    #[serde(default)]
-    version: Option<String>,
-    #[serde(rename = "gitBranch", default)]
-    git_branch: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AssistantFields {
+struct TurnFields {
     uuid: String,
     timestamp: DateTime<Utc>,
     #[serde(default)]
@@ -136,47 +108,10 @@ struct SummaryFields {
 }
 
 // ---------------------------------------------------------------------------
-// Conversion from internal to public types
+// Known type tags
 // ---------------------------------------------------------------------------
 
-impl From<TypedRecord> for RawRecord {
-    fn from(r: TypedRecord) -> Self {
-        match r {
-            TypedRecord::User(f) => RawRecord::User {
-                uuid: f.uuid,
-                timestamp: f.timestamp,
-                cwd: f.cwd,
-                session_id: f.session_id,
-                message: f.message,
-                parent_uuid: f.parent_uuid,
-                version: f.version,
-                git_branch: f.git_branch,
-            },
-            TypedRecord::Assistant(f) => RawRecord::Assistant {
-                uuid: f.uuid,
-                timestamp: f.timestamp,
-                cwd: f.cwd,
-                session_id: f.session_id,
-                message: f.message,
-                parent_uuid: f.parent_uuid,
-                version: f.version,
-                git_branch: f.git_branch,
-            },
-            TypedRecord::Attachment(f) => RawRecord::Attachment {
-                uuid: f.uuid,
-                timestamp: f.timestamp,
-                cwd: f.cwd,
-                session_id: f.session_id,
-                attachment: f.attachment,
-            },
-            TypedRecord::Summary(f) => RawRecord::Summary {
-                session_id: f.session_id,
-                summary: f.summary,
-                timestamp: f.timestamp,
-            },
-        }
-    }
-}
+const KNOWN_TYPES: &[&str] = &["user", "assistant", "attachment", "summary"];
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -187,6 +122,8 @@ impl From<TypedRecord> for RawRecord {
 /// - Empty / whitespace-only lines are silently skipped.
 /// - Lines with an unrecognised `type` (or missing `type`) are returned as
 ///   [`RawRecord::Unknown`] wrapping the raw [`serde_json::Value`].
+/// - If a line has a *known* `type` but the remaining fields are invalid,
+///   returns [`TrailError::Parse`] with the 1-based line number and type name.
 /// - If a line cannot be parsed even as JSON, returns
 ///   [`TrailError::Parse`] with the 1-based line number.
 pub fn parse_jsonl(input: &str) -> Result<Vec<RawRecord>> {
@@ -197,19 +134,83 @@ pub fn parse_jsonl(input: &str) -> Result<Vec<RawRecord>> {
             continue;
         }
 
-        // Try the strongly-typed path first.
-        if let Ok(typed) = serde_json::from_str::<TypedRecord>(line) {
-            records.push(RawRecord::from(typed));
-            continue;
-        }
+        let n = idx + 1;
 
-        // Fall back: parse as a raw JSON value (captures unknown types).
-        match serde_json::from_str::<serde_json::Value>(line) {
-            Ok(v) => records.push(RawRecord::Unknown(v)),
-            Err(e) => {
-                return Err(TrailError::Parse(format!("line {}: {}", idx + 1, e)));
+        // Parse to a generic JSON value first so we can inspect the `type` field
+        // without a second full parse.
+        let v: serde_json::Value = serde_json::from_str(line)
+            .map_err(|e| TrailError::Parse(format!("line {n}: {e}")))?;
+
+        // Peek the `type` field.
+        let type_str = v.get("type").and_then(|t| t.as_str());
+
+        let record = match type_str {
+            Some("user") => {
+                let f = serde_json::from_value::<TurnFields>(v).map_err(|e| {
+                    TrailError::Parse(format!("line {n}: invalid user record: {e}"))
+                })?;
+                RawRecord::User {
+                    uuid: f.uuid,
+                    timestamp: f.timestamp,
+                    cwd: f.cwd,
+                    session_id: f.session_id,
+                    message: f.message,
+                    parent_uuid: f.parent_uuid,
+                    version: f.version,
+                    git_branch: f.git_branch,
+                }
             }
-        }
+            Some("assistant") => {
+                let f = serde_json::from_value::<TurnFields>(v).map_err(|e| {
+                    TrailError::Parse(format!("line {n}: invalid assistant record: {e}"))
+                })?;
+                RawRecord::Assistant {
+                    uuid: f.uuid,
+                    timestamp: f.timestamp,
+                    cwd: f.cwd,
+                    session_id: f.session_id,
+                    message: f.message,
+                    parent_uuid: f.parent_uuid,
+                    version: f.version,
+                    git_branch: f.git_branch,
+                }
+            }
+            Some("attachment") => {
+                let f = serde_json::from_value::<AttachmentFields>(v).map_err(|e| {
+                    TrailError::Parse(format!("line {n}: invalid attachment record: {e}"))
+                })?;
+                RawRecord::Attachment {
+                    uuid: f.uuid,
+                    timestamp: f.timestamp,
+                    cwd: f.cwd,
+                    session_id: f.session_id,
+                    attachment: f.attachment,
+                }
+            }
+            Some("summary") => {
+                let f = serde_json::from_value::<SummaryFields>(v).map_err(|e| {
+                    TrailError::Parse(format!("line {n}: invalid summary record: {e}"))
+                })?;
+                RawRecord::Summary {
+                    session_id: f.session_id,
+                    summary: f.summary,
+                    timestamp: f.timestamp,
+                }
+            }
+            Some(t) if KNOWN_TYPES.contains(&t) => {
+                // Defensive: this arm is unreachable given the arms above, but
+                // keeps the exhaustiveness obvious if KNOWN_TYPES ever grows.
+                return Err(TrailError::Parse(format!(
+                    "line {n}: invalid {t} record: unhandled known type"
+                )));
+            }
+            _ => {
+                // Unknown or absent `type` — preserve verbatim.
+                RawRecord::Unknown(v)
+            }
+        };
+
+        records.push(record);
     }
 
     Ok(records)

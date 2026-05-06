@@ -30,3 +30,12 @@ fn skips_empty_lines() {
     let records = parse_jsonl(input).unwrap();
     assert_eq!(records.len(), 0);
 }
+
+#[test]
+fn known_type_with_invalid_fields_returns_parse_error() {
+    // type is "user" but sessionId is missing
+    let line = r#"{"type":"user","uuid":"u-1","timestamp":"2026-05-06T12:00:00Z","message":{"role":"user","content":"hi"}}"#;
+    let err = parse_jsonl(line).expect_err("known-type record missing required fields must error");
+    let msg = format!("{err}");
+    assert!(msg.contains("line 1"), "error must reference the line number, got: {msg}");
+}
