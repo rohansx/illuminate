@@ -1475,6 +1475,7 @@ dependencies = [
  "illuminate-wiki",
  "rusqlite",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
