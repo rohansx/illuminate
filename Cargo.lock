@@ -1423,6 +1423,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "illuminate-bootstrap"
+version = "0.8.0"
+dependencies = [
+ "chrono",
+ "illuminate-wiki",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "illuminate-cli"
 version = "0.8.0"
 dependencies = [

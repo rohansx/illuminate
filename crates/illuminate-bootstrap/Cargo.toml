@@ -1,0 +1,18 @@
+[package]
+name = "illuminate-bootstrap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cold-start ingestion for illuminate — turns agent files and ADRs into wiki pages"
+
+[dependencies]
+illuminate-wiki = { version = "0.8.0", path = "../illuminate-wiki" }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
