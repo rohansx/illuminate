@@ -6,6 +6,8 @@ ESLint for intent — the linter, the wiki, and the memory your agents are missi
 
 [illuminate.sh](https://illuminate.sh) · single Rust binary · local-first · MIT
 
+> **Status:** v0.1 closed loop shipped May 2026. See [`CHANGELOG.md`](CHANGELOG.md).
+
 ---
 
 ## The problem
@@ -90,18 +92,87 @@ Requires Rust 1.85+ if building from source.
 
 ```bash
 cd your-project
-illuminate init --claude --interactive
-illuminate models download              # one-time, ~700 MB
+illuminate init --claude         # writes .illuminate/, scaffolds wiki, runs bootstrap
+illuminate wiki rebuild          # registers wiki pages as graph episodes
 illuminate audit "add Redis caching to txn lookup"
-illuminate wiki serve                   # opens at localhost:8765
+illuminate wiki serve --port 8765
 ```
 
-`illuminate init` runs the bootstrap pipeline (parses your `CLAUDE.md`, ADRs, README, and last 6 months of git history) so day-one audits are non-trivial.
+`illuminate init --claude` parses your `CLAUDE.md`/`AGENTS.md`/`.cursorrules` and Nygard ADRs into wiki pages, then registers them in the graph so day-one audits return real findings.
 
-For Cursor:
+### Worked example
+
 ```bash
-illuminate init --cursor
+$ cat > CLAUDE.md <<'EOF'
+## Caching
+
+We use Memcached. Never use Redis. Do not introduce stateful sidecars.
+EOF
+
+$ cat > .illuminate/illuminate.toml <<'EOF'
+[project]
+name = "demo"
+
+[policies.no_redis]
+rule = "rejected_pattern"
+pattern = "Redis"
+reason = "deployment target disallows stateful sidecars"
+severity = "error"
+EOF
+
+$ illuminate bootstrap
+bootstrap complete:
+  sources run:        ["agent_files"]
+  candidates found:   1
+  pages written:      1
+
+$ illuminate wiki rebuild
+rebuilt index.md (1 pages); registered 1 episodes
+
+$ illuminate audit "add Redis caching to billing service"
+✗ Violations detected:
+
+  Policy: no_redis
+  Found: Redis
+  Reason: deployment target disallows stateful sidecars
+  Severity: Error
+
+$ echo $?
+2
+
+$ illuminate audit "add Memcached caching to billing service"
+✓ No violations detected
+
+$ echo $?
+0
 ```
+
+The audit fires deterministically against the policy + graph, with no LLM calls.
+
+### CLI surface
+
+```
+illuminate init --claude         scaffold .illuminate/, run bootstrap, wire CLAUDE.md
+illuminate bootstrap             ingest CLAUDE.md / AGENTS.md / ADRs into wiki
+illuminate wiki rebuild          register wiki pages as graph episodes
+illuminate wiki lint             validate front-matter + required sections
+illuminate wiki list             list pages by type
+illuminate wiki serve            HTTP-render wiki on localhost
+illuminate wiki search "<q>"     grep + FTS5 search
+illuminate audit "<plan>"        check plan against policies + graph (exit 2 on violation)
+illuminate trail import <path>   normalize one Claude session jsonl
+illuminate trail watch           live-capture sessions to .illuminate/trail/
+illuminate trail register        register all trails as graph episodes
+illuminate failures list         list failure pages
+illuminate status                opt-in / wiki / graph / trail summary
+illuminate stats                 graph statistics
+```
+
+### CI integration
+
+For PR-time audit, copy [`.github/workflows/example-audit-pr.yml.example`](.github/workflows/example-audit-pr.yml.example) into your repo. See [`docs/CI.md`](docs/CI.md).
+
+For Cursor / Codex: capture stubs are present but session-format support is v0.2.
 
 ---
 
