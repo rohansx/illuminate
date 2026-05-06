@@ -40,6 +40,10 @@ pub fn run(
         configure_windsurf(&dir)?;
     }
 
+    illuminate_wiki::scaffold::write_scaffold(&dir)
+        .map_err(|e| illuminate::IlluminateError::Io(std::io::Error::other(e.to_string())))?;
+    println!("  Wiki scaffold: .illuminate/wiki/");
+
     println!("Initialized illuminate for '{project_name}'");
     println!("  Database: .illuminate/graph.db");
     println!();
