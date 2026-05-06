@@ -1,4 +1,6 @@
 use illuminate_trail::raw::{parse_jsonl, RawRecord};
+use illuminate_trail::claude::parse_session;
+use std::io::Write;
 
 const FIXTURE: &str = include_str!("fixtures/claude-session.jsonl");
 
@@ -38,4 +40,28 @@ fn known_type_with_invalid_fields_returns_parse_error() {
     let err = parse_jsonl(line).expect_err("known-type record missing required fields must error");
     let msg = format!("{err}");
     assert!(msg.contains("line 1"), "error must reference the line number, got: {msg}");
+}
+
+#[test]
+fn parse_session_extracts_user_and_assistant_messages() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let fixture = include_str!("fixtures/claude-session.jsonl");
+    tmp.as_file().write_all(fixture.as_bytes()).unwrap();
+    let record = parse_session(tmp.path()).unwrap();
+    assert_eq!(record.session_id, "abc-123");
+    assert_eq!(record.messages.len(), 4); // 2 user + 2 assistant
+    assert_eq!(record.messages[0].text, "explain the audit flow");
+    assert_eq!(record.repo_path.to_str().unwrap(), "/tmp/illuminate-fixture-repo");
+}
+
+#[test]
+fn parse_session_collects_tool_invocations_from_assistant_blocks() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let fixture = include_str!("fixtures/claude-session.jsonl");
+    tmp.as_file().write_all(fixture.as_bytes()).unwrap();
+    let record = parse_session(tmp.path()).unwrap();
+    let writes = record.tool_invocations.iter()
+        .filter(|t| t.name == "Write")
+        .count();
+    assert_eq!(writes, 1);
 }
