@@ -42,15 +42,34 @@ impl BootstrapCandidate {
         format!(
             "---\nid: {id}\ntitle: {title}\ntype: {ty}\nstatus: {status}\ncreated: {ts}\nupdated: {ts}\ntags: {tags}\nconfidence: {conf}\nsources:\n  - kind: {sk}\n    ref: {sref}\n---\n\n{body}\n",
             id = self.id_slug,
-            title = self.title.replace('\n', " "),
+            title = yaml_quote(&self.title.replace('\n', " ")),
             ty = type_str,
             status = self.status,
             ts = now.to_rfc3339(),
             tags = tags_yaml,
             conf = self.confidence,
             sk = self.source_kind,
-            sref = self.source_ref,
+            sref = yaml_quote(&self.source_ref),
             body = self.body,
         )
     }
+}
+
+/// Quote a YAML scalar if it contains characters that would break the
+/// single-line `key: value` form (colons, leading dashes, quotes, etc).
+fn yaml_quote(s: &str) -> String {
+    let needs_quoting = s.contains(':')
+        || s.contains('"')
+        || s.contains('\'')
+        || s.starts_with('-')
+        || s.starts_with('?')
+        || s.starts_with('@')
+        || s.starts_with('`')
+        || s.starts_with('#')
+        || s.trim() != s;
+    if !needs_quoting {
+        return s.to_string();
+    }
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
 }

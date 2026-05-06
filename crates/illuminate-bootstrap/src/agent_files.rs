@@ -71,7 +71,7 @@ fn flush(
     }
     let slug = slugify(heading);
     let file_slug = slugify(filename);
-    let id = format!("agent-{file_slug}-{slug}");
+    let id = format!("dec-bs-{file_slug}-{slug}");
     out.push(BootstrapCandidate {
         id_slug: id,
         title: heading.clone(),

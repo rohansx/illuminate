@@ -1,10 +1,10 @@
 ---
-id: agent-claude-md-illuminate-required-pre-write-step
-title: illuminate: required pre-write step
+id: dec-bs-claude-md-illuminate-required-pre-write-step
+title: "illuminate: required pre-write step"
 type: decision
 status: active
-created: 2026-05-06T18:29:11.995063100+00:00
-updated: 2026-05-06T18:29:11.995063100+00:00
+created: 2026-05-06T18:35:06.104826331+00:00
+updated: 2026-05-06T18:35:06.104826331+00:00
 tags: ["bootstrap", "agent-file"]
 confidence: 0.85
 sources:

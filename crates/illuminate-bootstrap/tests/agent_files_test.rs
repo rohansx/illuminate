@@ -34,5 +34,5 @@ fn skips_signal_free_sections() {
 fn id_slug_combines_filename_and_heading() {
     let cands = parse_agent_file("CLAUDE.md", "## Caching\n\nUse Memcached.\n");
     assert_eq!(cands.len(), 1);
-    assert_eq!(cands[0].id_slug, "agent-claude-md-caching");
+    assert_eq!(cands[0].id_slug, "dec-bs-claude-md-caching");
 }
