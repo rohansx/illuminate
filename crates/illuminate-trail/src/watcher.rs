@@ -65,14 +65,18 @@ fn scan_dir(root: &Path, cb: Option<&ImportCallback>) {
     }
     let walker = match std::fs::read_dir(root) {
         Ok(w) => w,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("[trail] scan_dir: cannot read {}: {e}", root.display());
+            return;
+        }
     };
     for entry in walker.flatten() {
         let p = entry.path();
         if p.is_dir() {
             scan_dir(&p, cb);
-        } else if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-            let _ = handle_one(&p, cb);
+        } else if p.extension().and_then(|e| e.to_str()) == Some("jsonl")
+            && let Err(e) = handle_one(&p, cb) {
+            eprintln!("[trail] import failed for {}: {e}", p.display());
         }
     }
 }
