@@ -7,6 +7,8 @@
 
 pub mod lint;
 pub mod page;
+pub mod scaffold;
+pub mod walk;
 
 use thiserror::Error;
 
