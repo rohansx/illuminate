@@ -11,6 +11,7 @@ pub mod claude;
 pub mod cursor;
 pub mod codex;
 pub mod normalize;
+pub mod raw;
 pub mod record;
 pub mod watcher;
 
