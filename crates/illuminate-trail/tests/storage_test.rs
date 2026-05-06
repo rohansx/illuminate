@@ -49,5 +49,8 @@ fn write_trail_overwrites_for_same_session() {
     r.repo_path = tmp.path().to_path_buf();
     write_trail(&r).unwrap();
     let p1 = write_trail(&r).unwrap();
+    let content = std::fs::read_to_string(&p1).unwrap();
+    let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 1, "file should contain exactly one record after overwrite");
     assert!(p1.exists());
 }

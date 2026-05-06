@@ -18,13 +18,16 @@ pub fn trail_path(record: &TrailRecord) -> PathBuf {
 }
 
 /// Write a record to its canonical path, creating parent dirs as needed.
+///
+/// Uses compact `serde_json::to_string` (not `to_string_pretty`) because
+/// pretty-printing would embed literal newlines and break JSONL readers.
 pub fn write_trail(record: &TrailRecord) -> Result<PathBuf> {
     let path = trail_path(record);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let line = serde_json::to_string(record)
-        .map_err(|e| crate::TrailError::Parse(format!("serialize: {e}")))?;
+        .map_err(|e| crate::TrailError::Serialize(format!("{e}")))?;
     std::fs::write(&path, format!("{line}\n"))?;
     Ok(path)
 }

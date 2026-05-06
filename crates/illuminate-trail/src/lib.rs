@@ -33,6 +33,9 @@ pub enum TrailError {
     #[error("parse error: {0}")]
     Parse(String),
 
+    #[error("serialize error: {0}")]
+    Serialize(String),
+
     #[error("normalize error: {0}")]
     Normalize(String),
 
