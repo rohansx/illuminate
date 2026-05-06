@@ -13,6 +13,7 @@ pub mod codex;
 pub mod normalize;
 pub mod raw;
 pub mod record;
+pub mod repo;
 pub mod watcher;
 
 pub use record::{AgentKind, Message, MessageRole, ToolInvocation, TrailRecord};
