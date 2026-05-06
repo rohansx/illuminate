@@ -1,0 +1,11 @@
+# illuminate.toml — opt-in marker for trail capture.
+# See illuminate.toml.example at the repo root for the full config surface.
+
+[project]
+name = "illuminate"
+
+[trail]
+enabled = true
+claude_code = true
+cursor = false
+codex = false
