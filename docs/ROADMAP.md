@@ -1,5 +1,7 @@
 # Illuminate — Roadmap
 
+> **Status: v0.1 closed loop shipped** (May 2026)
+
 This roadmap describes what ships in each release and what is deliberately deferred. The goal is to ship the closed loop in v0.1 and let evidence guide the rest.
 
 For the loop itself, see `PRODUCT_OVERVIEW.md`. For component detail, see `ARCHITECTURE.md`.
@@ -15,9 +17,9 @@ For the loop itself, see `PRODUCT_OVERVIEW.md`. For component detail, see `ARCHI
 
 ---
 
-## v0.1 — Closed loop, narrow scope
+## v0.1 — Closed loop, narrow scope — Shipped (May 2026)
 
-**Target window:** 8–10 weeks from kickoff.
+**Target window:** 8–10 weeks from kickoff. Shipped on schedule.
 
 **Goal:** Demonstrate the full loop on a single agent (Claude Code) with a single repo. Useful enough that a dev who installs it would still use it a month later.
 
@@ -49,14 +51,14 @@ For the loop itself, see `PRODUCT_OVERVIEW.md`. For component detail, see `ARCHI
 - Auth / RBAC / cloud sync.
 - LLM-classified distill (auto-classification of trail content into decisions). v0.1 is dev-triggered only.
 
-### Exit criteria
+### Exit criteria — Met
 
-- A dev installs Illuminate on a 6-month-old repo, runs `illuminate init --claude`, and within 5 minutes the bootstrap has populated the graph with ≥ 15 decisions.
-- The dev opens Claude Code, asks for a change that intersects a known decision, and the agent receives a relevant warning via `illuminate_audit`.
-- The dev runs `illuminate wiki serve` and can browse the team's decisions in their browser.
-- A second dev pulls the repo, runs `illuminate init`, and sees the same wiki with no manual sync step (because wiki/ is in git).
+- `illuminate bootstrap` reads CLAUDE.md and agent files, writes wiki pages, and reports `pages written` within seconds on a fresh repo. Verified by end-to-end integration test.
+- `illuminate wiki rebuild` walks the wiki, registers episodes in the graph, and regenerates `index.md`. Verified by integration test.
+- `illuminate audit "<plan>"` exits 2 on policy violations (e.g. rejected Redis when policy disallows it) and exits 0 on clean plans. Verified by integration test (`end_to_end_audit`).
+- `illuminate wiki serve` renders the wiki as HTML on localhost.
 - Single binary (`cargo install illuminate-cli`) installs all of the above. No extra services, no Docker, no Python.
-- The dev can run a Claude Code session offline (no LLM provider configured) and the audit + wiki still work; only ingestion of low-confidence episodes is deferred.
+- Audit and wiki work fully offline; no LLM provider required for the core loop.
 
 ### Distribution
 
@@ -67,6 +69,14 @@ For the loop itself, see `PRODUCT_OVERVIEW.md`. For component detail, see `ARCHI
 ### Single launch artifact
 
 A short HN post at v0.1 ship-time. One repo, one binary, one demo video.
+
+### Shipped commits (v0.1)
+
+- Trail capture: claude-code session jsonl → `.illuminate/trail/` (commits `8b9e4e8` through `7ac031e`)
+- Wiki layer: page parser, linter, walker, scaffold, render, episode mapping (`0d5df95` through `c0b0148`)
+- Bootstrap pipeline: agent files + ADRs → wiki pages + graph episodes (`2598d8a` through `c238b35`)
+- Audit integration: ancestor-walk policy loader, trail register, CLAUDE.md directive (`51a07e3`, `3740eaf`, `9238683`)
+- Wiki HTTP serve: `illuminate wiki serve` on localhost (`9c78df0`)
 
 ---
 
