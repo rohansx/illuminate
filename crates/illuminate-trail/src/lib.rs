@@ -19,7 +19,7 @@ pub mod storage;
 pub mod watcher;
 
 pub use record::{AgentKind, Message, MessageRole, ToolInvocation, TrailRecord};
-pub use watcher::{WatcherHandle, WatcherOpts};
+pub use watcher::{run_watcher, WatcherOpts};
 
 use thiserror::Error;
 

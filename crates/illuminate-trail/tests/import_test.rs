@@ -1,6 +1,9 @@
 use illuminate_trail::import::import_session;
+use illuminate_trail::watcher::{run_watcher, WatcherOpts};
 use std::fs;
 use std::io::Write;
+use std::sync::mpsc;
+use std::time::Duration;
 
 const FIXTURE: &str = include_str!("fixtures/claude-session.jsonl");
 
@@ -38,4 +41,32 @@ fn skips_session_for_non_opted_in_repo() {
     write_fixture_session(&jsonl, repo.path());
     let written = import_session(&jsonl).unwrap();
     assert!(written.is_none(), "session for non-opted-in repo must be skipped");
+}
+
+#[test]
+fn watcher_imports_existing_session_on_startup() {
+    let repo = tempfile::tempdir().unwrap();
+    make_opted_in_repo(repo.path());
+    let claude_root = tempfile::tempdir().unwrap();
+    let project_dir = claude_root.path().join("-fake-project");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    let jsonl = project_dir.join("00000000-0000-0000-0000-000000000001.jsonl");
+    write_fixture_session(&jsonl, repo.path());
+
+    let (tx, rx) = mpsc::channel();
+    let claude_root_path = claude_root.path().to_path_buf();
+    let repo_trail_root = repo.path().join(".illuminate").join("trail");
+    let handle = std::thread::spawn(move || {
+        let opts = WatcherOpts {
+            sessions_root: claude_root_path,
+            on_imported: Some(Box::new(move |path| {
+                let _ = tx.send(path);
+            })),
+            run_once: true,
+        };
+        run_watcher(opts).unwrap();
+    });
+    let received = rx.recv_timeout(Duration::from_secs(5)).expect("watcher must import session");
+    assert!(received.starts_with(&repo_trail_root));
+    handle.join().unwrap();
 }
