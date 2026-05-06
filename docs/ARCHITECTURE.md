@@ -1,458 +1,538 @@
-# illuminate — Architecture Document
+# Illuminate — Architecture
 
-**Version:** 0.1.0
-**Last updated:** 2026-03-30
-
----
-
-## System Overview
-
-illuminate is a single Rust binary that combines automated decision extraction, a bi-temporal entity-linked graph, a minimal code indexer, and a contextual linter — all exposed via MCP to AI coding agents.
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        illuminate binary                            │
-│                                                                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
-│  │  CLI      │  │  MCP     │  │  Watch   │  │  HTTP    │           │
-│  │  (clap)   │  │  Server  │  │  Daemon  │  │  Webhook │           │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘           │
-│       │              │              │              │                 │
-│       └──────────────┴──────┬───────┴──────────────┘                │
-│                             │                                       │
-│                    ┌────────▼────────┐                               │
-│                    │  Service Layer  │                               │
-│                    └────────┬────────┘                               │
-│                             │                                       │
-│  ┌──────────┬──────────┬────┴────┬──────────┬──────────┬─────────┐ │
-│  │ extract  │  core    │  index  │  audit   │  route   │ reflect │ │
-│  │ (NER)    │  (graph) │  (AST)  │  (lint)  │  (search)│ (learn) │ │
-│  └────┬─────┘  └───┬───┘  └──┬───┘  └───┬───┘  └──┬───┘  └──┬──┘ │
-│       │            │         │           │          │          │    │
-│       └────────────┴─────────┴─────┬─────┴──────────┴──────────┘    │
-│                                    │                                │
-│                           ┌────────▼────────┐                       │
-│                           │  SQLite Layer   │                       │
-│                           │  graph.db       │                       │
-│                           │  index.db       │                       │
-│                           └─────────────────┘                       │
-└─────────────────────────────────────────────────────────────────────┘
-```
+This document describes how Illuminate is structured, how data flows through it, and how the components fit together. For *why* it exists and *what* it does, see `PRODUCT_OVERVIEW.md`.
 
 ---
 
-## Workspace Structure
+## Design Principles
 
-illuminate is a Rust workspace (edition 2024) with 9 crates:
+These constraints shape every architectural decision below:
 
-```
-illuminate/
-├── Cargo.toml                    # Workspace root
-├── illuminate.toml               # Default project config
-│
-├── crates/
-│   ├── illuminate-core/          # Decision graph engine
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── episode.rs        # Episode types and serialization
-│   │   │   ├── entity.rs         # Entity types and deduplication
-│   │   │   ├── edge.rs           # Relation types and temporal edges
-│   │   │   ├── anchor.rs         # Code anchor types
-│   │   │   ├── graph.rs          # Graph operations (insert, query, walk)
-│   │   │   ├── temporal.rs       # Bi-temporal query logic
-│   │   │   ├── policy.rs         # Intent policy parsing and evaluation
-│   │   │   └── storage.rs        # SQLite schema, migrations, connection pool
-│   │   └── Cargo.toml
-│   │
-│   ├── illuminate-extract/       # Tiered NER pipeline
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── pipeline.rs       # Orchestrates the 12-stage pipeline
-│   │   │   ├── gliner.rs         # GLiNER v2.1 ONNX inference
-│   │   │   ├── glirel.rs         # GLiREL relation extraction
-│   │   │   ├── confidence.rs     # Confidence gate logic
-│   │   │   ├── cloakpipe.rs      # PII stripping and re-hydration
-│   │   │   ├── llm.rs            # LLM fallback (OpenAI-compatible)
-│   │   │   ├── coref.rs          # Coreference resolution
-│   │   │   ├── temporal.rs       # Date/time parsing
-│   │   │   └── schema.rs         # Entity/relation type definitions
-│   │   ├── models/               # ONNX model manifests
-│   │   └── Cargo.toml
-│   │
-│   ├── illuminate-index/         # Code symbol indexer
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── indexer.rs        # Tree-sitter parsing orchestration
-│   │   │   ├── languages.rs      # Language-specific extractors
-│   │   │   ├── symbols.rs        # Symbol types and hashing
-│   │   │   ├── watcher.rs        # File change detection
-│   │   │   └── storage.rs        # index.db operations
-│   │   └── Cargo.toml
-│   │
-│   ├── illuminate-route/         # Subject-to-file routing
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── search.rs         # FTS5 + semantic + graph walk fusion
-│   │   │   ├── ranking.rs        # RRF scoring
-│   │   │   └── planner.rs        # Reading plan generation
-│   │   └── Cargo.toml
-│   │
-│   ├── illuminate-watch/         # Auto-ingestion daemon
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── git.rs            # Git log tailer
-│   │   │   ├── github.rs         # GitHub PR connector
-│   │   │   ├── webhook.rs        # HTTP webhook receiver
-│   │   │   ├── signal.rs         # Decision signal scoring
-│   │   │   └── daemon.rs         # Background process management
-│   │   └── Cargo.toml
-│   │
-│   ├── illuminate-audit/         # Contextual linter
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── auditor.rs        # Plan analysis and graph cross-reference
-│   │   │   ├── policy_check.rs   # TOML policy evaluation
-│   │   │   ├── enrichment.rs     # Code anchor enrichment
-│   │   │   └── response.rs       # Structured warning types
-│   │   └── Cargo.toml
-│   │
-│   ├── illuminate-reflect/       # Reflexion loop
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── reflexion.rs      # Failure → lesson episode creation
-│   │   │   └── matcher.rs        # Reflexion retrieval for audit
-│   │   └── Cargo.toml
-│   │
-│   ├── illuminate-mcp/           # MCP server
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── server.rs         # JSON-RPC 2.0 over stdio
-│   │   │   ├── http.rs           # Streamable HTTP transport
-│   │   │   ├── tools.rs          # 12 MCP tool definitions
-│   │   │   └── handlers.rs       # Tool dispatch
-│   │   └── Cargo.toml
-│   │
-│   └── illuminate-cli/           # CLI binary
-│       ├── src/
-│       │   ├── main.rs
-│       │   ├── commands/
-│       │   │   ├── mod.rs
-│       │   │   ├── init.rs
-│       │   │   ├── watch.rs
-│       │   │   ├── search.rs
-│       │   │   ├── audit.rs
-│       │   │   ├── impact.rs
-│       │   │   ├── evolution.rs
-│       │   │   ├── route.rs
-│       │   │   ├── reflect.rs
-│       │   │   ├── traverse.rs
-│       │   │   ├── log.rs
-│       │   │   ├── stats.rs
-│       │   │   ├── symbols.rs
-│       │   │   ├── serve.rs
-│       │   │   ├── models.rs
-│       │   │   └── export.rs
-│       │   └── output.rs         # Terminal formatting
-│       └── Cargo.toml
-│
-├── docs/                         # Documentation
-├── tests/                        # Integration tests
-│   ├── extraction_test.rs
-│   ├── graph_test.rs
-│   ├── audit_test.rs
-│   └── fixtures/
-└── benches/                      # Benchmarks
-    ├── extraction_bench.rs
-    └── query_bench.rs
-```
+- **Local-first.** All capture, storage, and queries run on the developer's machine or in the team's own infrastructure. No required cloud.
+- **Single binary.** No Docker, no Python, no Neo4j, no separate services. One Rust binary, one SQLite file per repo.
+- **Deterministic queries.** No LLM in the audit/query path. Same input → same output, every time. LLM fallback only during ingestion, never during agent guarding.
+- **Append-only graph.** Bi-temporal storage. Nothing is destructively edited; supersession is recorded as a new fact, not a mutation.
+- **Markdown is source-of-truth for human-readable knowledge.** The graph indexes the wiki, not the other way around. If `graph.db` is deleted, it can be regenerated from `wiki/` plus `trail/`.
+- **Three ingestion paths converge on one graph.** Capture, decision extraction, and failure recording all write to the same store. Output surfaces (linter + wiki) read from the same store.
 
 ---
 
-## Crate Dependency Graph
+## The Loop (high-level)
 
 ```
-illuminate-cli
-  ├── illuminate-mcp
-  │     ├── illuminate-audit
-  │     │     ├── illuminate-core
-  │     │     ├── illuminate-index
-  │     │     └── illuminate-reflect
-  │     ├── illuminate-route
-  │     │     ├── illuminate-core
-  │     │     └── illuminate-index
-  │     ├── illuminate-core
-  │     └── illuminate-reflect
-  ├── illuminate-watch
-  │     ├── illuminate-extract
-  │     │     └── illuminate-core
-  │     └── illuminate-core
-  ├── illuminate-core          (direct for CLI commands)
-  └── illuminate-index         (direct for CLI commands)
+                  ┌──────────────────────────────────────────────┐
+                  │              ILLUMINATE LOOP                 │
+                  └──────────────────────────────────────────────┘
+
+   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+   │ PROMPTS  │    │   GIT    │    │ FAILURES │    │  MANUAL  │
+   │ (claude  │    │ (commits │    │  (CI,    │    │ DECISION │
+   │  cursor) │    │   PRs)   │    │ incidents│    │ ENTRIES  │
+   │          │    │          │    │  tests)  │    │          │
+   └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
+        │               │               │               │
+        ▼               ▼               ▼               ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │                    INGESTION LAYER                       │
+   │  trail capture │ NER extract │ reflect │ toml parser     │
+   │  (local ONNX, LLM fallback ~30% with PII strip)          │
+   └────────────────────────────┬─────────────────────────────┘
+                                │
+                                ▼
+                  ┌─────────────────────────────┐
+                  │   KNOWLEDGE GRAPH           │
+                  │   (ctxgraph / SQLite)       │
+                  │   bi-temporal, append-only  │
+                  └─────────────┬───────────────┘
+                                │
+                ┌───────────────┴───────────────┐
+                ▼                               ▼
+        ┌───────────────┐               ┌───────────────┐
+        │   LINTER      │               │     WIKI      │
+        │  (MCP, audit  │               │  (markdown,   │
+        │   for agents) │               │   browsable)  │
+        └───────┬───────┘               └───────┬───────┘
+                │                               │
+                ▼                               ▼
+         AGENT GUARDED                  HUMANS INFORMED
+         (drift prevented)              (onboarding,
+                                         review,
+                                         search)
+
+         When agents fail despite the linter,
+         failures feed back via reflect → graph.
+         The loop tightens with every cycle.
 ```
 
-Key rule: **No circular dependencies.** `illuminate-core` is the leaf — it depends on no other illuminate crate.
+The flywheel: every session, decision, and failure feeds the graph. The graph guards agents and informs humans. Agents fail less often. When they do fail, the failure feeds the graph. After three months of use, switching off Illuminate means losing the team's accumulated context.
 
 ---
 
-## Data Flow
+## A Coding Session, End-to-End
 
-### Ingestion Path (Write)
-
-```
-Source (git/PR/webhook/manual)
-    │
-    ▼
-illuminate-watch           Receives raw text, scores decision signal
-    │
-    ▼
-illuminate-extract         12-stage NER pipeline → Episode + Entities + Relations
-    │
-    ▼
-illuminate-core            Writes to graph.db (episodes, entities, edges)
-    │
-    ▼
-illuminate-index           Creates code anchors linking decisions to symbols
-```
-
-### Query Path (Read)
+What happens when a developer writes a single feature with Illuminate installed:
 
 ```
-Agent/CLI query
-    │
-    ▼
-illuminate-mcp / illuminate-cli     Parses request, dispatches to handler
-    │
-    ▼
-illuminate-route                    FTS5 + semantic + graph walk → ranked results
-    │
-    ▼
-illuminate-core                     Reads graph.db
-    │
-    ▼
-illuminate-index                    Enriches with code anchors
-    │
-    ▼
-illuminate-reflect                  Attaches relevant reflexion episodes
-    │
-    ▼
-Structured response to agent
+   DEVELOPER                 CLAUDE CODE              ILLUMINATE              GRAPH/WIKI
+   ────────                 ───────────              ──────────              ──────────
+
+   opens repo, starts ─────► session begins ───────► trail-watcher
+   claude code              writes to                detects session
+                            ~/.claude/projects/      starts capture
+
+   types prompt:    ───────► sends to model
+   "add caching to                                   (no action; capture
+   txn lookup"                                       continues silently)
+
+                            BEFORE writing code,
+                            agent calls            ────► illuminate_audit
+                            illuminate_audit              {plan, files,
+                            (per CLAUDE.md rule)          rationale}
+                                                          │
+                                                          ▼
+                                                   query graph: ◄────────── graph holds
+                                                   "caching" entity         past decision:
+                                                   in this repo                "no Redis,
+                                                          │                    use LRU"
+                                                          ▼
+                            receives audit  ◄──────  return: {
+                            response                  violations: [],
+                                                      relevant_decisions:
+                                                        [LRU pattern doc],
+                                                      prior_failures: []
+                                                    }
+
+   sees suggestion: ◄─────  agent surfaces
+   "team rejected           past decision,
+   Redis 3mo ago,           proposes LRU
+   use LRU"                 instead
+
+   approves           ────► agent writes code
+
+                            session ends           ────► trail-watcher
+                            jsonl finalized              finalizes capture,
+                                                         hands to extractor
+                                                         │
+                                                         ▼
+                                                   NER pipeline:
+                                                   GLiNER → entities
+                                                   GLiREL → relations
+                                                   embed for retrieval
+                                                         │
+                                                         ▼
+                                                   any new decisions? ─────► no new graph
+                                                                             writes (existing
+                                                                             pattern reused)
+                                                         │
+                                                         ▼
+                                                   trail saved to
+                                                   .illuminate/trail/
+                                                   (gitignored)
+
+   commits code      ─────► git commit hook  ─────► extractor reads
+                                                   commit message + diff
+                                                   for new decisions
+                                                                                  │
+                                                                                  ▼
+                                                                            (none in this
+                                                                             case, no graph
+                                                                             update)
 ```
 
-### Audit Path (Lint)
-
-```
-Agent plan text
-    │
-    ▼
-illuminate-audit
-    ├── Extract entities from plan (lightweight NER)
-    ├── Check against intent policies (illuminate-core/policy)
-    ├── Query decision graph for conflicts (illuminate-core/graph)
-    ├── Enrich with code anchors (illuminate-index)
-    └── Check reflexion episodes (illuminate-reflect)
-    │
-    ▼
-Structured violation report (JSON)
-```
+If the dev had instead introduced something genuinely new — a novel pattern, a deliberate exception to a past decision, a new architectural choice — the extractor would have surfaced it and either auto-added it to the graph (high confidence) or opened a wiki PR for human review (lower confidence).
 
 ---
 
-## Storage Architecture
+## File Layout (per repo)
 
-### Two databases, zero servers
+A repo with Illuminate installed gets a single `.illuminate/` directory:
 
-| Database | Location | Contents | Committed to git? |
-|----------|----------|----------|-------------------|
-| `graph.db` | `.illuminate/graph.db` | Episodes, entities, edges, anchors, FTS5 index, embeddings | Yes (recommended) |
-| `index.db` | `.illuminate/index.db` | Code symbols from tree-sitter | No (regenerated) |
+```
+my-repo/
+├── .git/
+├── .illuminate/
+│   ├── illuminate.toml         # config + intent policies
+│   ├── graph.db                # SQLite (ctxgraph) — gitignored
+│   ├── wiki/                   # markdown — checked into git
+│   │   ├── index.md            # auto-generated catalog
+│   │   ├── log.md              # append-only audit log
+│   │   ├── schema.md           # how the agent maintains the wiki
+│   │   ├── decisions/
+│   │   │   ├── 2025-12-no-redis-payments.md
+│   │   │   ├── 2026-01-tree-sitter-over-treesitter-rs.md
+│   │   │   └── ...
+│   │   ├── patterns/
+│   │   │   ├── lru-cache-with-ttl.md
+│   │   │   └── ...
+│   │   ├── failures/
+│   │   │   ├── 2026-02-race-condition-payments.md
+│   │   │   └── ...
+│   │   └── modules/
+│   │       ├── payments-service.md
+│   │       └── ...
+│   └── trail/                  # raw prompt receipts — gitignored
+│       ├── 2026-05-06-add-caching-claude.jsonl
+│       └── ...
+├── .gitignore                  # adds .illuminate/graph.db, .illuminate/trail/
+├── CLAUDE.md                   # references illuminate_audit as required pre-write
+└── src/
+    └── ...
+```
 
-Both are SQLite files. No external database server required.
+What's checked into git:
+- `illuminate.toml` (config)
+- `wiki/` (the team's accumulated knowledge)
 
-### Bi-temporal model
+What's gitignored:
+- `graph.db` (regeneratable from wiki + trail)
+- `trail/` (raw transcripts — sensitive, large, regeneratable)
 
-Every edge in the graph tracks two time dimensions:
+The graph is a *cache* of what's in the wiki + trail. If it's deleted, `illuminate rebuild` regenerates it from the on-disk artifacts. This makes the system robust to corruption and keeps the source-of-truth human-readable.
 
-- **valid_from / valid_until**: When the fact was true in reality
-- **recorded_at**: When illuminate learned about the fact
-
-This enables:
-- "What did we know about caching on January 1st?" (point-in-time query)
-- "When did we learn about the Postgres decision?" (audit trail)
-- "Show all superseded decisions" (valid_until IS NOT NULL)
-
-### Append-only semantics
-
-Episodes and edges are never deleted or mutated. Superseding a decision:
-1. Sets `valid_until` on the old edge
-2. Creates a new edge with `valid_from = now`
-
-This preserves the complete history for compliance and debugging.
+See `SCHEMA.md` for the full markdown schema for wiki pages.
 
 ---
 
-## Extraction Architecture
+## Crate Layout
 
-### Tiered design rationale
-
-The extraction pipeline is designed for three competing constraints:
-1. **Quality** — High entity/relation F1
-2. **Cost** — Most teams won't pay $1.80/1K episodes (Graphiti's cost)
-3. **Privacy** — Sensitive data must not reach external APIs
-
-The tiered approach resolves all three:
+Ten crates, one workspace, one binary:
 
 ```
-            ┌─────────────────┐
-            │  ~70% of input  │ ──→ Local ONNX only ($0, fully private)
-            │  (high signal)  │
-            └─────────────────┘
-
-            ┌─────────────────┐
-            │  ~30% of input  │ ──→ CloakPipe PII strip → 1 LLM call ($0.0003)
-            │  (low signal)   │
-            └─────────────────┘
+   ┌─────────────────────────────────────────────────────────┐
+   │                   illuminate-cli                        │
+   │                  (single binary)                        │
+   └─────┬───────────┬───────────┬───────────┬──────────┬────┘
+         │           │           │           │          │
+         ▼           ▼           ▼           ▼          ▼
+   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐
+   │ trail   │ │ extract │ │ audit   │ │ reflect │ │  mcp   │
+   │ (claude │ │ (NER,   │ │(policy +│ │(failure │ │(jsonrpc│
+   │  cursor │ │ embed,  │ │ graph   │ │ ingest) │ │ server)│
+   │  codex) │ │ index)  │ │ query)  │ │         │ │        │
+   └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬───┘
+        │           │           │           │           │
+        └───────────┴───────────┴───────────┴───────────┘
+                                │
+                                ▼
+                        ┌───────────────┐
+                        │ illuminate-   │
+                        │     core      │
+                        │ (graph API,   │
+                        │  built on     │
+                        │  ctxgraph)    │
+                        └───────┬───────┘
+                                │
+                                ▼
+                        ┌───────────────┐
+                        │   ctxgraph    │
+                        │ (bi-temporal  │
+                        │  KG engine,   │
+                        │  SQLite)      │
+                        └───────────────┘
 ```
 
-### ONNX runtime
+Crate responsibilities:
 
-Both GLiNER and GLiREL run via the `ort` crate (ONNX Runtime for Rust):
-- INT8 quantized for minimal memory (~150 MB total)
-- CPU-only (no GPU required)
-- Cross-platform (x86_64 + arm64)
-- Models auto-downloaded on first use (~700 MB total)
+| Crate | Responsibility |
+|-------|----------------|
+| `illuminate-core` | Graph API on top of `ctxgraph`. Entity types, relationship types, query helpers specific to Illuminate's domain. |
+| `illuminate-trail` | Watches `~/.claude/projects/`, Cursor session storage, Codex sessions. Captures and normalizes session jsonl into `trail/` files. |
+| `illuminate-extract` | NER pipeline. GLiNER for entities, GLiREL for relations, all-MiniLM-L6-v2 for embeddings. All ONNX, local. Outputs structured decisions for the graph. |
+| `illuminate-embed` | Embedding service. Used by extract and by the audit query path for semantic search over the graph. |
+| `illuminate-index` | Tree-sitter–based code indexer. Maps file paths and symbols to graph entities so audits know which decisions apply to which files. |
+| `illuminate-audit` | Policy engine. Reads `illuminate.toml` + queries the graph. Returns violations, warnings, relevant past decisions for a proposed change. |
+| `illuminate-watch` | Daemon harness. Long-running process that hosts trail-watcher and ingestion workers. Run as user systemd service or background process. |
+| `illuminate-reflect` | Failure capture. Hooks into CI logs, parses incident reports, manual `illuminate failure log` entries. Writes to graph as failure entities. |
+| `illuminate-route` | LLM fallback router. When local NER confidence is low, optionally calls a configured LLM (with PII stripped via cloakpipe). Used for ~30% of ingestion, never queries. |
+| `illuminate-mcp` | JSON-RPC server speaking the MCP protocol. Exposes audit/explain/search tools to Claude Code, Cursor, and any other MCP-aware agent. |
+| `illuminate-cli` | Top-level binary. Subcommands: `init`, `wiki`, `audit`, `failure`, `rebuild`, `serve`, etc. |
 
-### Confidence gate
-
-The confidence gate evaluates local extraction quality:
-
-```
-score = weighted_average(
-    entity_count_score,      # Did we find entities?
-    entity_type_coverage,    # Multiple types extracted?
-    relation_count_score,    # Did we find relations?
-    span_overlap_penalty,    # Overlapping spans = confusion
-    known_entity_bonus       # Matches existing graph entities
-)
-
-if score >= threshold (default 0.7):
-    → Accept local extraction, skip LLM ($0)
-else:
-    → CloakPipe strip → LLM fallback → CloakPipe rehydrate
-```
+The `cli` crate is the only binary. Everything else is a library. This keeps the binary surface small and lets users embed individual crates if they want (e.g., a different agent surface that just uses `illuminate-audit`). See `CRATES.md` for crate-by-crate detail.
 
 ---
 
-## MCP Protocol
+## The Audit Request Lifecycle
 
-### Transport
+What happens during a single `illuminate_audit` call from an agent:
 
-| Mode | Protocol | Use case |
-|------|----------|----------|
-| **stdio** (default) | JSON-RPC 2.0 over stdin/stdout | Claude Code, Cursor, Windsurf |
-| **HTTP** (optional) | Streamable HTTP, JSON-RPC 2.0 | Remote agents, testing |
+```
+   AGENT                  MCP SERVER              AUDIT ENGINE                GRAPH
+   ─────                  ──────────              ────────────                ─────
 
-### Tool categories
+   send: ──────────────► receive jsonrpc:
+   illuminate_audit       method: audit
+   {                      params: {plan,
+     plan: "add Redis     files, rationale}
+       caching to txn       │
+       lookup",             ▼
+     files: [             validate input,
+       "src/txn/           load illuminate.toml,
+        cache.rs"          identify affected
+     ],                    modules from files
+     rationale: ...           │
+   }                          ▼
+                          for each file:    ─────► query: which entities
+                            map to graph          touch this file?
+                            entities (via               │
+                            illuminate-index)           ▼
+                                                  return: [Module::Payments,
+                                                          Pattern::CachingLayer]
+                            │
+                            ▼
+                          for each entity:  ─────► query: what decisions
+                                                   reference this entity?
+                                                          │
+                                                          ▼
+                                                  return: [Decision::NoRedis,
+                                                          Pattern::LRU30s]
+                            │
+                            ▼
+                          semantic match    ─────► query: embed("Redis")
+                          plan keywords            similar to existing
+                          to graph terms           decisions?
+                          ("Redis" → caching)             │
+                                                          ▼
+                                                  return: high similarity
+                                                          to NoRedis decision
+                            │
+                            ▼
+                          apply illuminate.toml
+                          policies
+                            │
+                            ▼
+                          score severity:
+                          - violations (block)
+                          - warnings (surface)
+                          - notes (FYI)
+                            │
+                            ▼
+   receive: ◄───────────  return:
+   {                      {
+     status: "warn",        violations: [],
+     violations: [],        warnings: [
+     warnings: [{             {
+       decision_id: ...,        decision_id: NoRedis,
+       summary: "Team           summary: "...",
+       rejected Redis",         wiki_url: "...",
+       wiki_url:                confidence: 0.92
+       "wiki/decisions/       }
+       2025-12-no-          ],
+       redis-payments       relevant_patterns: [
+       .md"                   {pattern: LRU30s, ...}
+     }],                    ],
+     relevant_patterns:     prior_failures: []
+       [{...}],            }
+     prior_failures: []
+   }
 
-| Category | Tools | Description |
-|----------|-------|-------------|
-| **Linting** | `illuminate_audit`, `illuminate_impact` | Proactive intent enforcement |
-| **Query** | `illuminate_search`, `illuminate_explain`, `illuminate_evolution`, `illuminate_traverse`, `illuminate_precedents` | Decision graph exploration |
-| **Routing** | `illuminate_route` | Subject → files + decisions |
-| **Write** | `illuminate_log`, `illuminate_reflect` | Add decisions and lessons |
-| **Index** | `illuminate_symbols` | Code symbol lookup |
-| **Info** | `illuminate_stats` | Graph statistics |
+   agent surfaces
+   warning to dev,
+   suggests LRU
+   alternative
+```
+
+Total round-trip target: < 200ms for typical queries. No LLM in the path means it's bounded by SQLite query time + embedding similarity, both of which are fast on local hardware.
+
+See `AUDIT.md` for the full audit-tool contract.
 
 ---
 
-## Security Model
+## Where LLMs Are (and Aren't) Used
 
-### Threat boundaries
+This matters for cost, determinism, and privacy:
 
 ```
-┌──────────────────────────────────────────────┐
-│  TRUSTED ZONE (local machine)                │
-│                                              │
-│  illuminate binary                           │
-│  ├── graph.db (encrypted at rest optional)   │
-│  ├── index.db                                │
-│  ├── ONNX models                             │
-│  └── illuminate.toml                         │
-│                                              │
-│  ──── CloakPipe boundary ────                │
-│                                              │
-│  Only pseudonymized text crosses this line   │
-└──────────────┬───────────────────────────────┘
-               │ HTTPS (TLS 1.3)
-               ▼
-┌──────────────────────────────────────────────┐
-│  EXTERNAL (LLM API)                          │
-│  Receives pseudonymized text only            │
-│  No real names, emails, IDs                  │
-└──────────────────────────────────────────────┘
+   ┌────────────────────────────────────────────────────────┐
+   │                    LLM USAGE MAP                       │
+   ├────────────────────────────────────────────────────────┤
+   │                                                        │
+   │  INGESTION PATH                    QUERY PATH          │
+   │  ──────────────                    ──────────          │
+   │                                                        │
+   │  prompt-trail capture       │     audit (linter)       │
+   │  ├─ raw save (no LLM)       │     ├─ all local         │
+   │  └─ extract (NER local,     │     └─ deterministic     │
+   │       LLM fallback ~30%)    │                          │
+   │                             │     wiki query           │
+   │  decision extraction        │     ├─ all local         │
+   │  ├─ NER local (GLiNER,      │     └─ semantic search   │
+   │  │   GLiREL)                │        via embeddings    │
+   │  └─ LLM fallback if low     │                          │
+   │     confidence              │     graph queries        │
+   │                             │     └─ all local         │
+   │  failure ingestion          │                          │
+   │  ├─ rule-based parse        │                          │
+   │  └─ LLM only for natural-   │                          │
+   │     language post-mortems   │                          │
+   │                             │                          │
+   └────────────────────────────────────────────────────────┘
+
+   When LLM is used (ingestion only):
+   - PII stripped first via cloakpipe (or local equivalent)
+   - configurable per-team (which provider, or "never")
+   - results cached → same input never re-asks
 ```
 
-### Key guarantees
-
-1. **Queries never leave the machine.** All search (FTS5 + semantic + graph walk) is local.
-2. **~70% of extraction is fully local.** Only low-confidence episodes trigger an LLM call.
-3. **PII is stripped before any LLM call.** CloakPipe pseudonymizes before transmission, re-hydrates after.
-4. **No telemetry.** illuminate does not phone home.
-5. **API keys stored in env vars**, never in config files.
+The query path being entirely local is what makes Illuminate **deterministic and free at runtime**. You pay for ingestion (cheaply, mostly local), then queries are unlimited.
 
 ---
 
-## Performance Characteristics
+## Capture: How Sessions Are Detected
 
-### Memory budget
+```
+   ┌──────────────────────────────────────────────────────────┐
+   │                  illuminate-trail                        │
+   │                  (capture daemon)                        │
+   └──────────────────────────────────────────────────────────┘
 
-| Component | RAM | When |
-|-----------|-----|------|
-| SQLite (graph.db) | ~10 MB | Always |
-| ONNX runtime (GLiNER + GLiREL) | ~150 MB | During extraction |
-| Embedding model (all-MiniLM-L6-v2) | ~80 MB | During search (lazy loaded) |
-| Tree-sitter parsers | ~5 MB | During indexing |
-| **Total peak** | **~245 MB** | During extraction + search |
-| **Idle (MCP server)** | **~15 MB** | Waiting for queries |
+   watches:
+   ┌────────────────────────────────────────┐
+   │ ~/.claude/projects/<project-hash>/     │  Claude Code
+   │   ├── sessions-index.json              │  (jsonl)
+   │   └── <session-id>.jsonl  ◄── inotify  │
+   └────────────────────────────────────────┘
 
-### Latency targets
+   ┌────────────────────────────────────────┐
+   │ ~/.cursor/conversations/  (varies)     │  Cursor
+   │   └── <session-id>.json   ◄── poll     │
+   └────────────────────────────────────────┘
 
-| Operation | Target | Mechanism |
-|-----------|--------|-----------|
-| Policy check | <1ms | In-memory TOML evaluation |
-| FTS5 search | <5ms | SQLite FTS5 |
-| Semantic search | <10ms | Local embedding + cosine similarity |
-| Full audit | <20ms | Policy + graph + anchors + reflexion |
-| Local extraction | <15ms | ONNX inference |
-| LLM extraction | <500ms | Network round-trip |
-| Code indexing (incremental) | <20ms | mtime + content hash skip |
+   ┌────────────────────────────────────────┐
+   │ ~/.codex/sessions/  (varies)           │  Codex
+   │   └── <session-id>.json   ◄── inotify  │
+   └────────────────────────────────────────┘
+
+   for each new/updated session:
+   ┌────────────────────────────────────────┐
+   │ 1. resolve session → repo              │
+   │    via project path → git root         │
+   ├────────────────────────────────────────┤
+   │ 2. check repo has illuminate.toml      │
+   │    if not, skip (opt-in only)          │
+   ├────────────────────────────────────────┤
+   │ 3. normalize session format             │
+   │    {prompts, responses, tool_calls,    │
+   │     files_touched, model, timestamps}  │
+   ├────────────────────────────────────────┤
+   │ 4. write to .illuminate/trail/         │
+   │    <date>-<topic>-<agent>.jsonl        │
+   ├────────────────────────────────────────┤
+   │ 5. enqueue extraction job              │
+   └────────────────────────────────────────┘
+```
+
+Key invariants:
+- **Opt-in only.** Only repos with `illuminate.toml` are captured. Personal/private repos without it are ignored.
+- **Repo-scoped.** Each session is tied to exactly one repo. Cross-repo sessions are split.
+- **Local file system only.** No network, no upload, no telemetry by default.
+
+See `INGESTION.md` for the full ingestion pipeline.
 
 ---
 
-## Cross-Platform Build
+## Bootstrapping (Cold Start)
 
-### Target matrix
-
-| Platform | Architecture | Status |
-|----------|-------------|--------|
-| Linux | x86_64 | Primary |
-| Linux | aarch64 | Supported |
-| macOS | x86_64 (Intel) | Supported |
-| macOS | aarch64 (Apple Silicon) | Supported |
-| Windows | x86_64 | Planned |
-
-### Build dependencies
-
-- Rust 1.85+ (edition 2024)
-- C compiler (for tree-sitter and SQLite)
-- ONNX Runtime (vendored via `ort` crate)
-
-### Release artifacts
+A team that just installed Illuminate has an empty graph. The linter has nothing to enforce. To make day-one valuable:
 
 ```
-illuminate-{version}-x86_64-linux.tar.gz
-illuminate-{version}-aarch64-linux.tar.gz
-illuminate-{version}-x86_64-darwin.tar.gz
-illuminate-{version}-aarch64-darwin.tar.gz
+   ┌───────────────────────────────────────────────────────┐
+   │  BOOTSTRAP SOURCES (run during `illuminate init`)     │
+   ├───────────────────────────────────────────────────────┤
+   │                                                       │
+   │  1. existing CLAUDE.md / AGENTS.md / .cursorrules    │
+   │     └─► parsed as initial decisions                   │
+   │                                                       │
+   │  2. existing ADRs (docs/adr/, docs/decisions/)        │
+   │     └─► imported as decision entities                 │
+   │                                                       │
+   │  3. last 6 months of git history                      │
+   │     └─► commits + PRs scanned by NER pipeline         │
+   │                                                       │
+   │  4. existing README + CONTRIBUTING.md                 │
+   │     └─► parsed for architectural notes                │
+   │                                                       │
+   │  5. (optional) interview prompt                       │
+   │     └─► "what should the agent never do in this      │
+   │         repo?" → 3-5 questions, manual entry          │
+   │                                                       │
+   └───────────────────────────────────────────────────────┘
+
+   typical bootstrap result for a 6-month-old repo:
+   ├─ 15-40 decisions extracted
+   ├─ 5-10 patterns identified
+   ├─ 2-5 modules indexed
+   └─ enough context for first-week audits to be useful
 ```
 
-Plus Homebrew formula in `rohansx/tap/illuminate`.
+Bootstrapping is the unsexy problem most knowledge-graph products die from. Illuminate spends real engineering effort here because the alternative is "graph is empty for two weeks, dev concludes the tool doesn't work, uninstalls."
+
+See `BOOTSTRAP.md` for the full bootstrap pipeline.
+
+---
+
+## Privacy and Security Model
+
+```
+   ┌────────────────────────────────────────────────────────┐
+   │                   DATA RESIDENCY                       │
+   ├────────────────────────────────────────────────────────┤
+   │                                                        │
+   │  trail/        on developer's laptop, gitignored       │
+   │  graph.db      on developer's laptop, gitignored       │
+   │  wiki/         in git repo (team-shared)               │
+   │  illuminate.toml  in git repo (team-shared)            │
+   │                                                        │
+   ├────────────────────────────────────────────────────────┤
+   │                  NETWORK BOUNDARIES                    │
+   ├────────────────────────────────────────────────────────┤
+   │                                                        │
+   │  default:      no network calls. fully offline.       │
+   │                                                        │
+   │  optional:     LLM fallback during ingestion only.    │
+   │                ├─ team configures provider            │
+   │                ├─ PII stripped before send            │
+   │                └─ never during query/audit            │
+   │                                                        │
+   │  never:        no telemetry, no analytics, no         │
+   │                "anonymous usage stats", no auto-      │
+   │                update phone-home.                     │
+   │                                                        │
+   └────────────────────────────────────────────────────────┘
+```
+
+This is the architecture cloakpipe-adjacent buyers (Harvey, Abridge, Hippocratic AI, regulated verticals) need. It's not a marketing point. It's a constraint that drove the design from day one.
+
+See `PRIVACY.md` for the full threat model and data-handling specification.
+
+---
+
+## What's Deliberately Not in the Architecture
+
+Things that would be reasonable to include in v1 but aren't, with reasoning:
+
+- **No cloud sync.** Users will ask for it. Defer until v0.4+.
+- **No auth or RBAC.** The graph is in git. Git auth is the auth.
+- **No web UI for the wiki.** Markdown renders fine in GitHub/Obsidian/any editor. Building a web UI is a distraction in v0.1.
+- **No vector database.** Embeddings are stored as blobs in SQLite. Fine up to ~100k entities; beyond that revisit.
+- **No analytics or dashboards.** Team metrics are a paid-tier feature, deferred.
+- **No agent-side training/fine-tuning.** Illuminate guards generation; it doesn't change the model.
+- **No multi-language NER (initially).** GLiNER supports many languages but extraction quality varies. v0.1 ships English-only; expand later.
+
+---
+
+## Technology Choices, in One Table
+
+| Concern | Choice | Why |
+|---------|--------|-----|
+| Language | Rust | Single binary, performance, your strongest stack |
+| Storage | SQLite | Single file, no service, FTS5 + JSON extensions |
+| Knowledge graph | ctxgraph (yours) | Already built, benchmarked, owns the graph layer |
+| NER | GLiNER + GLiREL via ONNX | Local, fast, no GPU required |
+| Embeddings | all-MiniLM-L6-v2 (ONNX) | Local, small (90MB), good enough for retrieval |
+| Code indexing | tree-sitter | Industry standard, already used by Cursor/Claude Code/etc. |
+| Agent interface | MCP (JSON-RPC) | Standard across Claude Code, Cursor, Codex |
+| Wiki format | Plain markdown | Karpathy pattern, git-native, editor-agnostic |
+| Distribution | `cargo install` + `curl \| sh` | Standard Rust toolchain, no ops burden |
+| LLM fallback | Configurable (Anthropic/OpenAI/local) | User choice, default to none |
+
+Every choice optimizes for: local-first, single binary, no service dependencies.

@@ -1,0 +1,17 @@
+[package]
+name = "illuminate-trail"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Session capture for illuminate — Claude Code, Cursor, and Codex prompt-trail ingestion"
+
+[dependencies]
+illuminate = { version = "0.8.0", path = "../illuminate-core" }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+uuid = { workspace = true }
+notify = "7"

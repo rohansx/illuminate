@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Auto-ingestion daemon for illuminate — git, GitHub PRs, webhooks"
+description = "Daemon harness for illuminate — hosts the trail watcher, extraction workers, and ingestion sources (git, GitHub PRs, webhooks)"
 
 [dependencies]
 illuminate = { version = "0.8.0", path = "../illuminate-core" }

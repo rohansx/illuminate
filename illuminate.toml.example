@@ -1,39 +1,100 @@
-# illuminate.toml - configuration for your project
+# illuminate.toml — configuration for your project
 #
-# copy this to illuminate.toml in your project root.
-# illuminate init generates a default version automatically.
+# Copy this file to .illuminate/illuminate.toml in your project root.
+# `illuminate init` generates a default version automatically.
 
 [project]
 name = "my-project"
+# repo_root = "."  # auto-detected from .git/
 
-# extraction pipeline settings
+# ─── trail capture (agent session ingestion) ─────────────────────────────────
+[trail]
+enabled = true
+# which agents to capture
+claude_code = true
+cursor = false                  # v0.2
+codex = false                   # v0.2
+# auto-purge raw trails older than this (days). 0 = never.
+purge_after_days = 90
+# additional path patterns to skip (sensitive paths)
+exclude_patterns = ["**/credentials/**", "**/.env*"]
+
+# ─── extraction pipeline ──────────────────────────────────────────────────────
 [extraction]
-confidence_threshold = 0.5   # below this, llm fallback fires (~30% of episodes)
-# offline_only = false        # set true to never call llm
+# below this score, episodes are skipped entirely (no NER, no LLM)
+signal_threshold = 0.3
+# below this confidence, LLM fallback fires (if enabled)
+confidence_threshold = 0.5
+# never call the LLM, even at low confidence
+offline_only = false
 
-# llm fallback for low-confidence extraction
-# [extraction.llm]
-# provider = "openai"
-# model = "gpt-4o-mini"
-# api_key_env = "OPENAI_API_KEY"
+# LLM fallback for low-confidence extraction (optional, ~30% of episodes)
+# Set provider = "none" to disable entirely.
+[extraction.llm]
+provider = "none"               # none | anthropic | openai | ollama
+# model = "claude-haiku-4-5"
+# api_key_env = "ANTHROPIC_API_KEY"
+pii_strip = true                # ALWAYS true; cannot be disabled
+max_calls_per_day = 1000
+audit_log = true                # write a local log entry per call
+cache = true                    # idempotent; same input never re-asks
 
-# auto-ingestion settings
-[watch]
-git = true
-git_backfill = 100
+# Custom PII patterns (in addition to built-in regex)
+# [extraction.llm.pii_patterns]
+# codenames = ["Project Phoenix"]
+# hostnames = ["*.internal.acme.com"]
 
-# github pr ingestion
-# [watch.github]
-# enabled = false
-# token_env = "ILLUMINATE_GITHUB_TOKEN"
-# repo = "owner/repo"
+# ─── bootstrap (cold-start ingestion at `illuminate init`) ───────────────────
+[bootstrap]
+# parsed from .git/
+[bootstrap.git]
+since = "6 months ago"
+include_diffs = false
+include_prs = true
+max_commits = 5000
 
-# webhook receiver
-# [watch.webhook]
-# enabled = false
-# port = 8421
+# parsed from existing ADRs
+[bootstrap.adr]
+paths = ["docs/adr/**", "docs/decisions/**", "architecture/decisions/**"]
 
-# entity and relation type schema
+# parsed from CLAUDE.md / AGENTS.md / .cursorrules
+[bootstrap.agent_files]
+enabled = true
+
+# parsed from README + CONTRIBUTING.md
+[bootstrap.readme]
+enabled = true
+
+# ─── audit engine ─────────────────────────────────────────────────────────────
+[audit]
+# top-k similar entities returned by semantic search
+semantic_top_k = 5
+# minimum cosine similarity for a semantic match
+semantic_threshold = 0.55
+# include policies with severity = "info" in responses (otherwise: warning + error)
+include_info = true
+# log full audit input/output (devs only — verbose; never for prod)
+verbose_logging = false
+
+# ─── wiki ─────────────────────────────────────────────────────────────────────
+[wiki]
+# auto-merge extracted decisions to wiki when confidence >= this
+auto_merge_threshold = 0.7
+# below this confidence, never auto-merge; always queue for review
+require_review_below = 0.5
+# wiki linter strictness
+strict = true
+
+# ─── MCP server ───────────────────────────────────────────────────────────────
+[mcp]
+# protocol_version is reported in every response; clients negotiate via standard MCP version
+verbose = false                  # if true, log full request/response bodies (devs only)
+
+[mcp.http]
+bind = "127.0.0.1:8765"
+# bearer_token_env = "ILLUMINATE_HTTP_TOKEN"
+
+# ─── entity and relation schema (see SCHEMA.md / CRATES.md) ──────────────────
 [schema]
 name = "default"
 
@@ -48,25 +109,31 @@ Decision = "an explicit choice or judgment that was made"
 Constraint = "a limitation, requirement, or condition"
 Metric = "a quantifiable performance or business metric"
 Pattern = "a design pattern or architectural pattern"
+Module = "a top-level module / service in this repo"
+Failure = "an incident or test failure with a recorded lesson"
 
 [schema.relations]
-chose = { head = ["Person"], tail = ["Component", "Database", "Language"], description = "person chose a technology" }
-rejected = { head = ["Person"], tail = ["Component", "Database"], description = "person rejected an alternative" }
-replaced = { head = ["Component", "Database"], tail = ["Component", "Database"], description = "one thing replaced another" }
-depends_on = { head = ["Service", "Component"], tail = ["Service", "Component", "Database"], description = "dependency relationship" }
-fixed = { head = ["Person", "Component"], tail = ["Component", "Service"], description = "something fixed an issue" }
-introduced = { head = ["Person"], tail = ["Component", "Pattern"], description = "person introduced a component" }
-deprecated = { head = ["Person", "Decision"], tail = ["Component", "Pattern"], description = "deprecation action" }
-caused = { head = ["Component", "Decision"], tail = ["Metric", "Constraint"], description = "causal relationship" }
+chose       = { head = ["Person"], tail = ["Component", "Database", "Language"], description = "person chose a technology" }
+rejected    = { head = ["Person"], tail = ["Component", "Database"], description = "person rejected an alternative" }
+replaced    = { head = ["Component", "Database"], tail = ["Component", "Database"], description = "one thing replaced another" }
+depends_on  = { head = ["Service", "Component"], tail = ["Service", "Component", "Database"], description = "dependency relationship" }
+fixed       = { head = ["Person", "Component"], tail = ["Component", "Service"], description = "something fixed an issue" }
+introduced  = { head = ["Person"], tail = ["Component", "Pattern"], description = "person introduced a component" }
+deprecated  = { head = ["Person", "Decision"], tail = ["Component", "Pattern"], description = "deprecation action" }
+caused      = { head = ["Component", "Decision"], tail = ["Metric", "Constraint", "Failure"], description = "causal relationship" }
 constrained_by = { head = ["Decision", "Component"], tail = ["Constraint"], description = "decision constrained by" }
+affects     = { head = ["Decision", "Pattern", "Failure"], tail = ["Module"], description = "this entity applies to a module" }
 
-# intent policies - machine-enforceable architectural rules
+# ─── intent policies (machine-enforceable architectural rules) ───────────────
 #
-# [policies.caching]
+# Policies are evaluated by the audit engine. See AUDIT.md for rule kinds.
+#
+# [policies.no_redis_payments]
 # rule = "must_use"
 # entity = "Memcached"
 # reject = ["Redis", "Dragonfly"]
-# reason = "vpc overhead - see adr #42"
+# paths = ["services/payments-service/**"]
+# reason = "deployment target disallows stateful sidecars (see ADR #42)"
 # severity = "error"
 #
 # [policies.auth_module]
@@ -81,3 +148,9 @@ constrained_by = { head = ["Decision", "Component"], tail = ["Constraint"], desc
 # pattern = "microservice split"
 # reason = "tried in 2024, reverted due to latency"
 # severity = "error"
+#
+# [policies.use_tree_sitter]
+# rule = "must_use"
+# entity = "tree-sitter"
+# reject = ["regex-based parser"]
+# severity = "warning"
