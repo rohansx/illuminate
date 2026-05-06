@@ -19,6 +19,8 @@ rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 toml = "0.8"
+serde_yaml = "0.9"
+pulldown-cmark = "0.12"
 gline-rs = "1.0"
 ort = "=2.0.0-rc.9"
 ndarray = "0.16"
