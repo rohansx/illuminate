@@ -8,6 +8,7 @@ description = "Markdown wiki layer for illuminate — parse, lint, render team-s
 
 [dependencies]
 chrono = { workspace = true }
+pulldown-cmark = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
