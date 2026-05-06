@@ -10,6 +10,7 @@ pub mod lint;
 pub mod page;
 pub mod render;
 pub mod scaffold;
+pub mod serve;
 pub mod walk;
 
 use thiserror::Error;

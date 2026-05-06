@@ -19,6 +19,12 @@ pub enum WikiCmd {
     List,
     /// Initialize an empty wiki/ scaffold in the current repo
     Init,
+    /// Serve the wiki as HTML at http://127.0.0.1:<port>
+    Serve {
+        /// Port to bind (default 8765)
+        #[arg(long, default_value = "8765")]
+        port: u16,
+    },
 }
 
 pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
@@ -27,6 +33,7 @@ pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
         WikiCmd::Rebuild => cmd_rebuild(),
         WikiCmd::List => cmd_list(),
         WikiCmd::Init => cmd_init(),
+        WikiCmd::Serve { port } => cmd_serve(port),
     }
 }
 
@@ -137,6 +144,11 @@ fn cmd_rebuild() -> std::io::Result<()> {
         registered
     );
     Ok(())
+}
+
+fn cmd_serve(port: u16) -> std::io::Result<()> {
+    let dir = wiki_dir()?;
+    illuminate_wiki::serve::serve(&dir, port)
 }
 
 fn register_pages(
