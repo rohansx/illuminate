@@ -1,0 +1,19 @@
+# Example: copy this to .github/workflows/audit-pr.yml in your repo to enable
+# illuminate audit-pr checks on every pull request.
+name: Illuminate audit
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rohansx/illuminate/.github/actions/audit-pr@master
+        with:
+          # Defaults to the PR title; override here if your team uses a richer
+          # plan format (e.g., a "## Plan" section in the PR body).
+          plan: ${{ github.event.pull_request.title }}
+          fail-on-warning: false
