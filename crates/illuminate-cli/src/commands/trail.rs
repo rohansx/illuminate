@@ -27,6 +27,12 @@ pub enum TrailCmd {
         #[arg(long)]
         sessions_root: Option<PathBuf>,
     },
+    /// Register captured trails as graph episodes (so audit can find them)
+    Register {
+        /// Filename / session id (optional — registers all if omitted)
+        #[arg(long)]
+        ident: Option<String>,
+    },
 }
 
 pub fn run(cmd: TrailCmd) -> std::io::Result<()> {
@@ -35,6 +41,7 @@ pub fn run(cmd: TrailCmd) -> std::io::Result<()> {
         TrailCmd::List => cmd_list(),
         TrailCmd::Show { ident } => cmd_show(&ident),
         TrailCmd::Watch { sessions_root } => cmd_watch(sessions_root),
+        TrailCmd::Register { ident } => cmd_register(ident.as_deref()),
     }
 }
 
@@ -165,4 +172,92 @@ fn cmd_watch(sessions_root: Option<PathBuf>) -> std::io::Result<()> {
     };
     run_watcher(opts).map_err(|e| std::io::Error::other(e.to_string()))?;
     Ok(())
+}
+
+fn cmd_register(ident: Option<&str>) -> std::io::Result<()> {
+    use illuminate_trail::record::MessageRole;
+
+    let trail_dir = trail_dir()?;
+    let repo_root = trail_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "could not find repo root")
+        })?
+        .to_path_buf();
+    let db_path = repo_root.join(".illuminate").join("graph.db");
+    let graph = illuminate::Graph::open_or_create(&db_path)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    let entries: Vec<_> = std::fs::read_dir(&trail_dir)?
+        .flatten()
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| x == "jsonl")
+        })
+        .collect();
+
+    let mut count = 0;
+    for entry in entries {
+        let path = entry.path();
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let content = std::fs::read_to_string(&path)?;
+        let rec: TrailRecord = match serde_json::from_str(content.trim()) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("warning: skipping {filename}: {e}");
+                continue;
+            }
+        };
+
+        if ident.is_some_and(|want| filename != want && rec.session_id != want) {
+            continue;
+        }
+
+        let body: String = rec
+            .messages
+            .iter()
+            .map(|m| {
+                let role = match m.role {
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::System => "system",
+                    MessageRole::Tool => "tool",
+                };
+                format!("[{role}] {}", m.text)
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        if body.trim().is_empty() {
+            continue;
+        }
+
+        let source_label = format!("trail:{}", agent_label(&rec.agent));
+        let episode = illuminate::Episode::builder(&body)
+            .source(&source_label)
+            .build();
+        graph
+            .add_episode(episode)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        count += 1;
+        println!("registered {filename}");
+    }
+
+    println!("registered {count} trail(s)");
+    Ok(())
+}
+
+fn agent_label(a: &illuminate_trail::record::AgentKind) -> &'static str {
+    match a {
+        illuminate_trail::record::AgentKind::ClaudeCode => "claude-code",
+        illuminate_trail::record::AgentKind::Cursor => "cursor",
+        illuminate_trail::record::AgentKind::Codex => "codex",
+    }
 }
