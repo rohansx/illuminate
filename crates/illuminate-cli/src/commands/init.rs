@@ -44,6 +44,18 @@ pub fn run(
         .map_err(|e| illuminate::IlluminateError::Io(std::io::Error::other(e.to_string())))?;
     println!("  Wiki scaffold: .illuminate/wiki/");
 
+    // Run bootstrap (best-effort) to populate the wiki from existing signals.
+    match illuminate_bootstrap::orchestrate::run_bootstrap(&dir) {
+        Ok(report) if report.pages_written > 0 => {
+            println!(
+                "✓ Bootstrap: imported {} pages from {:?}",
+                report.pages_written, report.sources_run
+            );
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("warning: bootstrap skipped: {e}"),
+    }
+
     println!("Initialized illuminate for '{project_name}'");
     println!("  Database: .illuminate/graph.db");
     println!();
