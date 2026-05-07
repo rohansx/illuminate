@@ -233,7 +233,7 @@ fn configure_hooks(dir: &Path) -> illuminate::Result<()> {
             if !already {
                 arr.push(serde_json::json!({
                     "matcher": "Write|Edit|MultiEdit",
-                    "command": "illuminate audit-hook --stdin"
+                    "command": "illuminate audit-hook"
                 }));
             }
         }
@@ -244,7 +244,7 @@ fn configure_hooks(dir: &Path) -> illuminate::Result<()> {
                 "PreToolUse": [
                     {
                         "matcher": "Write|Edit|MultiEdit",
-                        "command": "illuminate audit-hook --stdin"
+                        "command": "illuminate audit-hook"
                     }
                 ]
             }

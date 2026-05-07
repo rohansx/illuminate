@@ -46,15 +46,18 @@ pub fn run_audit_hook() -> illuminate::Result<()> {
     // build audit plan from the tool call
     let plan = format!("writing to {file_path}: {content}");
 
-    let graph = match open_graph() {
-        Ok(g) => g,
-        Err(_) => return Ok(()), // no graph = no audit
-    };
-
     let policies = load_policies()?;
     if policies.is_empty() {
         return Ok(()); // no policies = nothing to check
     }
+
+    // Try to open the graph; fall back to an empty in-memory graph so that
+    // policy-only checks (RejectedPattern, Frozen, …) still run even when
+    // the project has not yet run `illuminate init`.
+    let graph = match open_graph() {
+        Ok(g) => g,
+        Err(_) => illuminate::Graph::in_memory()?,
+    };
 
     let auditor = Auditor::new(graph, policies);
     let result = auditor.audit(&plan)?;
@@ -89,13 +92,25 @@ pub fn run_audit_hook() -> illuminate::Result<()> {
 
 fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
     let cwd = std::env::current_dir().map_err(illuminate::IlluminateError::Io)?;
-    let config_path = cwd.join("illuminate.toml");
-
-    if !config_path.exists() {
-        return Ok(Vec::new());
+    let mut cur = Some(cwd.as_path());
+    while let Some(d) = cur {
+        let candidate = d.join(".illuminate").join("illuminate.toml");
+        if candidate.is_file() {
+            return parse_file(&candidate);
+        }
+        cur = d.parent();
     }
 
-    let content = std::fs::read_to_string(&config_path).map_err(illuminate::IlluminateError::Io)?;
+    let legacy = cwd.join("illuminate.toml");
+    if legacy.is_file() {
+        return parse_file(&legacy);
+    }
+
+    Ok(Vec::new())
+}
+
+fn parse_file(path: &std::path::Path) -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
+    let content = std::fs::read_to_string(path).map_err(illuminate::IlluminateError::Io)?;
     parse_policies(&content)
         .map_err(|e| illuminate::IlluminateError::Extraction(format!("policy parse error: {e}")))
 }
