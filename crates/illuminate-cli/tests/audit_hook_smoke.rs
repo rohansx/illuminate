@@ -6,6 +6,10 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use illuminate_index::edges::{Edge, EdgeKind};
+use illuminate_index::storage::{create_schema, upsert_edges};
+use rusqlite::Connection;
+
 fn cargo_bin() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_illuminate"))
 }
@@ -95,6 +99,58 @@ fn hook_handles_edit_tool_with_new_string() {
         out.status.code(),
         Some(2),
         "edit with redis content must block"
+    );
+}
+
+/// Populate a minimal `index.db` with edges so a seed file has both
+/// incoming and outgoing impact — mirrors the helper in
+/// `audit_impact_smoke.rs`.
+fn populate_index(index_db: &std::path::Path) {
+    let conn = Connection::open(index_db).unwrap();
+    create_schema(&conn).unwrap();
+
+    let foo_to_bar = Edge {
+        source_qualified: "file::src/foo.rs".to_string(),
+        target_qualified: "file::src/bar.rs".to_string(),
+        kind: EdgeKind::Imports,
+        file_path: "src/foo.rs".to_string(),
+        line: 3,
+    };
+    let baz_to_foo = Edge {
+        source_qualified: "file::src/baz.rs".to_string(),
+        target_qualified: "file::src/foo.rs".to_string(),
+        kind: EdgeKind::Imports,
+        file_path: "src/baz.rs".to_string(),
+        line: 5,
+    };
+
+    upsert_edges(&conn, "src/foo.rs", &[foo_to_bar]).unwrap();
+    upsert_edges(&conn, "src/baz.rs", &[baz_to_foo]).unwrap();
+}
+
+#[test]
+fn hook_surfaces_impact_when_index_present() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    setup_repo_with_redis_policy(repo);
+    populate_index(&repo.join(".illuminate/index.db"));
+
+    // Clean Write that does not match the rejected policy. The hook should
+    // still pass (exit 0) AND surface a "blast radius" line on stderr because
+    // src/foo.rs has impacted edges in index.db.
+    let payload = r#"{"tool_name":"Write","tool_input":{"file_path":"src/foo.rs","content":"fn unrelated() {}"}}"#;
+    let out = run_hook_with_stdin(repo, payload);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "clean write must still pass; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let lower = stderr.to_lowercase();
+    assert!(
+        lower.contains("blast radius") || lower.contains("impacted"),
+        "stderr should surface blast-radius info: {stderr}"
     );
 }
 

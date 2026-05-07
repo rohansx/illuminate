@@ -1,8 +1,8 @@
 use std::io::Read;
 
 use super::open_graph;
-use illuminate_audit::Auditor;
 use illuminate_audit::policy::parse_policies;
+use illuminate_audit::{Auditor, resolve_index_db_from_cwd, resolve_repo_root_from_cwd};
 
 /// PreToolUse hook: reads tool call context from stdin, runs audit.
 ///
@@ -59,8 +59,41 @@ pub fn run_audit_hook() -> illuminate::Result<()> {
         Err(_) => illuminate::Graph::in_memory()?,
     };
 
-    let auditor = Auditor::new(graph, policies);
-    let result = auditor.audit(&plan)?;
+    // When an index.db is reachable and the agent supplied a file_path,
+    // run the impact pipeline so blast-radius information surfaces on
+    // stderr alongside the policy verdict. Otherwise fall back to the
+    // policy-only audit — the contract for `audit_with_files` says a
+    // missing index produces an empty `ImpactInfo`, but skipping it
+    // entirely avoids the extra work and keeps behaviour identical for
+    // repos that haven't run `illuminate index`.
+    let index_db = resolve_index_db_from_cwd(None);
+    let repo_root = resolve_repo_root_from_cwd();
+
+    let result = match (&index_db, file_path) {
+        (Some(idx), fp) if !fp.is_empty() => {
+            let auditor = Auditor::with_index_and_root(graph, policies, idx.clone(), repo_root);
+            auditor.audit_with_files(&plan, &[std::path::PathBuf::from(fp)])?
+        }
+        _ => {
+            let auditor = Auditor::new(graph, policies);
+            auditor.audit(&plan)?
+        }
+    };
+
+    // Surface blast-radius information regardless of pass/warn/block status —
+    // it's purely informational and doesn't change the exit code.
+    if !result.impact.impacted_symbols.is_empty() {
+        eprintln!(
+            "illuminate: blast radius: {} symbol(s) impacted by this change",
+            result.impact.impacted_symbols.len()
+        );
+        for sym in result.impact.impacted_symbols.iter().take(5) {
+            eprintln!("  - {sym}");
+        }
+        if result.impact.impacted_symbols.len() > 5 {
+            eprintln!("  ... ({} more)", result.impact.impacted_symbols.len() - 5);
+        }
+    }
 
     match result.status {
         illuminate_audit::response::AuditStatus::Pass => Ok(()),
