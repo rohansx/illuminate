@@ -20,14 +20,19 @@ pub struct IndexStats {
     pub files_indexed: usize,
     pub files_skipped: usize,
     pub symbols_extracted: usize,
+    pub edges_extracted: usize,
 }
 
 impl std::fmt::Display for IndexStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "scanned {} files: {} indexed ({} symbols), {} skipped (unchanged)",
-            self.files_scanned, self.files_indexed, self.symbols_extracted, self.files_skipped
+            "scanned {} files: {} indexed ({} symbols, {} edges), {} skipped (unchanged)",
+            self.files_scanned,
+            self.files_indexed,
+            self.symbols_extracted,
+            self.edges_extracted,
+            self.files_skipped
         )
     }
 }
@@ -90,13 +95,25 @@ impl CodeIndex {
                 None => continue,
             };
 
-            // parse and extract symbols
-            let symbols = match crate::index_file(&file_path, &source, lang) {
-                Ok(s) => s,
+            // parse and extract symbols + edges
+            //
+            // Pass the relative path string into the extractor so that
+            // `Symbol.file_path`, `Edge.file_path`, and `Edge.source_qualified`
+            // all share the same `<rel_path>`-rooted form. This keeps
+            // `edges.file_path` consistent with `symbols.file_path` for the
+            // same row, and ensures `source_qualified` is `file::<rel_path>`
+            // rather than `file::<absolute_path>`.
+            let rel_path_buf = PathBuf::from(&rel_path);
+            let (symbols, edges) = match crate::index_file_with_edges(&rel_path_buf, &source, lang)
+            {
+                Ok(pair) => pair,
                 Err(_) => continue,
             };
 
-            // store with relative paths
+            // belt-and-braces: defensively rewrite Symbol.file_path to the
+            // relative path. Today the extractor already stamps it from the
+            // path we supplied, but this guards against future extractors
+            // that compute a different file_path.
             let symbols_with_rel: Vec<Symbol> = symbols
                 .into_iter()
                 .map(|mut s| {
@@ -106,7 +123,9 @@ impl CodeIndex {
                 .collect();
 
             stats.symbols_extracted += symbols_with_rel.len();
+            stats.edges_extracted += edges.len();
             storage::upsert_symbols(&self.conn, &rel_path, &symbols_with_rel)?;
+            storage::upsert_edges(&self.conn, &rel_path, &edges)?;
             storage::set_file_hash(&self.conn, &rel_path, &content_hash)?;
             stats.files_indexed += 1;
         }

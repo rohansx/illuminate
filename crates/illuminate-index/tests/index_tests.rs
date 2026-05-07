@@ -685,3 +685,117 @@ fn code_index_enrich_anchor_fallback_to_first_public() {
     assert!(enriched, "should fallback to first public symbol");
     assert_eq!(anchor.symbol_name.as_deref(), Some("start_server"));
 }
+
+// ── Edge population during rebuild ──
+
+#[test]
+fn rebuild_populates_edges_table() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("lib.rs"),
+        "use foo::bar;\nuse std::collections::HashMap;\n\npub fn entry() {}\n",
+    )
+    .unwrap();
+
+    let db_path = tmp.path().join("index.db");
+    let mut index = CodeIndex::open(&db_path).unwrap();
+    let stats = index.index_project(tmp.path()).unwrap();
+
+    assert!(stats.files_indexed >= 1);
+    assert!(
+        stats.edges_extracted >= 2,
+        "expected at least 2 edges in stats, got {}",
+        stats.edges_extracted
+    );
+
+    drop(index);
+
+    // open the resulting db directly and assert edges populated
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let edge_total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+        .unwrap();
+    assert!(
+        edge_total >= 2,
+        "edges table should have >= 2 rows, got {edge_total}"
+    );
+
+    // file_path stored on edges must match the relative path used for symbols
+    let rel_edge_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE file_path = ?1",
+            ["src/lib.rs"],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        rel_edge_count, edge_total,
+        "all edges should be stamped with the relative path src/lib.rs"
+    );
+
+    // source_qualified should be file::<rel_path>, not absolute
+    let bad_source: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE source_qualified LIKE 'file::/%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        bad_source, 0,
+        "no edge should have an absolute source_qualified prefix"
+    );
+
+    let good_source: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE source_qualified = ?1",
+            ["file::src/lib.rs"],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        good_source, edge_total,
+        "every edge should have source_qualified = file::src/lib.rs"
+    );
+}
+
+#[test]
+fn rebuild_populates_no_edges_for_non_rust_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("billing.go"),
+        "package main\n\nimport \"fmt\"\n\nfunc Hello() { fmt.Println(\"hi\") }\n",
+    )
+    .unwrap();
+
+    let db_path = tmp.path().join("index.db");
+    let mut index = CodeIndex::open(&db_path).unwrap();
+    let stats = index.index_project(tmp.path()).unwrap();
+
+    assert!(
+        stats.symbols_extracted > 0,
+        "go symbol extractor should still run"
+    );
+    assert_eq!(
+        stats.edges_extracted, 0,
+        "no edge extractor for go yet, edges_extracted should be 0"
+    );
+
+    drop(index);
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let symbol_total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
+        .unwrap();
+    assert!(symbol_total > 0, "go symbols should be persisted");
+
+    let edge_total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        edge_total, 0,
+        "edges table should be empty for go-only project"
+    );
+}
