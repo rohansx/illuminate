@@ -217,6 +217,9 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
         tool_invocations: Vec::new(),
         input_tokens: total_input_tokens,
         output_tokens: total_output_tokens,
+        // Codex doesn't expose Anthropic cache buckets — leave None.
+        cache_creation_input_tokens: None,
+        cache_read_input_tokens: None,
     })
 }
 

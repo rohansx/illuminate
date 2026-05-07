@@ -245,6 +245,66 @@ fn extracts_token_counts_from_payload_usage() {
 }
 
 #[test]
+fn codex_record_leaves_cache_fields_none() {
+    // Codex doesn't expose Anthropic cache buckets. Even on a session whose
+    // rollout events carry full `payload.usage` data with input/output tokens,
+    // the resulting TrailRecord must leave both Anthropic-specific cache
+    // fields as `None`.
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("rollout-cache-none.jsonl");
+
+    let lines = vec![
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": "2026-05-07T10:00:00Z",
+            "payload": {
+                "id": "sess-cache-none",
+                "originator": "codex",
+                "model": "gpt-5",
+                "cwd": "/home/me/proj"
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-05-07T10:00:01Z",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "first"}],
+                "usage": {"input_tokens": 100, "output_tokens": 40}
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-05-07T10:00:02Z",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "second"}],
+                "usage": {"input_tokens": 50, "output_tokens": 20}
+            }
+        }),
+    ];
+    write_jsonl(&path, &lines);
+
+    let rec = parse_session(&path).expect("parse ok");
+    // Sanity: canonical totals still populated.
+    assert_eq!(rec.input_tokens, Some(150));
+    assert_eq!(rec.output_tokens, Some(60));
+    // Codex has no concept of Anthropic cache buckets.
+    assert!(
+        rec.cache_creation_input_tokens.is_none(),
+        "Codex must leave cache_creation_input_tokens None, got {:?}",
+        rec.cache_creation_input_tokens
+    );
+    assert!(
+        rec.cache_read_input_tokens.is_none(),
+        "Codex must leave cache_read_input_tokens None, got {:?}",
+        rec.cache_read_input_tokens
+    );
+}
+
+#[test]
 fn codex_session_without_usage_data_surfaces_none() {
     // Most real codex rollouts do not carry usage data; the parser must
     // gracefully degrade to `None` rather than `Some(0)` so downstream

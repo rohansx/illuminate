@@ -69,16 +69,23 @@ pub struct MessageBlock {
 }
 
 /// Token-accounting block that Claude Code attaches to assistant `message`
-/// records. We capture only `input_tokens` and `output_tokens` proper;
-/// `cache_creation_input_tokens` / `cache_read_input_tokens` are
-/// intentionally ignored to keep the surfaced totals comparable to
-/// Cursor's `tokenCount` shape.
+/// records.
+///
+/// `input_tokens` and `output_tokens` carry the canonical totals comparable
+/// across agents. `cache_creation_input_tokens` and `cache_read_input_tokens`
+/// are Anthropic-specific cache buckets — surfaced as separate fields rather
+/// than folded into `input_tokens` so cross-agent comparability stays clean
+/// and downstream cost analytics can compute Anthropic spend accurately.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UsageBlock {
     #[serde(default)]
     pub input_tokens: Option<u64>,
     #[serde(default)]
     pub output_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_creation_input_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------

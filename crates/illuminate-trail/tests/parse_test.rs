@@ -130,6 +130,93 @@ fn extracts_token_counts_from_claude_session() {
 }
 
 #[test]
+fn extracts_cache_tokens_from_claude_session() {
+    // Claude `usage` blocks may carry `cache_creation_input_tokens` and
+    // `cache_read_input_tokens` alongside the canonical `input_tokens` /
+    // `output_tokens`. The parser must surface those Anthropic-specific
+    // cache buckets on dedicated TrailRecord fields so downstream cost
+    // analytics can compute Anthropic spend without polluting the canonical
+    // `input_tokens` total (which is meant to stay cross-agent-comparable).
+    use std::io::Write as _;
+    let session = "\
+        {\"parentUuid\":null,\"isSidechain\":false,\"promptId\":\"p-1\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"},\"uuid\":\"u-1\",\"timestamp\":\"2026-05-07T10:00:00.000Z\",\"cwd\":\"/tmp/illuminate-fixture-cache\",\"sessionId\":\"sess-cache\",\"version\":\"2.1.128\",\"gitBranch\":\"main\"}\n\
+        {\"parentUuid\":\"u-1\",\"isSidechain\":false,\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":\"reply\",\"usage\":{\"input_tokens\":100,\"output_tokens\":200,\"cache_creation_input_tokens\":50,\"cache_read_input_tokens\":25}},\"uuid\":\"a-1\",\"timestamp\":\"2026-05-07T10:00:01.000Z\",\"cwd\":\"/tmp/illuminate-fixture-cache\",\"sessionId\":\"sess-cache\",\"version\":\"2.1.128\",\"gitBranch\":\"main\"}\n";
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(session.as_bytes()).unwrap();
+
+    let record = parse_session(tmp.path()).unwrap();
+    assert_eq!(record.input_tokens, Some(100));
+    assert_eq!(record.output_tokens, Some(200));
+    assert_eq!(
+        record.cache_creation_input_tokens,
+        Some(50),
+        "cache_creation_input_tokens must be surfaced"
+    );
+    assert_eq!(
+        record.cache_read_input_tokens,
+        Some(25),
+        "cache_read_input_tokens must be surfaced"
+    );
+}
+
+#[test]
+fn cache_tokens_default_to_none_when_absent() {
+    // An assistant `usage` block carrying ONLY input/output tokens (no
+    // cache fields) must surface `None` on both cache totals — same
+    // semantics as the canonical totals: `None` means "source carried no
+    // data", which is distinct from `Some(0)`.
+    use std::io::Write as _;
+    let session = "\
+        {\"parentUuid\":null,\"isSidechain\":false,\"promptId\":\"p-1\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"},\"uuid\":\"u-1\",\"timestamp\":\"2026-05-07T10:00:00.000Z\",\"cwd\":\"/tmp/illuminate-fixture-no-cache\",\"sessionId\":\"sess-no-cache\",\"version\":\"2.1.128\",\"gitBranch\":\"main\"}\n\
+        {\"parentUuid\":\"u-1\",\"isSidechain\":false,\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":\"reply\",\"usage\":{\"input_tokens\":100,\"output_tokens\":200}},\"uuid\":\"a-1\",\"timestamp\":\"2026-05-07T10:00:01.000Z\",\"cwd\":\"/tmp/illuminate-fixture-no-cache\",\"sessionId\":\"sess-no-cache\",\"version\":\"2.1.128\",\"gitBranch\":\"main\"}\n";
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(session.as_bytes()).unwrap();
+
+    let record = parse_session(tmp.path()).unwrap();
+    assert_eq!(record.input_tokens, Some(100));
+    assert_eq!(record.output_tokens, Some(200));
+    assert!(
+        record.cache_creation_input_tokens.is_none(),
+        "absent cache_creation_input_tokens => None, got {:?}",
+        record.cache_creation_input_tokens
+    );
+    assert!(
+        record.cache_read_input_tokens.is_none(),
+        "absent cache_read_input_tokens => None, got {:?}",
+        record.cache_read_input_tokens
+    );
+}
+
+#[test]
+fn cache_tokens_summed_across_assistant_records() {
+    // Two assistant records each carrying their own cache token counts.
+    // The parser must sum each cache bucket across all assistant turns —
+    // same accumulation contract as input/output tokens.
+    use std::io::Write as _;
+    let session = "\
+        {\"parentUuid\":null,\"isSidechain\":false,\"promptId\":\"p-1\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"},\"uuid\":\"u-1\",\"timestamp\":\"2026-05-07T10:00:00.000Z\",\"cwd\":\"/tmp/illuminate-fixture-cache-sum\",\"sessionId\":\"sess-cache-sum\",\"version\":\"2.1.128\",\"gitBranch\":\"main\"}\n\
+        {\"parentUuid\":\"u-1\",\"isSidechain\":false,\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":\"first\",\"usage\":{\"input_tokens\":10,\"output_tokens\":20,\"cache_creation_input_tokens\":50,\"cache_read_input_tokens\":25}},\"uuid\":\"a-1\",\"timestamp\":\"2026-05-07T10:00:01.000Z\",\"cwd\":\"/tmp/illuminate-fixture-cache-sum\",\"sessionId\":\"sess-cache-sum\",\"version\":\"2.1.128\",\"gitBranch\":\"main\"}\n\
+        {\"parentUuid\":\"a-1\",\"isSidechain\":false,\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":\"second\",\"usage\":{\"input_tokens\":11,\"output_tokens\":22,\"cache_creation_input_tokens\":150,\"cache_read_input_tokens\":75}},\"uuid\":\"a-2\",\"timestamp\":\"2026-05-07T10:00:02.000Z\",\"cwd\":\"/tmp/illuminate-fixture-cache-sum\",\"sessionId\":\"sess-cache-sum\",\"version\":\"2.1.128\",\"gitBranch\":\"main\"}\n";
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(session.as_bytes()).unwrap();
+
+    let record = parse_session(tmp.path()).unwrap();
+    assert_eq!(
+        record.cache_creation_input_tokens,
+        Some(200),
+        "cache_creation_input_tokens must sum across assistant records (50 + 150)"
+    );
+    assert_eq!(
+        record.cache_read_input_tokens,
+        Some(100),
+        "cache_read_input_tokens must sum across assistant records (25 + 75)"
+    );
+}
+
+#[test]
 fn parse_session_partial_usage_data_still_surfaces_what_is_present() {
     // Two assistant records: one with usage, one without. The record with
     // usage must still flip the totals from None to Some(value).

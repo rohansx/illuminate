@@ -403,6 +403,9 @@ fn group_into_records(rows: Vec<BubbleRow>) -> Vec<TrailRecord> {
             tool_invocations: Vec::new(),
             input_tokens,
             output_tokens,
+            // Cursor doesn't expose Anthropic cache buckets — leave None.
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
         });
     }
 

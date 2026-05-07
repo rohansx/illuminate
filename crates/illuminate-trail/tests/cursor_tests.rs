@@ -272,6 +272,42 @@ fn extracts_token_counts_from_bubble() {
 }
 
 #[test]
+fn cursor_record_leaves_cache_fields_none() {
+    // Cursor doesn't expose Anthropic cache buckets
+    // (`cache_creation_input_tokens` / `cache_read_input_tokens`). Even when
+    // the bubble carries full `tokenCount` data, the resulting TrailRecord
+    // must leave both cache fields as `None` — distinguishing "source has no
+    // such concept" from "source recorded zero".
+    let bubble = serde_json::json!({
+        "tokenCount": {"inputTokens": 1234, "outputTokens": 567},
+        "modelInfo": {"modelName": "claude-4.6-sonnet"},
+        "createdAt": iso_now(),
+        "conversationId": "conv-cache-none",
+        "text": "no cache buckets here",
+        "type": 1
+    });
+
+    let (_dir, path) = build_db("state.vscdb");
+    {
+        let conn = open_db(&path);
+        create_cursor_disk_kv(&conn);
+        insert_bubble(&conn, "bubbleId:conv-cache-none:001", &bubble.to_string());
+    }
+    let records = parse_state_db(&path).expect("parse ok");
+    assert_eq!(records.len(), 1);
+    assert!(
+        records[0].cache_creation_input_tokens.is_none(),
+        "Cursor must leave cache_creation_input_tokens None, got {:?}",
+        records[0].cache_creation_input_tokens
+    );
+    assert!(
+        records[0].cache_read_input_tokens.is_none(),
+        "Cursor must leave cache_read_input_tokens None, got {:?}",
+        records[0].cache_read_input_tokens
+    );
+}
+
+#[test]
 fn summed_tokens_across_multiple_bubbles() {
     // Two bubbles in the same conversation, each with their own token
     // counts. The grouped TrailRecord must report the SUM, not the value

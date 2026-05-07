@@ -40,8 +40,14 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
     // each accumulator as `None` so that a session with no usage data
     // surfaces as `None` (rather than `Some(0)`), and only flip to
     // `Some(total)` when at least one record carries real usage.
+    //
+    // Cache buckets (`cache_creation_input_tokens`, `cache_read_input_tokens`)
+    // are Anthropic-specific and tracked separately so the canonical
+    // `input_tokens` total stays comparable across agents.
     let mut total_input_tokens: Option<u64> = None;
     let mut total_output_tokens: Option<u64> = None;
+    let mut total_cache_creation_input_tokens: Option<u64> = None;
+    let mut total_cache_read_input_tokens: Option<u64> = None;
 
     for rec in &records {
         match rec {
@@ -95,6 +101,14 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
                     if let Some(o) = usage.output_tokens {
                         total_output_tokens = Some(total_output_tokens.unwrap_or(0) + o);
                     }
+                    if let Some(c) = usage.cache_creation_input_tokens {
+                        total_cache_creation_input_tokens =
+                            Some(total_cache_creation_input_tokens.unwrap_or(0) + c);
+                    }
+                    if let Some(c) = usage.cache_read_input_tokens {
+                        total_cache_read_input_tokens =
+                            Some(total_cache_read_input_tokens.unwrap_or(0) + c);
+                    }
                 }
             }
             RawRecord::Attachment { timestamp, cwd, .. } => {
@@ -126,6 +140,8 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
         tool_invocations,
         input_tokens: total_input_tokens,
         output_tokens: total_output_tokens,
+        cache_creation_input_tokens: total_cache_creation_input_tokens,
+        cache_read_input_tokens: total_cache_read_input_tokens,
     })
 }
 

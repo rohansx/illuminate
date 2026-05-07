@@ -76,4 +76,17 @@ pub struct TrailRecord {
     /// field's docs.
     #[serde(default)]
     pub output_tokens: Option<u64>,
+
+    /// Cache-creation input tokens (Anthropic-specific). Kept separate from
+    /// `input_tokens` for cross-agent comparability and for accurate cost
+    /// math when the analytics consumer arrives. Cursor and Codex do not
+    /// expose Anthropic cache buckets, so those paths leave this `None`.
+    #[serde(default)]
+    pub cache_creation_input_tokens: Option<u64>,
+
+    /// Cache-read input tokens (Anthropic-specific). Same rationale as
+    /// [`Self::cache_creation_input_tokens`]: surfaced separately so the
+    /// canonical `input_tokens` total stays comparable across agents.
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<u64>,
 }
