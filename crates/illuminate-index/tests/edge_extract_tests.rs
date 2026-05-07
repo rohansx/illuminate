@@ -1,15 +1,15 @@
 //! Tests for per-language import edge extraction in illuminate-index.
 //!
-//! These tests cover the `extract_rust_edges` and `extract_go_edges`
-//! functions plus the `index_file_with_edges` combined helper. Other
-//! languages still return empty edges in v0.2.
+//! These tests cover the `extract_rust_edges`, `extract_go_edges`, and
+//! `extract_typescript_edges` functions plus the `index_file_with_edges`
+//! combined helper. Other languages still return empty edges in v0.3.
 
 use std::path::Path;
 
 use illuminate_index::edges::EdgeKind;
 use illuminate_index::{
     Language,
-    edge_extract::{extract_go_edges, extract_rust_edges},
+    edge_extract::{extract_go_edges, extract_rust_edges, extract_typescript_edges},
     index_file_with_edges,
 };
 
@@ -27,6 +27,14 @@ fn parse_go(source: &[u8]) -> tree_sitter::Tree {
         .set_language(&Language::Go.tree_sitter_language())
         .expect("set go language");
     parser.parse(source, None).expect("parse go source")
+}
+
+fn parse_typescript(source: &[u8]) -> tree_sitter::Tree {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&Language::TypeScript.tree_sitter_language())
+        .expect("set typescript language");
+    parser.parse(source, None).expect("parse typescript source")
 }
 
 #[test]
@@ -189,4 +197,83 @@ fn index_file_with_edges_returns_go_imports() {
     assert!(edges.iter().all(|e| e.file_path == "billing.go"));
     assert!(edges.iter().any(|e| e.target_qualified == "fmt"));
     assert!(edges.iter().any(|e| e.target_qualified == "os"));
+}
+
+#[test]
+fn extracts_named_typescript_import() {
+    let source = b"import { foo } from 'bar';\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one named import edge");
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Imports);
+    assert_eq!(edge.source_qualified, "file::src/app.ts");
+    assert_eq!(edge.target_qualified, "bar");
+    assert_eq!(edge.file_path, "src/app.ts");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_namespace_typescript_import() {
+    let source = b"import * as x from 'bar';\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one namespace import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(edges[0].target_qualified, "bar");
+}
+
+#[test]
+fn extracts_default_typescript_import() {
+    let source = b"import x from 'bar';\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one default import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(edges[0].target_qualified, "bar");
+}
+
+#[test]
+fn extracts_side_effect_typescript_import() {
+    let source = b"import 'bar';\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one side-effect import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(edges[0].target_qualified, "bar");
+}
+
+#[test]
+fn extracts_type_only_typescript_import() {
+    let source = b"import type { Foo } from 'bar';\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one type-only import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(edges[0].target_qualified, "bar");
+}
+
+#[test]
+fn extracts_multiple_typescript_imports() {
+    let source =
+        b"import { a } from 'mod-a';\nimport b from \"mod-b\";\nimport * as c from 'mod-c';\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 3, "expected three typescript import edges");
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().any(|e| e.target_qualified == "mod-a"));
+    assert!(edges.iter().any(|e| e.target_qualified == "mod-b"));
+    assert!(edges.iter().any(|e| e.target_qualified == "mod-c"));
 }
