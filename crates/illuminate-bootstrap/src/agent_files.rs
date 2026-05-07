@@ -17,7 +17,30 @@ const DECISION_SIGNALS: &[&str] = &[
     "use ", "do not ", "don't ", "never ", "always ",
     "we chose", "we use", "we reject", "instead of",
     "must use", "must not", "prefer ", "avoid ",
+    "no ", "go through", "all ",
 ];
+
+const NOISE_HEADINGS: &[&str] = &[
+    "always do",
+    "never do",
+    "resources",
+    "tools",
+    "tools quick reference",
+    "quick reference",
+    "examples",
+    "example",
+    "table of contents",
+    "toc",
+    "tldr",
+    "summary",
+    "overview",
+    "appendix",
+    "references",
+    "links",
+    "see also",
+];
+
+const MAX_BODY_LEN: usize = 4000;
 
 pub fn collect(repo_root: &Path) -> Result<Vec<BootstrapCandidate>> {
     let mut out = Vec::new();
@@ -54,6 +77,59 @@ pub fn parse_agent_file(filename: &str, content: &str) -> Vec<BootstrapCandidate
     out
 }
 
+fn looks_like_noise_section(heading: &str, body: &str) -> bool {
+    // 1. Reject noise heading titles.
+    let heading_lower = heading.trim().to_lowercase();
+    if NOISE_HEADINGS.iter().any(|&n| n == heading_lower) {
+        eprintln!("[bootstrap] skip '{}' (noise heading)", heading);
+        return true;
+    }
+
+    // 2. Reject bodies dominated by bullet lists (>70% of non-empty lines).
+    let non_empty: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+    if !non_empty.is_empty() {
+        let bullet_count = non_empty.iter().filter(|l| {
+            let t = l.trim_start();
+            t.starts_with("- ") || t.starts_with("* ") || {
+                // digit(s) followed by ". "
+                let mut chars = t.chars();
+                let first_digit = chars.next().map(|c| c.is_ascii_digit()).unwrap_or(false);
+                first_digit && t.find(". ").map(|i| i <= 3).unwrap_or(false)
+            }
+        }).count();
+        let ratio = bullet_count as f64 / non_empty.len() as f64;
+        if ratio > 0.70 {
+            eprintln!("[bootstrap] skip '{}' (bullet-dominated: {}/{} lines)", heading, bullet_count, non_empty.len());
+            return true;
+        }
+    }
+
+    // 3. Reject bodies that look like code/SQL examples (more code-fence lines than prose).
+    let fence_lines = body.lines().filter(|l| l.trim_start().starts_with("```")).count();
+    if fence_lines > 0 {
+        let prose_lines = non_empty.len().saturating_sub(fence_lines);
+        if fence_lines >= prose_lines {
+            eprintln!("[bootstrap] skip '{}' (code-example dominated: {} fence vs {} prose lines)", heading, fence_lines, prose_lines);
+            return true;
+        }
+        // Also skip if heading looks like a SQL/verb example phrase.
+        let h_lower = heading.to_lowercase();
+        let preview = &body[..body.len().min(100)].to_lowercase();
+        if h_lower.starts_with("write:") || h_lower.starts_with("read:") || preview.contains("example") {
+            eprintln!("[bootstrap] skip '{}' (code-example heading/preview)", heading);
+            return true;
+        }
+    }
+
+    // 4. Cap body length.
+    if body.len() > MAX_BODY_LEN {
+        eprintln!("[bootstrap] skip '{}' (body too long: {} chars)", heading, body.len());
+        return true;
+    }
+
+    false
+}
+
 fn flush(
     filename: &str,
     heading: &Option<String>,
@@ -63,6 +139,9 @@ fn flush(
     let Some(heading) = heading else { return };
     let body_text = body.join("\n").trim().to_string();
     if body_text.is_empty() {
+        return;
+    }
+    if looks_like_noise_section(heading, &body_text) {
         return;
     }
     let lower = body_text.to_lowercase();
