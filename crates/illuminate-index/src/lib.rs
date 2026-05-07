@@ -96,8 +96,11 @@ pub struct CodeAnchor {
     pub line_end: Option<u32>,
 }
 
-/// Index a single file and return extracted symbols.
-pub fn index_file(path: &Path, source: &[u8], lang: Language) -> Result<Vec<symbols::Symbol>> {
+/// Build a tree-sitter parse tree for the given source and language.
+///
+/// Shared by [`index_file`] and [`index_file_with_edges`] so parser setup
+/// (language binding + parse + error mapping) lives in exactly one place.
+fn build_tree(source: &[u8], lang: Language) -> Result<tree_sitter::Tree> {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&lang.tree_sitter_language())
@@ -106,12 +109,17 @@ pub fn index_file(path: &Path, source: &[u8], lang: Language) -> Result<Vec<symb
             message: e.to_string(),
         })?;
 
-    let tree = parser
+    parser
         .parse(source, None)
         .ok_or_else(|| IndexError::Parser {
             language: lang.to_string(),
             message: "failed to parse file".to_string(),
-        })?;
+        })
+}
+
+/// Index a single file and return extracted symbols.
+pub fn index_file(path: &Path, source: &[u8], lang: Language) -> Result<Vec<symbols::Symbol>> {
+    let tree = build_tree(source, lang)?;
 
     let file_path = path.to_string_lossy().to_string();
     let mut extracted = Vec::new();
@@ -130,20 +138,7 @@ pub fn index_file_with_edges(
     source: &[u8],
     lang: Language,
 ) -> Result<(Vec<symbols::Symbol>, Vec<edges::Edge>)> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&lang.tree_sitter_language())
-        .map_err(|e| IndexError::Parser {
-            language: lang.to_string(),
-            message: e.to_string(),
-        })?;
-
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| IndexError::Parser {
-            language: lang.to_string(),
-            message: "failed to parse file".to_string(),
-        })?;
+    let tree = build_tree(source, lang)?;
 
     let file_path = path.to_string_lossy().to_string();
     let mut extracted_symbols = Vec::new();
