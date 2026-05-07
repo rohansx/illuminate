@@ -13,7 +13,7 @@ use illuminate_index::{
     edge_extract::{
         extract_c_edges, extract_go_call_edges, extract_go_edges, extract_java_edges,
         extract_python_edges, extract_rust_call_edges, extract_rust_edges,
-        extract_typescript_edges,
+        extract_typescript_call_edges, extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -971,4 +971,155 @@ fn index_file_with_edges_returns_imports_and_calls_go() {
     );
     assert_eq!(calls[0].source_qualified, "main.go::a");
     assert_eq!(calls[0].target_qualified, "fmt.Println");
+}
+
+#[test]
+fn extracts_simple_typescript_call() {
+    let source = b"function foo() {\n    bar();\n}\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_call_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one ts call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/app.ts::foo");
+    assert_eq!(edge.target_qualified, "bar");
+    assert_eq!(edge.file_path, "src/app.ts");
+    assert_eq!(edge.line, 2);
+}
+
+#[test]
+fn extracts_member_call_typescript() {
+    let source = b"function foo() {\n    obj.method();\n}\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_call_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one ts call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/app.ts::foo");
+    assert_eq!(edge.target_qualified, "obj.method");
+}
+
+#[test]
+fn extracts_arrow_function_call_attributes_to_enclosing() {
+    // An arrow function inside a named function: calls inside the arrow body
+    // and the surrounding named function body should both attribute to the
+    // enclosing named function (`foo`), since arrow functions are anonymous.
+    let source = b"function foo() {\n    const f = () => bar();\n    f();\n}\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_call_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "expected two ts call edges (bar inside arrow and f at outer), got {:?}",
+        edges
+    );
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Calls));
+    assert!(
+        edges
+            .iter()
+            .all(|e| e.source_qualified == "src/app.ts::foo"),
+        "all calls should attribute to enclosing named fn `foo`, got {:?}",
+        edges
+            .iter()
+            .map(|e| &e.source_qualified)
+            .collect::<Vec<_>>()
+    );
+    assert!(edges.iter().any(|e| e.target_qualified == "bar"));
+    assert!(edges.iter().any(|e| e.target_qualified == "f"));
+}
+
+#[test]
+fn extracts_top_level_arrow_call_uses_file_pseudo_node() {
+    // A top-level arrow function (no enclosing named function) — calls inside
+    // it should attribute to the file-level pseudo-node `file::<path>`.
+    let source = b"const x = () => foo();\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_call_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one ts call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(
+        edge.source_qualified, "file::src/app.ts",
+        "module-level arrow calls should attribute to the file pseudo-node"
+    );
+    assert_eq!(edge.target_qualified, "foo");
+}
+
+#[test]
+fn extracts_class_method_call() {
+    // A method inside a class body: per the v0.5 simpler choice, the source
+    // qualifier is `<file>::<methodName>` (no class prefix). Class context
+    // is recoverable later via Symbol lookups.
+    let source = b"class A {\n    m() {\n        bar();\n    }\n}\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_call_edges(&tree, source, "src/app.ts");
+
+    assert_eq!(edges.len(), 1, "expected one ts call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(
+        edge.source_qualified, "src/app.ts::m",
+        "method call should attribute to bare method name (no class prefix)"
+    );
+    assert_eq!(edge.target_qualified, "bar");
+}
+
+#[test]
+fn multiple_ts_functions_each_get_their_own_calls() {
+    let source = b"function foo() {\n    bar();\n}\n\nfunction baz() {\n    qux();\n}\n";
+    let tree = parse_typescript(source);
+
+    let edges = extract_typescript_call_edges(&tree, source, "src/m.ts");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "expected two ts call edges, got {:?}",
+        edges
+    );
+    let foo_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "bar")
+        .expect("should have bar call");
+    assert_eq!(foo_edge.source_qualified, "src/m.ts::foo");
+    let baz_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "qux")
+        .expect("should have qux call");
+    assert_eq!(baz_edge.source_qualified, "src/m.ts::baz");
+}
+
+#[test]
+fn index_file_with_edges_returns_imports_and_calls_ts() {
+    let source = b"import { x } from 'foo';\n\nfunction a() {\n    x();\n}\n";
+    let path = Path::new("src/app.ts");
+
+    let (_symbols, edges) = index_file_with_edges(path, source, Language::TypeScript).unwrap();
+
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    let calls: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Calls).collect();
+
+    assert_eq!(imports.len(), 1, "should have one ts import edge");
+    assert_eq!(imports[0].target_qualified, "foo");
+
+    assert_eq!(
+        calls.len(),
+        1,
+        "should have one ts call edge, got {:?}",
+        calls
+    );
+    assert_eq!(calls[0].source_qualified, "src/app.ts::a");
+    assert_eq!(calls[0].target_qualified, "x");
 }

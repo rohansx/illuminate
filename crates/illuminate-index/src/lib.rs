@@ -137,11 +137,13 @@ pub fn index_file(path: &Path, source: &[u8], lang: Language) -> Result<Vec<symb
 ///
 /// As of v0.5, all six supported languages emit import edges:
 /// Rust (`use`), Go (`import`), TypeScript (`import`), Python (`import` /
-/// `from ... import`), Java (`import`), and C (`#include`). Rust and Go
-/// additionally emit Calls edges (one per `call_expression` inside a
-/// `function_item` for Rust, or inside a `function_declaration` /
-/// `method_declaration` for Go), enabling function-granular impact-radius
-/// analysis. Symbol extraction is identical to [`index_file`].
+/// `from ... import`), Java (`import`), and C (`#include`). Rust, Go, and
+/// TypeScript additionally emit Calls edges (one per `call_expression`
+/// inside a `function_item` for Rust, inside a `function_declaration` /
+/// `method_declaration` for Go, or inside a `function_declaration` /
+/// `method_definition` / `arrow_function` for TypeScript), enabling
+/// function-granular impact-radius analysis. Symbol extraction is
+/// identical to [`index_file`].
 pub fn index_file_with_edges(
     path: &Path,
     source: &[u8],
@@ -174,6 +176,11 @@ pub fn index_file_with_edges(
     }
     if matches!(lang, Language::Go) {
         extracted_edges.extend(edge_extract::extract_go_call_edges(
+            &tree, source, &file_path,
+        ));
+    }
+    if matches!(lang, Language::TypeScript) {
+        extracted_edges.extend(edge_extract::extract_typescript_call_edges(
             &tree, source, &file_path,
         ));
     }

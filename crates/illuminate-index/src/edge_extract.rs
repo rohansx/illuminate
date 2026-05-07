@@ -14,17 +14,24 @@
 //! `.hpp` files dispatch through `Language::C`, and `#include` extraction
 //! works even when C++ class/template/namespace bodies parse imperfectly.
 //!
-//! Rust additionally emits Calls edges via [`extract_rust_call_edges`]:
-//! one edge per `call_expression` found within a `function_item` body, with
-//! the source qualifier `<file_path>::<fn_name>` and the target qualifier
-//! the literal text of the call's function-path child (`bar`,
-//! `module::bar`, `x.method`, `Type::associated`). `self`/`crate`/`super`
-//! and relative paths are kept as literal text — symbol resolution is
-//! deferred to a later pass. Go follows the same model via
-//! [`extract_go_call_edges`]: one edge per `call_expression` found within a
-//! `function_declaration` or `method_declaration` body, with target text
-//! taken verbatim from the call's first child (`bar`, `pkg.Bar`,
-//! `obj.method`). Other languages remain imports-only; see
+//! Rust + Go + TypeScript additionally emit Calls edges. Rust uses
+//! [`extract_rust_call_edges`]: one edge per `call_expression` found within
+//! a `function_item` body, with the source qualifier
+//! `<file_path>::<fn_name>` and the target qualifier the literal text of
+//! the call's function-path child (`bar`, `module::bar`, `x.method`,
+//! `Type::associated`). `self`/`crate`/`super` and relative paths are kept
+//! as literal text — symbol resolution is deferred to a later pass. Go
+//! follows the same model via [`extract_go_call_edges`]: one edge per
+//! `call_expression` found within a `function_declaration` or
+//! `method_declaration` body, with target text taken verbatim from the
+//! call's first child (`bar`, `pkg.Bar`, `obj.method`). TypeScript follows
+//! via [`extract_typescript_call_edges`]: one edge per `call_expression`
+//! found anywhere, attributed to the nearest enclosing named function
+//! (`function_declaration` or class `method_definition`). Arrow functions
+//! are anonymous and transparent to attribution — calls inside an arrow
+//! attribute to the enclosing named function, or to the file-level
+//! pseudo-node `file::<path>` if no enclosing named function exists. Other
+//! languages remain imports-only; see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
@@ -516,6 +523,111 @@ fn strip_ts_string_quotes(raw: &str) -> Option<String> {
     } else {
         Some(target.to_string())
     }
+}
+
+/// Extract function-call edges from a parsed TypeScript source file.
+///
+/// Mirrors [`extract_rust_call_edges`] and [`extract_go_call_edges`] but
+/// for TypeScript's grammar. Performs a single recursive walk that
+/// threads the **nearest enclosing named function** down through child
+/// nodes; each `call_expression` it encounters contributes one edge whose
+/// `source_qualified` is `"<file_path>::<fn_name>"` (or
+/// `"file::<file_path>"` if no named function is in scope) and whose
+/// `target_qualified` is the literal text of the call's first child
+/// (`bar`, `obj.method`, `obj[key]`).
+///
+/// The single-walk approach is cleaner than Rust's two-stage walk because
+/// TypeScript has more nesting variants:
+///
+/// * `function_declaration` — top-level `function foo() {}`. Provides a
+///   name and replaces the enclosing-fn slot for its subtree.
+/// * `method_definition` — `class A { m() {} }`. Per the v0.5 simpler
+///   choice, the source qualifier is the bare method name (e.g.
+///   `<file>::m`) — no class prefix. Class context is recoverable later
+///   via `Symbol` lookups.
+/// * `arrow_function` — `() => ...`. Anonymous and transparent to
+///   attribution: calls inside an arrow attribute to the enclosing named
+///   function, or to `file::<path>` if no enclosing named function exists
+///   (e.g. a module-level `const x = () => foo();`).
+///
+/// Targets are kept as literal text — `bar` (identifier), `obj.method`
+/// (member_expression), `obj[key]` (subscript_expression) are emitted
+/// verbatim. Resolving identifiers against the import graph is deferred
+/// to a future symbol-resolution pass.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`], which dispatches
+/// by `Language` and concatenates import + call edges for TypeScript.
+///
+/// Returns an empty vector if the tree has no `call_expression` nodes.
+pub fn extract_typescript_call_edges(
+    tree: &tree_sitter::Tree,
+    source: &[u8],
+    file_path: &str,
+) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_ts_funcs(tree.root_node(), source, file_path, None, &mut edges);
+    edges
+}
+
+fn walk_for_ts_funcs(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    enclosing_fn_name: Option<&str>,
+    out: &mut Vec<Edge>,
+) {
+    // Determine whether this node introduces a new enclosing named function.
+    // `function_declaration` and `method_definition` provide a name and
+    // shadow the outer enclosing fn for their subtree. `arrow_function` is
+    // anonymous — it preserves the outer enclosing fn so calls inside its
+    // body still attribute correctly.
+    let new_enclosing: Option<String> = match node.kind() {
+        "function_declaration" | "method_definition" => ts_function_name(node, source),
+        _ => None,
+    };
+
+    if node.kind() == "call_expression"
+        && let Some(target_node) = node.child(0)
+    {
+        let target = node_text(target_node, source).trim();
+        if !target.is_empty() {
+            let source_qn = match enclosing_fn_name {
+                Some(name) => format!("{}::{}", file_path, name),
+                None => format!("file::{}", file_path),
+            };
+            out.push(Edge {
+                source_qualified: source_qn,
+                target_qualified: target.to_string(),
+                kind: EdgeKind::Calls,
+                file_path: file_path.to_string(),
+                line: target_node.start_position().row as u32 + 1,
+            });
+        }
+    }
+
+    let pass_down: Option<&str> = new_enclosing.as_deref().or(enclosing_fn_name);
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_ts_funcs(child, source, file_path, pass_down, out);
+    }
+}
+
+/// Resolve the literal text of a `function_declaration` /
+/// `method_definition` node's name. tree-sitter-typescript exposes the
+/// name via the `name` field — an `identifier` for top-level functions
+/// and a `property_identifier` for class methods. Returns `None` if the
+/// node has no name child (defensive against malformed parses), in which
+/// case the caller treats this scope as unnamed.
+fn ts_function_name(fn_node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    if let Some(name_node) = fn_node.child_by_field_name("name") {
+        let text = node_text(name_node, source).trim();
+        if !text.is_empty() {
+            return Some(text.to_string());
+        }
+    }
+    None
 }
 
 /// Extract import edges from a parsed Python source file.
