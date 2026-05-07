@@ -13,7 +13,14 @@
 //! via the shared preprocessor grammar (best-effort): `.cpp`/`.cc`/`.cxx`/
 //! `.hpp` files dispatch through `Language::C`, and `#include` extraction
 //! works even when C++ class/template/namespace bodies parse imperfectly.
-//! Other edge kinds (calls, inheritance) are deferred — see
+//!
+//! Rust additionally emits Calls edges via [`extract_rust_call_edges`]:
+//! one edge per `call_expression` found within a `function_item` body, with
+//! the source qualifier `<file_path>::<fn_name>` and the target qualifier
+//! the literal text of the call's function-path child (`bar`,
+//! `module::bar`, `x.method`, `Type::associated`). `self`/`crate`/`super`
+//! and relative paths are kept as literal text — symbol resolution is
+//! deferred to a later pass. Other languages remain imports-only; see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
@@ -106,6 +113,123 @@ fn walk_for_use_decls(
 
 fn node_text<'a>(node: tree_sitter::Node<'_>, source: &'a [u8]) -> &'a str {
     node.utf8_text(source).unwrap_or("")
+}
+
+/// Extract function-call edges from a parsed Rust source file.
+///
+/// Performs a two-stage walk: the outer walk descends from the root
+/// looking for `function_item` nodes; for each one it captures the
+/// containing function's name (the `name` field, which resolves to an
+/// `identifier` child) and then recurses through the body collecting
+/// every `call_expression`. Each call contributes one edge whose
+/// `source_qualified` is `"<file_path>::<fn_name>"` and whose
+/// `target_qualified` is the literal text of the call's function-path
+/// child (the first child of `call_expression`).
+///
+/// Targets are kept as literal text — `bar`, `module::bar`, `x.method`,
+/// `self.method`, and `Type::associated` are emitted verbatim. Resolving
+/// `self` / `crate` / `super` / aliased paths against the import graph is
+/// deferred to a future symbol-resolution pass.
+///
+/// Macro invocations (`println!`, `vec!`) are intentionally skipped —
+/// tree-sitter-rust represents them as `macro_invocation` nodes, not
+/// `call_expression`.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`], which dispatches
+/// by `Language` and concatenates import + call edges for Rust.
+///
+/// Returns an empty vector if the tree has no function definitions or
+/// none of those functions contain calls.
+pub fn extract_rust_call_edges(
+    tree: &tree_sitter::Tree,
+    source: &[u8],
+    file_path: &str,
+) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_function_items(tree.root_node(), source, file_path, &mut edges);
+    edges
+}
+
+fn walk_for_function_items(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    out: &mut Vec<Edge>,
+) {
+    if node.kind() == "function_item"
+        && let Some(fn_name) = function_name(node, source)
+    {
+        let source_qn = format!("{}::{}", file_path, fn_name);
+        walk_for_calls_within(node, source, file_path, &source_qn, out);
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_function_items(child, source, file_path, out);
+    }
+}
+
+/// Resolve the literal text of a `function_item`'s name. tree-sitter-rust
+/// exposes the name via the `name` field, which points to an `identifier`
+/// node. Returns `None` if the node has no name child (e.g. a malformed
+/// parse), in which case the caller skips emitting edges for that function.
+fn function_name(fn_node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    if let Some(name_node) = fn_node.child_by_field_name("name") {
+        let text = node_text(name_node, source);
+        if !text.is_empty() {
+            return Some(text.to_string());
+        }
+    }
+    // Fallback: scan children for the first `identifier`. Defensive in case
+    // the grammar version doesn't expose the `name` field as expected.
+    let mut cursor = fn_node.walk();
+    for child in fn_node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            let text = node_text(child, source);
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn walk_for_calls_within(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    source_qn: &str,
+    out: &mut Vec<Edge>,
+) {
+    if node.kind() == "call_expression"
+        && let Some(fn_path_node) = node.child(0)
+    {
+        let target = node_text(fn_path_node, source);
+        if !target.is_empty() {
+            out.push(Edge {
+                source_qualified: source_qn.to_string(),
+                target_qualified: target.to_string(),
+                kind: EdgeKind::Calls,
+                file_path: file_path.to_string(),
+                line: fn_path_node.start_position().row as u32 + 1,
+            });
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        // Skip descent into nested `function_item` bodies — the outer
+        // `walk_for_function_items` pass visits them separately and
+        // attributes their calls to the inner function's qualifier.
+        // Without this guard, nested calls would be double-attributed
+        // (once to the outer fn and once to the inner fn).
+        if child.kind() == "function_item" {
+            continue;
+        }
+        walk_for_calls_within(child, source, file_path, source_qn, out);
+    }
 }
 
 /// Strip the leading `use ` keyword and trailing `;` from a `use_declaration`

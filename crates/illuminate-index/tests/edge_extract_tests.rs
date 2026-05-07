@@ -12,7 +12,7 @@ use illuminate_index::{
     Language,
     edge_extract::{
         extract_c_edges, extract_go_edges, extract_java_edges, extract_python_edges,
-        extract_rust_edges, extract_typescript_edges,
+        extract_rust_call_edges, extract_rust_edges, extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -146,10 +146,22 @@ fn index_file_with_edges_returns_both() {
         symbols.iter().any(|s| s.name == "build"),
         "should extract `build` function symbol"
     );
-    assert_eq!(edges.len(), 1, "should extract one import edge");
-    assert_eq!(edges[0].kind, EdgeKind::Imports);
-    assert!(edges[0].target_qualified.contains("HashMap"));
-    assert_eq!(edges[0].file_path, "src/build.rs");
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    assert_eq!(imports.len(), 1, "should extract one import edge");
+    assert!(imports[0].target_qualified.contains("HashMap"));
+    assert_eq!(imports[0].file_path, "src/build.rs");
+    let calls: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Calls).collect();
+    assert!(
+        calls.iter().any(|e| e.target_qualified == "HashMap::new"),
+        "should extract a Calls edge to HashMap::new, got {:?}",
+        calls
+            .iter()
+            .map(|e| &e.target_qualified)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -684,4 +696,130 @@ fn index_file_with_edges_for_cpp_extension() {
     assert!(edges.iter().all(|e| e.file_path == "src/main.cpp"));
     assert!(edges.iter().any(|e| e.target_qualified == "iostream"));
     assert!(edges.iter().any(|e| e.target_qualified == "MyClass.h"));
+}
+
+#[test]
+fn extracts_simple_rust_call() {
+    let source = b"fn foo() {\n    bar();\n}\n";
+    let tree = parse_rust(source);
+
+    let edges = extract_rust_call_edges(&tree, source, "src/foo.rs");
+
+    assert_eq!(edges.len(), 1, "expected one call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/foo.rs::foo");
+    assert_eq!(edge.target_qualified, "bar");
+    assert_eq!(edge.file_path, "src/foo.rs");
+    assert_eq!(edge.line, 2);
+}
+
+#[test]
+fn extracts_method_call_rust() {
+    let source = b"fn foo() {\n    x.method();\n}\n";
+    let tree = parse_rust(source);
+
+    let edges = extract_rust_call_edges(&tree, source, "src/foo.rs");
+
+    assert_eq!(edges.len(), 1, "expected one call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/foo.rs::foo");
+    assert_eq!(edge.target_qualified, "x.method");
+}
+
+#[test]
+fn extracts_path_qualified_call_rust() {
+    let source = b"fn foo() {\n    module::bar();\n}\n";
+    let tree = parse_rust(source);
+
+    let edges = extract_rust_call_edges(&tree, source, "src/foo.rs");
+
+    assert_eq!(edges.len(), 1, "expected one call edge, got {:?}", edges);
+    assert_eq!(edges[0].target_qualified, "module::bar");
+    assert_eq!(edges[0].source_qualified, "src/foo.rs::foo");
+    assert_eq!(edges[0].kind, EdgeKind::Calls);
+}
+
+#[test]
+fn extracts_nested_calls() {
+    let source = b"fn foo() {\n    bar(baz());\n}\n";
+    let tree = parse_rust(source);
+
+    let edges = extract_rust_call_edges(&tree, source, "src/foo.rs");
+
+    assert_eq!(edges.len(), 2, "expected two call edges, got {:?}", edges);
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Calls));
+    assert!(
+        edges
+            .iter()
+            .all(|e| e.source_qualified == "src/foo.rs::foo"),
+        "all calls should be sourced from foo, got {:?}",
+        edges
+            .iter()
+            .map(|e| &e.source_qualified)
+            .collect::<Vec<_>>()
+    );
+    assert!(edges.iter().any(|e| e.target_qualified == "bar"));
+    assert!(edges.iter().any(|e| e.target_qualified == "baz"));
+}
+
+#[test]
+fn function_with_no_calls_yields_no_call_edges() {
+    let source = b"fn foo() {}\n";
+    let tree = parse_rust(source);
+
+    let call_edges = extract_rust_call_edges(&tree, source, "src/foo.rs");
+    assert!(
+        call_edges.is_empty(),
+        "empty function body should yield no call edges, got {:?}",
+        call_edges
+    );
+
+    let import_edges = extract_rust_edges(&tree, source, "src/foo.rs");
+    assert!(
+        import_edges.is_empty(),
+        "no use statements should yield no import edges"
+    );
+}
+
+#[test]
+fn multiple_functions_each_get_their_own_calls() {
+    let source = b"fn foo() {\n    bar();\n}\n\nfn baz() {\n    qux();\n}\n";
+    let tree = parse_rust(source);
+
+    let edges = extract_rust_call_edges(&tree, source, "src/m.rs");
+
+    assert_eq!(edges.len(), 2, "expected two call edges, got {:?}", edges);
+    let foo_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "bar")
+        .expect("should have bar call");
+    assert_eq!(foo_edge.source_qualified, "src/m.rs::foo");
+    let baz_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "qux")
+        .expect("should have qux call");
+    assert_eq!(baz_edge.source_qualified, "src/m.rs::baz");
+}
+
+#[test]
+fn index_file_with_edges_returns_imports_and_calls() {
+    let source = b"use foo::bar;\n\nfn x() {\n    bar();\n}\n";
+    let path = Path::new("src/lib.rs");
+
+    let (_symbols, edges) = index_file_with_edges(path, source, Language::Rust).unwrap();
+
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    let calls: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Calls).collect();
+
+    assert_eq!(imports.len(), 1, "should have one import edge");
+    assert!(imports[0].target_qualified.contains("foo::bar"));
+
+    assert_eq!(calls.len(), 1, "should have one call edge, got {:?}", calls);
+    assert_eq!(calls[0].source_qualified, "src/lib.rs::x");
+    assert_eq!(calls[0].target_qualified, "bar");
 }
