@@ -50,7 +50,11 @@ impl Language {
             "py" => Some(Language::Python),
             "java" => Some(Language::Java),
             "c" | "h" => Some(Language::C),
-            "cpp" | "cc" | "cxx" | "hpp" => Some(Language::C), // reuse C parser for now
+            // C++ files reuse `Language::C`: best-effort, includes work via the
+            // shared preprocessor grammar even when class/template/namespace
+            // bodies parse imperfectly. A dedicated `Language::Cpp` is deferred
+            // until we need symbol extraction beyond `#include` edges.
+            "cpp" | "cc" | "cxx" | "hpp" => Some(Language::C),
             _ => None,
         }
     }

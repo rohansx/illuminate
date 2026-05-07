@@ -601,3 +601,87 @@ fn index_file_with_edges_returns_c_includes() {
     assert!(edges.iter().any(|e| e.target_qualified == "stdio.h"));
     assert!(edges.iter().any(|e| e.target_qualified == "foo.h"));
 }
+
+// C++ coverage: `.cpp`/`.cc`/`.cxx`/`.hpp` reuse the C parser. The
+// preprocessor grammar is shared between C and C++, so `#include`
+// directives parse cleanly through tree-sitter-c even when the
+// surrounding C++ syntax (templates, namespaces, classes) trips the
+// parser. These tests exercise the C++ source through `Language::C`
+// and assert that include extraction still works.
+
+#[test]
+fn extracts_cpp_quoted_include() {
+    let source = b"#include \"MyClass.h\"\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_edges(&tree, source, "src/main.cpp");
+
+    assert_eq!(edges.len(), 1, "expected one quoted cpp include edge");
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Imports);
+    assert_eq!(edge.source_qualified, "file::src/main.cpp");
+    assert_eq!(edge.target_qualified, "MyClass.h");
+    assert_eq!(edge.file_path, "src/main.cpp");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_cpp_system_include() {
+    let source = b"#include <iostream>\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_edges(&tree, source, "src/main.cpp");
+
+    assert_eq!(edges.len(), 1, "expected one system cpp include edge");
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Imports);
+    assert_eq!(edge.source_qualified, "file::src/main.cpp");
+    assert_eq!(
+        edge.target_qualified, "iostream",
+        "angle brackets should be stripped from cpp system include"
+    );
+    assert_eq!(edge.file_path, "src/main.cpp");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_cpp_mixed_includes() {
+    // C++ source with both include forms surrounding a class definition.
+    // The class body may produce ERROR nodes in tree-sitter-c, but the
+    // shared preprocessor grammar should still surface every `#include`.
+    let source = b"#include <iostream>\n#include \"MyClass.h\"\n#include <vector>\n\nclass Foo {\npublic:\n    void bar();\n};\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_edges(&tree, source, "src/main.cpp");
+
+    assert_eq!(
+        edges.len(),
+        3,
+        "expected three cpp include edges even when class body parses imperfectly"
+    );
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().all(|e| e.file_path == "src/main.cpp"));
+    assert!(edges.iter().any(|e| e.target_qualified == "iostream"));
+    assert!(edges.iter().any(|e| e.target_qualified == "MyClass.h"));
+    assert!(edges.iter().any(|e| e.target_qualified == "vector"));
+}
+
+#[test]
+fn index_file_with_edges_for_cpp_extension() {
+    // `Language::from_extension("cpp")` resolves to `Language::C`, so
+    // dispatch through `index_file_with_edges` should land on the C
+    // include extractor and produce edges for a `.cpp` file.
+    let lang = Language::from_extension("cpp").expect("cpp extension should map to a language");
+    assert_eq!(lang, Language::C, "cpp extension should reuse the c parser");
+
+    let source = b"#include <iostream>\n#include \"MyClass.h\"\n\nint main() { return 0; }\n";
+    let path = Path::new("src/main.cpp");
+
+    let (_symbols, edges) = index_file_with_edges(path, source, lang).unwrap();
+
+    assert_eq!(edges.len(), 2, "should extract two cpp include edges");
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().all(|e| e.file_path == "src/main.cpp"));
+    assert!(edges.iter().any(|e| e.target_qualified == "iostream"));
+    assert!(edges.iter().any(|e| e.target_qualified == "MyClass.h"));
+}

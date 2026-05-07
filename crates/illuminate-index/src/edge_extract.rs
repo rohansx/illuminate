@@ -9,8 +9,10 @@
 //! aliased, multi, `from`, and relative-import forms. Java: one per
 //! `import_declaration`, covering simple, `static`, and wildcard forms.
 //! C: one per `preproc_include`, covering both quoted (`#include "foo.h"`)
-//! and system (`#include <stdio.h>`) forms. C++ headers reuse the C parser
-//! (`.cpp`/`.cc`/`.cxx`/`.hpp`) and are exercised by the next coverage task.
+//! and system (`#include <stdio.h>`) forms. C imports cover both C and C++
+//! via the shared preprocessor grammar (best-effort): `.cpp`/`.cc`/`.cxx`/
+//! `.hpp` files dispatch through `Language::C`, and `#include` extraction
+//! works even when C++ class/template/namespace bodies parse imperfectly.
 //! Other edge kinds (calls, inheritance) are deferred — see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
