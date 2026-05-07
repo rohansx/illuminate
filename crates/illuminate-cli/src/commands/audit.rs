@@ -95,6 +95,26 @@ fn print_human(result: &AuditResult, plan_text: &str) -> illuminate::Result<()> 
         println!("  Severity: {:?}", v.severity);
     }
 
+    // Defined-symbols section: per-file symbols looked up from index.db.
+    // Cap the listing at HUMAN_IMPACT_LIMIT to mirror the blast-radius block
+    // and keep the human output bounded for files with many definitions.
+    if !result.impact.defined_symbols.is_empty() {
+        let count = result.impact.defined_symbols.len();
+        println!();
+        println!("Defined symbols in touched files: {count}");
+        for sym in result
+            .impact
+            .defined_symbols
+            .iter()
+            .take(HUMAN_IMPACT_LIMIT)
+        {
+            println!("  - {sym}");
+        }
+        if count > HUMAN_IMPACT_LIMIT {
+            println!("  ... ({} more)", count - HUMAN_IMPACT_LIMIT);
+        }
+    }
+
     // Impact section: blast radius for the supplied files (informational only).
     if !result.impact.impacted_symbols.is_empty() {
         let symbol_count = result.impact.impacted_symbols.len();

@@ -28,6 +28,11 @@ pub struct AuditResult {
 pub struct ImpactInfo {
     /// Qualified names of symbols touched by the proposed file changes.
     pub seed_symbols: Vec<String>,
+    /// Symbols defined inside the touched files (looked up from `index.db`).
+    /// Format: `<rel_path>::<symbol_name>`. Empty when no index is available
+    /// or when the supplied file paths are not present in the index.
+    #[serde(default)]
+    pub defined_symbols: Vec<String>,
     /// Qualified names of symbols transitively impacted (callers + callees within depth cap).
     pub impacted_symbols: Vec<String>,
     /// True if the result hit the node cap.

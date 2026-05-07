@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use illuminate_audit::Auditor;
 use illuminate_index::edges::{Edge, EdgeKind};
+use illuminate_index::indexer::CodeIndex;
 use illuminate_index::storage::{create_schema, upsert_edges};
 use rusqlite::Connection;
 use tempfile::tempdir;
@@ -103,6 +104,124 @@ fn audit_with_files_does_not_change_status() {
     assert_eq!(
         result.status, baseline.status,
         "impact computation must not affect audit status"
+    );
+}
+
+#[test]
+fn audit_with_files_includes_defined_symbols() {
+    // Set up a project root with a Rust file containing two functions, then
+    // run the real `CodeIndex::index_project` so symbols land in `index.db`
+    // exactly the way the production indexer would store them.
+    let project = tempdir().unwrap();
+    let src_dir = project.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("foo.rs"),
+        "pub fn alpha() -> u32 { 1 }\n\npub fn beta() -> u32 { 2 }\n",
+    )
+    .unwrap();
+
+    let db_dir = tempdir().unwrap();
+    let db_path = db_dir.path().join("index.db");
+    {
+        let mut idx = CodeIndex::open(&db_path).unwrap();
+        let stats = idx.index_project(project.path()).unwrap();
+        assert!(
+            stats.symbols_extracted >= 2,
+            "expected at least 2 symbols, got {}",
+            stats.symbols_extracted
+        );
+    }
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor = Auditor::with_index(graph, vec![], db_path);
+
+    let files = vec![PathBuf::from("src/foo.rs")];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert!(
+        result
+            .impact
+            .defined_symbols
+            .iter()
+            .any(|s| s == "src/foo.rs::alpha"),
+        "defined_symbols missing alpha: {:?}",
+        result.impact.defined_symbols
+    );
+    assert!(
+        result
+            .impact
+            .defined_symbols
+            .iter()
+            .any(|s| s == "src/foo.rs::beta"),
+        "defined_symbols missing beta: {:?}",
+        result.impact.defined_symbols
+    );
+}
+
+#[test]
+fn audit_with_files_defined_symbols_empty_when_index_missing() {
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor = Auditor::new(graph, vec![]);
+
+    let files = vec![PathBuf::from("src/foo.rs")];
+    let result = auditor
+        .audit_with_files(PLAN_TEXT, &files)
+        .expect("missing index must not propagate");
+
+    assert!(
+        result.impact.defined_symbols.is_empty(),
+        "no index path means no defined_symbols"
+    );
+}
+
+#[test]
+fn audit_with_files_defined_symbols_empty_for_unindexed_file() {
+    // Index DB is present and well-formed, but the supplied file path was
+    // never indexed — `lookup_file` should return zero rows so
+    // `defined_symbols` is empty.
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("index.db");
+    populate_minimal_graph(&db_path);
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor = Auditor::with_index(graph, vec![], db_path);
+
+    let files = vec![PathBuf::from("src/never_indexed.rs")];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert!(
+        result.impact.defined_symbols.is_empty(),
+        "unindexed file should yield empty defined_symbols, got {:?}",
+        result.impact.defined_symbols
+    );
+}
+
+#[test]
+fn audit_with_files_defined_symbols_uses_relative_path_format() {
+    // Verifies the qualifier format is exactly `<supplied_path>::<symbol_name>`.
+    let project = tempdir().unwrap();
+    let src_dir = project.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("only.rs"), "pub fn solo() {}\n").unwrap();
+
+    let db_dir = tempdir().unwrap();
+    let db_path = db_dir.path().join("index.db");
+    {
+        let mut idx = CodeIndex::open(&db_path).unwrap();
+        idx.index_project(project.path()).unwrap();
+    }
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor = Auditor::with_index(graph, vec![], db_path);
+
+    let files = vec![PathBuf::from("src/only.rs")];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert_eq!(
+        result.impact.defined_symbols,
+        vec!["src/only.rs::solo".to_string()],
+        "defined_symbols should use exact `<rel_path>::<name>` format"
     );
 }
 

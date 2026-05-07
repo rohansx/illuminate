@@ -118,6 +118,17 @@ impl Auditor {
     /// (if an `index.db` is configured) joins each file against the code
     /// graph and runs [`illuminate_index::storage::impact_radius`] with caps
     /// `max_depth = DEFAULT_IMPACT_DEPTH` and `max_nodes = DEFAULT_IMPACT_NODES`.
+    /// Per-file defined symbols are also looked up via
+    /// [`illuminate_index::storage::lookup_file`] and surfaced as
+    /// `defined_symbols` for callers that want a richer impact view.
+    ///
+    /// **Path format.** File paths are passed through to the index as-is.
+    /// For accurate `defined_symbols` and impact lookups, callers should
+    /// supply paths in the same form the indexer stored them — namely
+    /// repo-relative (e.g. `crates/foo/src/lib.rs`), matching the
+    /// `<rel_path>`-rooted form produced by `illuminate index`. Absolute
+    /// paths or unrelated forms will simply yield empty results without
+    /// erroring.
     ///
     /// The resulting [`ImpactInfo`] is purely informational — it never
     /// changes `status`. A missing or corrupt `index.db` is treated as
@@ -163,6 +174,27 @@ impl Auditor {
             return ImpactInfo::default();
         }
 
+        // Per-file defined symbols. We look these up before running the BFS
+        // so a failure in `impact_radius` still leaves us with useful data.
+        // Path strings are passed through as-supplied; see the
+        // `audit_with_files` doc comment on the path-format contract.
+        let mut defined_symbols: Vec<String> = Vec::new();
+        for f in files {
+            let path_str = f.as_ref().to_string_lossy();
+            match illuminate_index::storage::lookup_file(&conn, &path_str) {
+                Ok(symbols) => {
+                    for sym in symbols {
+                        defined_symbols.push(format!("{path_str}::{}", sym.name));
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        "illuminate-audit: lookup_file failed for {path_str} ({e}); skipping"
+                    );
+                }
+            }
+        }
+
         match illuminate_index::storage::impact_radius(
             &conn,
             &seeds,
@@ -171,12 +203,19 @@ impl Auditor {
         ) {
             Ok(radius) => ImpactInfo {
                 seed_symbols: radius.seeds,
+                defined_symbols,
                 impacted_symbols: radius.impacted,
                 truncated: radius.truncated,
             },
             Err(e) => {
                 tracing::warn!("illuminate-audit: impact_radius failed ({e}); returning empty");
-                ImpactInfo::default()
+                // `defined_symbols` is still useful even when BFS fails.
+                ImpactInfo {
+                    seed_symbols: Vec::new(),
+                    defined_symbols,
+                    impacted_symbols: Vec::new(),
+                    truncated: false,
+                }
             }
         }
     }
