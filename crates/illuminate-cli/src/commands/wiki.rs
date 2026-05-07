@@ -121,7 +121,10 @@ fn cmd_list() -> std::io::Result<()> {
         ("failures", PageType::Failure),
         ("modules", PageType::Module),
     ] {
-        let subset: Vec<_> = pages.iter().filter(|p| p.front.page_type == *kind).collect();
+        let subset: Vec<_> = pages
+            .iter()
+            .filter(|p| p.front.page_type == *kind)
+            .collect();
         if subset.is_empty() {
             continue;
         }
@@ -169,12 +172,10 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
 
 fn cmd_search(query: &str, limit: usize) -> std::io::Result<()> {
     let dir = wiki_dir()?;
-    let walked = illuminate_wiki::walk::walk_wiki(&dir)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    let pages: Vec<illuminate_wiki::page::WikiPage> = walked
-        .into_iter()
-        .filter_map(|w| w.page.ok())
-        .collect();
+    let walked =
+        illuminate_wiki::walk::walk_wiki(&dir).map_err(|e| std::io::Error::other(e.to_string()))?;
+    let pages: Vec<illuminate_wiki::page::WikiPage> =
+        walked.into_iter().filter_map(|w| w.page.ok()).collect();
 
     // 1. wiki grep
     let lower_q = query.to_lowercase();
@@ -184,11 +185,7 @@ fn cmd_search(query: &str, limit: usize) -> std::io::Result<()> {
             let title_hits = p.front.title.to_lowercase().matches(&lower_q[..]).count() as f32;
             let body_hits = p.body.to_lowercase().matches(&lower_q[..]).count() as f32;
             let score = title_hits * 3.0 + body_hits;
-            if score > 0.0 {
-                Some((score, p))
-            } else {
-                None
-            }
+            if score > 0.0 { Some((score, p)) } else { None }
         })
         .collect();
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -263,7 +260,7 @@ fn first_match_snippet(text: &str, query: &str, window: usize) -> String {
 }
 
 fn cmd_review(list_only: bool) -> std::io::Result<()> {
-    use illuminate_wiki::page::{parse_page, PageType};
+    use illuminate_wiki::page::{PageType, parse_page};
 
     let root = repo_root()?;
     let review_dir = root.join(".illuminate/wiki/_review");
@@ -337,12 +334,7 @@ fn cmd_review(list_only: bool) -> std::io::Result<()> {
             }
         };
 
-        println!(
-            "─── [{}/{}] {} ───",
-            idx + 1,
-            entries.len(),
-            page.front.id
-        );
+        println!("─── [{}/{}] {} ───", idx + 1, entries.len(), page.front.id);
         println!("title:      {}", page.front.title);
         println!("type:       {:?}", page.front.page_type);
         println!("status:     {}", page.front.status);
@@ -361,10 +353,7 @@ fn cmd_review(list_only: bool) -> std::io::Result<()> {
             println!("  {line}");
         }
         if page.body.lines().count() > 30 {
-            println!(
-                "  ... ({} more lines)",
-                page.body.lines().count() - 30
-            );
+            println!("  ... ({} more lines)", page.body.lines().count() - 30);
         }
         println!();
 

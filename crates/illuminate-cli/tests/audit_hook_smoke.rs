@@ -108,7 +108,8 @@ fn hook_passes_when_no_policies() {
         "[project]\nname = 'no-policy'\n",
     )
     .unwrap();
-    let payload = r#"{"tool_name":"Write","tool_input":{"file_path":"x.rs","content":"Redis everywhere"}}"#;
+    let payload =
+        r#"{"tool_name":"Write","tool_input":{"file_path":"x.rs","content":"Redis everywhere"}}"#;
     let out = run_hook_with_stdin(tmp.path(), payload);
     assert_eq!(
         out.status.code(),

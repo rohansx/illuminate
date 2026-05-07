@@ -93,7 +93,10 @@ fn hoist_lesson(body: &str) -> String {
     // Find "## Lesson for future agents" up to the next "##" or EOF.
     if let Some(start) = body.find("## Lesson for future agents") {
         let after = &body[start..];
-        let end = after[1..].find("\n## ").map(|n| n + 1).unwrap_or(after.len());
+        let end = after[1..]
+            .find("\n## ")
+            .map(|n| n + 1)
+            .unwrap_or(after.len());
         let lesson = &after[..end];
         format!("{lesson}\n\n---\n\n{body}")
     } else {

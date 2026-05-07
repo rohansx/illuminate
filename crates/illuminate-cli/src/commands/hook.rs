@@ -109,7 +109,9 @@ fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPol
     Ok(Vec::new())
 }
 
-fn parse_file(path: &std::path::Path) -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
+fn parse_file(
+    path: &std::path::Path,
+) -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
     let content = std::fs::read_to_string(path).map_err(illuminate::IlluminateError::Io)?;
     parse_policies(&content)
         .map_err(|e| illuminate::IlluminateError::Extraction(format!("policy parse error: {e}")))

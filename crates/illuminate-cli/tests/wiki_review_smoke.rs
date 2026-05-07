@@ -66,10 +66,7 @@ fn list_mode_surfaces_review_queue() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("dec-low-confidence"),
-        "stdout: {stdout}"
-    );
+    assert!(stdout.contains("dec-low-confidence"), "stdout: {stdout}");
     assert!(
         stdout.contains("conf=0.40") || stdout.contains("conf=0.4"),
         "stdout: {stdout}"

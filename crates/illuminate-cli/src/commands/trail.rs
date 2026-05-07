@@ -4,7 +4,7 @@ use clap::Subcommand;
 use illuminate_trail::claude::default_sessions_dir;
 use illuminate_trail::import::import_session;
 use illuminate_trail::record::TrailRecord;
-use illuminate_trail::watcher::{run_watcher, WatcherOpts};
+use illuminate_trail::watcher::{WatcherOpts, run_watcher};
 use std::path::{Path, PathBuf};
 
 #[derive(Subcommand)]
@@ -54,7 +54,11 @@ pub fn run(cmd: TrailCmd) -> std::io::Result<()> {
         TrailCmd::Show { ident } => cmd_show(&ident),
         TrailCmd::Watch { sessions_root } => cmd_watch(sessions_root),
         TrailCmd::Register { ident } => cmd_register(ident.as_deref()),
-        TrailCmd::InstallService { path, dry_run, force } => cmd_install_service(path, dry_run, force),
+        TrailCmd::InstallService {
+            path,
+            dry_run,
+            force,
+        } => cmd_install_service(path, dry_run, force),
     }
 }
 
@@ -102,7 +106,9 @@ fn cmd_list() -> std::io::Result<()> {
         .collect();
     entries.sort_by_key(|e| e.file_name());
     if entries.is_empty() {
-        println!("no trails captured yet — try `illuminate trail watch` or `illuminate trail import <path>`");
+        println!(
+            "no trails captured yet — try `illuminate trail watch` or `illuminate trail import <path>`"
+        );
         return Ok(());
     }
     for e in entries {
@@ -156,7 +162,12 @@ fn cmd_show(ident: &str) -> std::io::Result<()> {
     println!("messages: {}", rec.messages.len());
     println!("---");
     for m in &rec.messages {
-        println!("[{} {:?}] {}", m.timestamp.format("%H:%M:%S"), m.role, m.text);
+        println!(
+            "[{} {:?}] {}",
+            m.timestamp.format("%H:%M:%S"),
+            m.role,
+            m.text
+        );
     }
     if !rec.tool_invocations.is_empty() {
         println!("---");
@@ -282,7 +293,9 @@ fn cmd_install_service(
 ) -> std::io::Result<()> {
     if !cfg!(target_os = "linux") {
         eprintln!("install-service: systemd is Linux-only.");
-        eprintln!("On macOS, run `illuminate trail watch` directly under launchctl or a terminal multiplexer.");
+        eprintln!(
+            "On macOS, run `illuminate trail watch` directly under launchctl or a terminal multiplexer."
+        );
         return Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "systemd unit install is Linux-only",
@@ -305,11 +318,9 @@ fn cmd_install_service(
     let target = match path {
         Some(p) => p,
         None => {
-            let home = std::env::var_os("HOME").ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set")
-            })?;
-            std::path::PathBuf::from(home)
-                .join(".config/systemd/user/illuminate-trail.service")
+            let home = std::env::var_os("HOME")
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
+            std::path::PathBuf::from(home).join(".config/systemd/user/illuminate-trail.service")
         }
     };
 

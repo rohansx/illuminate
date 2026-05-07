@@ -46,13 +46,24 @@ fn bootstrap_then_rebuild_then_audit_violation_and_pass() {
 
     // 1. bootstrap
     let bootstrap = run(repo, &["bootstrap"]);
-    assert!(bootstrap.status.success(), "bootstrap stderr: {}", String::from_utf8_lossy(&bootstrap.stderr));
+    assert!(
+        bootstrap.status.success(),
+        "bootstrap stderr: {}",
+        String::from_utf8_lossy(&bootstrap.stderr)
+    );
     let stdout = String::from_utf8_lossy(&bootstrap.stdout);
-    assert!(stdout.contains("pages written"), "bootstrap stdout: {stdout}");
+    assert!(
+        stdout.contains("pages written"),
+        "bootstrap stdout: {stdout}"
+    );
 
     // 2. wiki rebuild
     let rebuild = run(repo, &["wiki", "rebuild"]);
-    assert!(rebuild.status.success(), "wiki rebuild stderr: {}", String::from_utf8_lossy(&rebuild.stderr));
+    assert!(
+        rebuild.status.success(),
+        "wiki rebuild stderr: {}",
+        String::from_utf8_lossy(&rebuild.stderr)
+    );
 
     // 3. audit a Redis plan — expect violation (exit 2)
     let bad = run(repo, &["audit", "add Redis caching to billing service"]);

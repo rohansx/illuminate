@@ -12,7 +12,10 @@ pub fn run() -> std::io::Result<()> {
     println!("  candidates found:   {}", report.candidates_found);
     println!("  pages written:      {}", report.pages_written);
     println!("  pages skipped:      {}", report.pages_skipped_existing);
-    println!("  pages queued for review: {}", report.pages_queued_for_review);
+    println!(
+        "  pages queued for review: {}",
+        report.pages_queued_for_review
+    );
     Ok(())
 }
 

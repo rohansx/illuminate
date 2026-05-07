@@ -1,6 +1,8 @@
 mod commands;
 mod display;
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -184,6 +186,14 @@ enum Commands {
     Audit {
         /// Agent's proposed plan
         plan: String,
+
+        /// Files the agent proposes to touch (enables blast-radius reporting)
+        #[arg(num_args = 0..)]
+        files: Vec<PathBuf>,
+
+        /// Path to index.db (default: <repo>/.illuminate/index.db)
+        #[arg(long)]
+        index_db: Option<PathBuf>,
 
         /// Output as JSON
         #[arg(long)]
@@ -384,11 +394,20 @@ fn main() {
         Commands::Export { format } => commands::export::run(&format),
         Commands::Summary { limit } => commands::summary::run(limit),
         Commands::AuditHook => commands::hook::run_audit_hook(),
-        Commands::Audit { plan, json } => commands::audit::run(plan, json),
-        Commands::Trail { cmd } => commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io),
+        Commands::Audit {
+            plan,
+            files,
+            index_db,
+            json,
+        } => commands::audit::run(plan, files, index_db, json),
+        Commands::Trail { cmd } => {
+            commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io)
+        }
         Commands::Wiki { cmd } => commands::wiki::run(cmd).map_err(illuminate::IlluminateError::Io),
         Commands::Bootstrap => commands::bootstrap::run().map_err(illuminate::IlluminateError::Io),
-        Commands::Failures { cmd } => commands::failures::run(cmd).map_err(illuminate::IlluminateError::Io),
+        Commands::Failures { cmd } => {
+            commands::failures::run(cmd).map_err(illuminate::IlluminateError::Io)
+        }
         Commands::Status => commands::status::run().map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,
