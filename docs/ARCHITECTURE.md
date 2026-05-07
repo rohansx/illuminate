@@ -446,13 +446,15 @@ The query path being entirely local is what makes Illuminate **deterministic and
    └────────────────────────────────────────┘
 
    ┌────────────────────────────────────────┐
-   │ ~/.cursor/conversations/  (varies)     │  Cursor
-   │   └── <session-id>.json   ◄── poll     │
+   │ Cursor: state.vscdb (SQLite)           │  Cursor
+   │   ~/.config/Cursor/User/globalStorage/ │
+   │   (Linux) — varies per OS              │
+   │   `cursorDiskKV` table, polled         │
    └────────────────────────────────────────┘
 
    ┌────────────────────────────────────────┐
-   │ ~/.codex/sessions/  (varies)           │  Codex
-   │   └── <session-id>.json   ◄── inotify  │
+   │ ~/.codex/sessions/YYYY/MM/DD/          │  Codex
+   │   └── rollout-*.jsonl   ◄── inotify    │
    └────────────────────────────────────────┘
 
    for each new/updated session:
