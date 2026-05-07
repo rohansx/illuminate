@@ -1,16 +1,25 @@
 //! Edge extraction from tree-sitter ASTs.
 //!
-//! v0.1 only emits Rust import edges (one per `use_declaration`). Other
-//! languages and other edge kinds (calls, inheritance) are deferred — see
+//! v0.2 emits import edges for Rust (one per `use_declaration`) and Go
+//! (one per `import_spec`, covering single, grouped, aliased, dot, and
+//! blank import forms). Other languages and other edge kinds (calls,
+//! inheritance) are deferred — see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
 //! `file::<file_path>`. We don't yet have function-scoped imports, so this
 //! coarse anchor is the right granularity for the v0.1 join in
-//! `illuminate-audit`. The `target_qualified` is the literal dotted path of
-//! the use statement (e.g. `std::collections::HashMap`). Grouped forms like
+//! `illuminate-audit`.
+//!
+//! For Rust, the `target_qualified` is the literal dotted path of the use
+//! statement (e.g. `std::collections::HashMap`). Grouped forms like
 //! `use std::{io, fs};` keep the brace-list verbatim — splitting them into
 //! separate targets is a future cleanup.
+//!
+//! For Go, the `target_qualified` is the unquoted package path from the
+//! import spec (e.g. `fmt`, `github.com/foo/bar`). Aliased imports
+//! (`import f "fmt"`) and blank imports (`import _ "fmt"`) both surface
+//! the underlying package path as the target.
 //!
 //! This module is deliberately `pub` so per-language extractors can be
 //! exercised directly by integration tests and downstream consumers without
@@ -78,9 +87,74 @@ fn use_target(decl_text: &str) -> Option<String> {
     }
 }
 
+/// Extract import edges from a parsed Go source file.
+///
+/// Walks the AST for `import_spec` nodes — this single node kind covers
+/// every Go import form (single `import "fmt"`, grouped `import ( ... )`,
+/// aliased `import f "fmt"`, dot `import . "fmt"`, and blank
+/// `import _ "fmt"`). Each spec contributes one edge whose
+/// `target_qualified` is the unquoted path string.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`].
+///
+/// Returns an empty vector if the tree has no import specs.
+pub fn extract_go_edges(tree: &tree_sitter::Tree, source: &[u8], file_path: &str) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_go_imports(tree.root_node(), source, file_path, &mut edges);
+    edges
+}
+
+fn walk_for_go_imports(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    out: &mut Vec<Edge>,
+) {
+    if node.kind() == "import_spec" {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "interpreted_string_literal" {
+                let raw = node_text(child, source);
+                if let Some(target) = strip_go_import_quotes(raw) {
+                    out.push(Edge {
+                        source_qualified: format!("file::{}", file_path),
+                        target_qualified: target,
+                        kind: EdgeKind::Imports,
+                        file_path: file_path.to_string(),
+                        line: child.start_position().row as u32 + 1,
+                    });
+                }
+                break;
+            }
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_go_imports(child, source, file_path, out);
+    }
+}
+
+/// Strip the surrounding double quotes from a Go `interpreted_string_literal`
+/// node's text. Returns `None` for empty paths so the walker can skip
+/// emitting a useless edge.
+fn strip_go_import_quotes(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let without_open = trimmed.strip_prefix('"').unwrap_or(trimmed);
+    let without_close = without_open.strip_suffix('"').unwrap_or(without_open);
+    let target = without_close.trim();
+    if target.is_empty() {
+        None
+    } else {
+        Some(target.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::use_target;
+    use super::{strip_go_import_quotes, use_target};
 
     #[test]
     fn use_target_returns_none_for_empty_decl() {
@@ -95,5 +169,20 @@ mod tests {
             use_target("use std::collections::HashMap;"),
             Some("std::collections::HashMap".to_string())
         );
+    }
+
+    #[test]
+    fn strip_go_import_quotes_unwraps_path() {
+        assert_eq!(strip_go_import_quotes("\"fmt\""), Some("fmt".to_string()));
+        assert_eq!(
+            strip_go_import_quotes("\"github.com/foo/bar\""),
+            Some("github.com/foo/bar".to_string())
+        );
+    }
+
+    #[test]
+    fn strip_go_import_quotes_returns_none_for_empty() {
+        assert_eq!(strip_go_import_quotes("\"\""), None);
+        assert_eq!(strip_go_import_quotes(""), None);
     }
 }

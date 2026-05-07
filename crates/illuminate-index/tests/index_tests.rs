@@ -762,11 +762,11 @@ fn rebuild_populates_edges_table() {
 }
 
 #[test]
-fn rebuild_populates_no_edges_for_non_rust_file() {
+fn rebuild_populates_no_edges_for_python_file() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
-        tmp.path().join("billing.go"),
-        "package main\n\nimport \"fmt\"\n\nfunc Hello() { fmt.Println(\"hi\") }\n",
+        tmp.path().join("billing.py"),
+        "import os\n\ndef hello():\n    print(os.getcwd())\n",
     )
     .unwrap();
 
@@ -776,11 +776,11 @@ fn rebuild_populates_no_edges_for_non_rust_file() {
 
     assert!(
         stats.symbols_extracted > 0,
-        "go symbol extractor should still run"
+        "python symbol extractor should still run"
     );
     assert_eq!(
         stats.edges_extracted, 0,
-        "no edge extractor for go yet, edges_extracted should be 0"
+        "no edge extractor for python yet, edges_extracted should be 0"
     );
 
     drop(index);
@@ -789,13 +789,13 @@ fn rebuild_populates_no_edges_for_non_rust_file() {
     let symbol_total: i64 = conn
         .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
         .unwrap();
-    assert!(symbol_total > 0, "go symbols should be persisted");
+    assert!(symbol_total > 0, "python symbols should be persisted");
 
     let edge_total: i64 = conn
         .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap();
     assert_eq!(
         edge_total, 0,
-        "edges table should be empty for go-only project"
+        "edges table should be empty for python-only project"
     );
 }

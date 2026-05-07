@@ -131,8 +131,9 @@ pub fn index_file(path: &Path, source: &[u8], lang: Language) -> Result<Vec<symb
 
 /// Index a single file and return both extracted symbols and structural edges.
 ///
-/// For v0.1 only Rust import edges are produced; other languages return an
-/// empty edge vector. Symbol extraction is identical to [`index_file`].
+/// As of v0.2, Rust and Go import edges are produced; other languages still
+/// return an empty edge vector. Symbol extraction is identical to
+/// [`index_file`].
 pub fn index_file_with_edges(
     path: &Path,
     source: &[u8],
@@ -152,6 +153,7 @@ pub fn index_file_with_edges(
 
     let extracted_edges = match lang {
         Language::Rust => edge_extract::extract_rust_edges(&tree, source, &file_path),
+        Language::Go => edge_extract::extract_go_edges(&tree, source, &file_path),
         _ => Vec::new(),
     };
 
