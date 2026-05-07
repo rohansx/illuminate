@@ -1,15 +1,18 @@
 //! Tests for per-language import edge extraction in illuminate-index.
 //!
-//! These tests cover the `extract_rust_edges`, `extract_go_edges`, and
-//! `extract_typescript_edges` functions plus the `index_file_with_edges`
-//! combined helper. Other languages still return empty edges in v0.3.
+//! These tests cover the `extract_rust_edges`, `extract_go_edges`,
+//! `extract_typescript_edges`, and `extract_python_edges` functions plus the
+//! `index_file_with_edges` combined helper. Other languages still return
+//! empty edges in v0.3.
 
 use std::path::Path;
 
 use illuminate_index::edges::EdgeKind;
 use illuminate_index::{
     Language,
-    edge_extract::{extract_go_edges, extract_rust_edges, extract_typescript_edges},
+    edge_extract::{
+        extract_go_edges, extract_python_edges, extract_rust_edges, extract_typescript_edges,
+    },
     index_file_with_edges,
 };
 
@@ -35,6 +38,14 @@ fn parse_typescript(source: &[u8]) -> tree_sitter::Tree {
         .set_language(&Language::TypeScript.tree_sitter_language())
         .expect("set typescript language");
     parser.parse(source, None).expect("parse typescript source")
+}
+
+fn parse_python(source: &[u8]) -> tree_sitter::Tree {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&Language::Python.tree_sitter_language())
+        .expect("set python language");
+    parser.parse(source, None).expect("parse python source")
 }
 
 #[test]
@@ -276,4 +287,131 @@ fn extracts_multiple_typescript_imports() {
     assert!(edges.iter().any(|e| e.target_qualified == "mod-a"));
     assert!(edges.iter().any(|e| e.target_qualified == "mod-b"));
     assert!(edges.iter().any(|e| e.target_qualified == "mod-c"));
+}
+
+#[test]
+fn extracts_simple_python_import() {
+    let source = b"import foo\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one python import edge");
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Imports);
+    assert_eq!(edge.source_qualified, "file::src/app.py");
+    assert_eq!(edge.target_qualified, "foo");
+    assert_eq!(edge.file_path, "src/app.py");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_dotted_python_import() {
+    let source = b"import foo.bar\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one dotted python import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(edges[0].target_qualified, "foo.bar");
+}
+
+#[test]
+fn extracts_aliased_python_import() {
+    let source = b"import foo as f\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one aliased python import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(
+        edges[0].target_qualified, "foo",
+        "alias should be dropped, target is the module"
+    );
+}
+
+#[test]
+fn extracts_multi_python_import() {
+    let source = b"import foo, bar\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_edges(&tree, source, "src/app.py");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "multi-import should emit one edge per module"
+    );
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().any(|e| e.target_qualified == "foo"));
+    assert!(edges.iter().any(|e| e.target_qualified == "bar"));
+}
+
+#[test]
+fn extracts_from_python_import() {
+    let source = b"from foo import bar\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "from-import should emit one edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(
+        edges[0].target_qualified, "foo",
+        "target is the source module, not the imported name"
+    );
+}
+
+#[test]
+fn extracts_from_dotted_python_import() {
+    let source = b"from foo.bar import x, y\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_edges(&tree, source, "src/app.py");
+
+    assert_eq!(
+        edges.len(),
+        1,
+        "multi-name from-import should still emit one edge for the module"
+    );
+    assert_eq!(edges[0].target_qualified, "foo.bar");
+}
+
+#[test]
+fn extracts_relative_python_import() {
+    let source = b"from . import x\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_edges(&tree, source, "src/app.py");
+
+    assert_eq!(
+        edges.len(),
+        1,
+        "relative import should emit one edge with literal dots"
+    );
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(
+        edges[0].target_qualified, ".",
+        "relative target should be the literal `.` text"
+    );
+}
+
+#[test]
+fn index_file_with_edges_returns_python_imports() {
+    let source = b"import os\nfrom pathlib import Path\n\ndef hello():\n    print(os.getcwd())\n";
+    let path = Path::new("app.py");
+
+    let (symbols, edges) = index_file_with_edges(path, source, Language::Python).unwrap();
+
+    assert!(
+        symbols.iter().any(|s| s.name == "hello"),
+        "should extract `hello` function symbol"
+    );
+    assert_eq!(edges.len(), 2, "should extract two python import edges");
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().all(|e| e.file_path == "app.py"));
+    assert!(edges.iter().any(|e| e.target_qualified == "os"));
+    assert!(edges.iter().any(|e| e.target_qualified == "pathlib"));
 }

@@ -2,10 +2,12 @@
 //!
 //! v0.3 emits import edges for Rust (one per `use_declaration`), Go
 //! (one per `import_spec`, covering single, grouped, aliased, dot, and
-//! blank import forms), and TypeScript (one per `import_statement`,
+//! blank import forms), TypeScript (one per `import_statement`,
 //! covering named, namespace, default, side-effect, and `import type`
-//! forms). Other languages and other edge kinds (calls, inheritance) are
-//! deferred — see
+//! forms), and Python (one per imported module path in `import_statement`
+//! / `import_from_statement`, covering simple, dotted, aliased, multi,
+//! `from`, and relative-import forms). Other languages and other edge
+//! kinds (calls, inheritance) are deferred — see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
@@ -27,6 +29,14 @@
 //! from the `import_statement` (e.g. `bar` from `import { foo } from 'bar';`).
 //! Both single-quoted and double-quoted specifiers are supported. Dynamic
 //! `import('bar')` and CommonJS `require('bar')` are out of scope for v0.3.
+//!
+//! For Python, the `target_qualified` is the literal dotted module path
+//! (e.g. `foo`, `foo.bar`). `import foo, bar` produces two edges; `import
+//! foo as f` drops the alias and emits `foo`; `from foo.bar import x, y`
+//! emits a single edge whose target is the source module `foo.bar`.
+//! Relative imports (`from . import x`, `from .foo import x`) surface the
+//! literal dot-prefixed text from the `relative_import` node — resolving
+//! relative paths against the package layout is deferred.
 //!
 //! This module is deliberately `pub` so per-language extractors can be
 //! exercised directly by integration tests and downstream consumers without
@@ -235,6 +245,96 @@ fn strip_ts_string_quotes(raw: &str) -> Option<String> {
     } else {
         Some(target.to_string())
     }
+}
+
+/// Extract import edges from a parsed Python source file.
+///
+/// Walks the AST for `import_statement` and `import_from_statement` nodes:
+///
+/// * `import foo`, `import foo.bar`, `import foo, bar` — emit one edge per
+///   `dotted_name` child of the `import_statement`.
+/// * `import foo as f` — descend into the `aliased_import` child and read
+///   the inner `dotted_name`; the alias is dropped.
+/// * `from foo import x, y` and `from foo.bar import x` — emit a single
+///   edge whose target is the *first* `dotted_name` child of the
+///   `import_from_statement` (the source module). Subsequent `dotted_name`s
+///   are imported names and are intentionally skipped.
+/// * `from . import x`, `from .foo import x` — the source is a
+///   `relative_import` node; its raw text (`.`, `.foo`, `..`) is used
+///   verbatim. Resolving relative imports against the package layout is
+///   deferred.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`].
+///
+/// Returns an empty vector if the tree has no import statements.
+pub fn extract_python_edges(tree: &tree_sitter::Tree, source: &[u8], file_path: &str) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_py_imports(tree.root_node(), source, file_path, &mut edges);
+    edges
+}
+
+fn walk_for_py_imports(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    out: &mut Vec<Edge>,
+) {
+    match node.kind() {
+        "import_statement" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "dotted_name" => {
+                        push_py_edge(child, source, file_path, out);
+                    }
+                    "aliased_import" => {
+                        // First `dotted_name` child of the alias is the module.
+                        let mut inner_cursor = child.walk();
+                        for inner in child.children(&mut inner_cursor) {
+                            if inner.kind() == "dotted_name" {
+                                push_py_edge(inner, source, file_path, out);
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        "import_from_statement" => {
+            // Only the *first* dotted_name (or relative_import) is the source
+            // module; later dotted_names are the imported-name list.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "dotted_name" || child.kind() == "relative_import" {
+                    push_py_edge(child, source, file_path, out);
+                    break;
+                }
+            }
+        }
+        _ => {}
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_py_imports(child, source, file_path, out);
+    }
+}
+
+fn push_py_edge(node: tree_sitter::Node<'_>, source: &[u8], file_path: &str, out: &mut Vec<Edge>) {
+    let text = node_text(node, source).trim();
+    if text.is_empty() {
+        return;
+    }
+    out.push(Edge {
+        source_qualified: format!("file::{}", file_path),
+        target_qualified: text.to_string(),
+        kind: EdgeKind::Imports,
+        file_path: file_path.to_string(),
+        line: node.start_position().row as u32 + 1,
+    });
 }
 
 #[cfg(test)]
