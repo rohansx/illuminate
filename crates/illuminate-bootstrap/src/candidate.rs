@@ -12,6 +12,9 @@ pub struct BootstrapCandidate {
     pub page_type: PageType,
     pub status: String,
     pub body: String,
+    /// Raw body text before template expansion; used for content-hash dedup
+    /// across different agent files that contain identical sections.
+    pub raw_body: String,
     pub tags: Vec<String>,
     pub source_kind: String,
     pub source_ref: String,

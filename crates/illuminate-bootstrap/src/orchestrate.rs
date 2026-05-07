@@ -35,7 +35,26 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
 
     report.candidates_found = candidates.len();
 
-    // 3. Dedup by id_slug — keep highest-confidence first (already mostly sorted by source order).
+    // 3a. Content-hash dedup: drop later candidates that share the same body
+    // (modulo whitespace) with an earlier one. This collapses the case where
+    // CLAUDE.md / .cursorrules / .windsurfrules contain the same section
+    // verbatim — they should produce one wiki page, not three.
+    let mut seen_bodies: HashSet<String> = HashSet::new();
+    candidates.retain(|c| {
+        let normalized = normalize_body(&c.raw_body);
+        if seen_bodies.contains(&normalized) {
+            eprintln!(
+                "[bootstrap] skip '{}' from '{}' (duplicate of earlier)",
+                c.title, c.source_ref
+            );
+            false
+        } else {
+            seen_bodies.insert(normalized);
+            true
+        }
+    });
+
+    // 3b. Dedup by id_slug — keep highest-confidence first (already mostly sorted by source order).
     let mut seen: HashSet<String> = HashSet::new();
     candidates.retain(|c| seen.insert(c.id_slug.clone()));
 
@@ -77,4 +96,8 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
     let _ = std::fs::write(&log_path, existing);
 
     Ok(report)
+}
+
+fn normalize_body(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }

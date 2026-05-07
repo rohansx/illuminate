@@ -157,6 +157,7 @@ fn flush(
         page_type: PageType::Decision,
         status: "active".into(),
         body: format!("## Decision\n\n{body_text}\n\n## Context\n\nExtracted from {filename}.\n\n## Consequences\n\n_Documented during bootstrap; review for accuracy._\n"),
+        raw_body: body_text.clone(),
         tags: vec!["bootstrap".into(), "agent-file".into()],
         source_kind: "agent_file".into(),
         source_ref: filename.into(),

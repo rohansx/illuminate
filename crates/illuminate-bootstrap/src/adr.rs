@@ -52,6 +52,7 @@ pub fn parse_adr(path: &Path, content: &str) -> Option<BootstrapCandidate> {
         title,
         page_type: PageType::Decision,
         status: "active".into(),
+        raw_body: body.clone(),
         body,
         tags: vec!["adr".into()],
         source_kind: "adr".into(),
