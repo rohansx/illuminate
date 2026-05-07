@@ -4,6 +4,31 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] — 2026-05-07
+
+### Added — function-call edges across 4 languages, path normalization, cache-bucket tokens
+
+- **Path normalization in `audit_with_files`.** New `Auditor::with_index_and_root` constructor accepts an optional `repo_root: Option<PathBuf>`. When set, absolute file paths are normalized to repo-relative form before `lookup_file` and seed building, eliminating silent empty-result bugs when CLI/MCP callers pass absolute paths. Existing `Auditor::new` and `Auditor::with_index` signatures unchanged (back-compat). New `resolve_repo_root_from_cwd()` helper mirroring `resolve_index_db_from_cwd`. CLI and MCP both wire through. (`crates/illuminate-audit/src/lib.rs`, `crates/illuminate-cli/src/commands/audit.rs`, `crates/illuminate-mcp/src/main.rs`)
+- **Cache-bucket token fields on `TrailRecord`.** `cache_creation_input_tokens` and `cache_read_input_tokens` are now optional fields on both `UsageBlock` (raw) and `TrailRecord` (normalized). Anthropic accurate cost math is now possible: spend = `input × input_rate + output × output_rate + cache_creation × cache_creation_rate + cache_read × cache_read_rate`. Cursor and Codex leave the cache fields as `None` (no Anthropic-style cache buckets in those formats). `#[serde(default)]` for back-compat. (`crates/illuminate-trail/src/{raw.rs,record.rs,claude.rs}`)
+- **Rust function-call edges.** `extract_rust_call_edges()` walks `function_item` → `call_expression` and emits `Edge { kind: Calls }` per call site. Source qualifier `<file>::<fn_name>`; target is the literal text of the call's function-path child (`bar`, `module::bar`, `x.method`, `Type::associated`). `self`/`crate`/`super` resolution deferred. Macro invocations excluded (they're `macro_invocation` nodes, not `call_expression`). Two-stage walker prevents double-attribution from nested `function_item`. (`crates/illuminate-index/src/edge_extract.rs`)
+- **Go function-call edges.** Same shape as Rust. Walks `function_declaration` and `method_declaration` → `call_expression`. Anonymous `func_literal` calls attribute to the enclosing named function (their lexical scope). Method receivers resolve via `child_by_field_name("name")` returning `field_identifier`. Selector calls (`r.m()`) emit target `r.m` literal text.
+- **TypeScript function-call edges.** Single recursive walker threading `enclosing_fn_name: Option<&str>` through children. Arrow functions transparent (calls inside arrow attribute to enclosing named fn; module-level arrows use `file::<path>` pseudo-node source). Class methods use the bare method name (no `Class::` prefix; recoverable via `Symbol` lookup). `function_declaration` and `method_definition` introduce new enclosing-fn slots. Member expressions (`obj.method()`) and subscript expressions (`obj[key]()`) emit literal text targets.
+- **Python function-call edges.** Same single-walker pattern as TS. tree-sitter-python uses bare `call` node kind (not `call_expression`). `lambda` is transparent. Module-level calls attribute to `file::<path>`. Class methods drop class prefix. Decorated functions (`decorated_definition` wrapping `function_definition`) work transparently because the recursive walk descends into the wrapper.
+- **Symbol-level seeds in `impact_radius`.** `Auditor::compute_impact` now seeds the BFS with both file-level pseudo-nodes (`file::<path>`) AND symbol-level qualifiers (`<path>::<sym>`) for every symbol returned by `lookup_file`. This is what makes the new Calls edges reachable: a seed `src/foo.rs::process_payment` follows outgoing Calls edges (callees) and incoming Calls edges (callers) via the recursive-CTE BFS. Without this, the v0.5 Calls edges would be stored but never traversed by audits. Forward-chain test (`a → b → c` in one file) confirms the lift end-to-end. (`crates/illuminate-audit/src/lib.rs`)
+
+### Fixed
+
+- Workspace-wide `cargo clippy --all-targets -- -D warnings` now passes — fixed `clippy::unnecessary_sort_by` in `illuminate-wiki/src/render.rs` (replaced with `sort_by_key(std::cmp::Reverse(...))`).
+- `edge_extract.rs` module doc said "v0.5"; corrected to "v0.4" before v0.4.0 tag.
+
+### Deferred to v0.6+
+
+- Java + C function-call edge extractors (currently Java/C are imports-only; calls extend the matrix).
+- Symbol-resolution pass (`self`/`crate`/`super` and TS class-prefix qualifiers — currently all literal text).
+- Anthropic ephemeral 5m / 1h cache TTL split (currently collapsed into single `cache_creation_input_tokens`).
+- `crates/illuminate-cli/src/commands/hook.rs` audit-hook wires through `Auditor::with_index_and_root` for impact in the PreToolUse path.
+- Cost-attribution analytics consumer for the new token fields.
+
 ## [0.4.0] — 2026-05-07
 
 ### Added — impact pipeline + multi-language edge coverage
