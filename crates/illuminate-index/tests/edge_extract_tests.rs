@@ -12,8 +12,8 @@ use illuminate_index::{
     Language,
     edge_extract::{
         extract_c_edges, extract_go_call_edges, extract_go_edges, extract_java_edges,
-        extract_python_edges, extract_rust_call_edges, extract_rust_edges,
-        extract_typescript_call_edges, extract_typescript_edges,
+        extract_python_call_edges, extract_python_edges, extract_rust_call_edges,
+        extract_rust_edges, extract_typescript_call_edges, extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -442,11 +442,14 @@ fn index_file_with_edges_returns_python_imports() {
         symbols.iter().any(|s| s.name == "hello"),
         "should extract `hello` function symbol"
     );
-    assert_eq!(edges.len(), 2, "should extract two python import edges");
-    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
-    assert!(edges.iter().all(|e| e.file_path == "app.py"));
-    assert!(edges.iter().any(|e| e.target_qualified == "os"));
-    assert!(edges.iter().any(|e| e.target_qualified == "pathlib"));
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    assert_eq!(imports.len(), 2, "should extract two python import edges");
+    assert!(imports.iter().all(|e| e.file_path == "app.py"));
+    assert!(imports.iter().any(|e| e.target_qualified == "os"));
+    assert!(imports.iter().any(|e| e.target_qualified == "pathlib"));
 }
 
 #[test]
@@ -1122,4 +1125,170 @@ fn index_file_with_edges_returns_imports_and_calls_ts() {
     );
     assert_eq!(calls[0].source_qualified, "src/app.ts::a");
     assert_eq!(calls[0].target_qualified, "x");
+}
+
+#[test]
+fn extracts_simple_python_call() {
+    let source = b"def foo():\n    bar()\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_call_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one py call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/app.py::foo");
+    assert_eq!(edge.target_qualified, "bar");
+    assert_eq!(edge.file_path, "src/app.py");
+    assert_eq!(edge.line, 2);
+}
+
+#[test]
+fn extracts_attribute_call_python() {
+    let source = b"def foo():\n    obj.method()\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_call_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one py call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/app.py::foo");
+    assert_eq!(edge.target_qualified, "obj.method");
+}
+
+#[test]
+fn extracts_chained_attribute_call_python() {
+    let source = b"def foo():\n    a.b.c()\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_call_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one py call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/app.py::foo");
+    assert_eq!(edge.target_qualified, "a.b.c");
+}
+
+#[test]
+fn extracts_top_level_python_call_uses_file_pseudo_node() {
+    // Module-level call (no enclosing function) — calls should attribute to
+    // the file-level pseudo-node `file::<path>`.
+    let source = b"print(\"hi\")\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_call_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one py call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(
+        edge.source_qualified, "file::src/app.py",
+        "module-level call should attribute to the file pseudo-node"
+    );
+    assert_eq!(edge.target_qualified, "print");
+}
+
+#[test]
+fn extracts_method_call_in_class_python() {
+    // A method inside a class body: the source qualifier is the bare method
+    // name (`<file>::m`), no class prefix — mirroring TypeScript's v0.5
+    // simpler choice.
+    let source = b"class A:\n    def m(self):\n        bar()\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_call_edges(&tree, source, "src/app.py");
+
+    assert_eq!(edges.len(), 1, "expected one py call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(
+        edge.source_qualified, "src/app.py::m",
+        "method call should attribute to bare method name (no class prefix)"
+    );
+    assert_eq!(edge.target_qualified, "bar");
+}
+
+#[test]
+fn extracts_lambda_call_attributes_to_enclosing() {
+    // A lambda inside a named function: calls inside the lambda body and
+    // calls in the surrounding function body should both attribute to the
+    // enclosing named function (`foo`) — lambdas are anonymous and
+    // transparent to attribution.
+    let source = b"def foo():\n    f = lambda x: bar(x)\n    f(1)\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_call_edges(&tree, source, "src/app.py");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "expected two py call edges (bar inside lambda and f at outer), got {:?}",
+        edges
+    );
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Calls));
+    assert!(
+        edges
+            .iter()
+            .all(|e| e.source_qualified == "src/app.py::foo"),
+        "all calls should attribute to enclosing named fn `foo`, got {:?}",
+        edges
+            .iter()
+            .map(|e| &e.source_qualified)
+            .collect::<Vec<_>>()
+    );
+    assert!(edges.iter().any(|e| e.target_qualified == "bar"));
+    assert!(edges.iter().any(|e| e.target_qualified == "f"));
+}
+
+#[test]
+fn multiple_python_funcs_each_get_their_own_calls() {
+    let source = b"def a():\n    x()\n\ndef b():\n    y()\n";
+    let tree = parse_python(source);
+
+    let edges = extract_python_call_edges(&tree, source, "src/m.py");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "expected two py call edges, got {:?}",
+        edges
+    );
+    let a_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "x")
+        .expect("should have x call");
+    assert_eq!(a_edge.source_qualified, "src/m.py::a");
+    let b_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "y")
+        .expect("should have y call");
+    assert_eq!(b_edge.source_qualified, "src/m.py::b");
+}
+
+#[test]
+fn index_file_with_edges_returns_imports_and_calls_python() {
+    let source = b"from foo import bar\n\ndef a():\n    bar()\n";
+    let path = Path::new("src/app.py");
+
+    let (_symbols, edges) = index_file_with_edges(path, source, Language::Python).unwrap();
+
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    let calls: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Calls).collect();
+
+    assert_eq!(imports.len(), 1, "should have one py import edge");
+    assert_eq!(imports[0].target_qualified, "foo");
+
+    assert_eq!(
+        calls.len(),
+        1,
+        "should have one py call edge, got {:?}",
+        calls
+    );
+    assert_eq!(calls[0].source_qualified, "src/app.py::a");
+    assert_eq!(calls[0].target_qualified, "bar");
 }

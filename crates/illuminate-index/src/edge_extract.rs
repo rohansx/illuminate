@@ -14,7 +14,7 @@
 //! `.hpp` files dispatch through `Language::C`, and `#include` extraction
 //! works even when C++ class/template/namespace bodies parse imperfectly.
 //!
-//! Rust + Go + TypeScript additionally emit Calls edges. Rust uses
+//! Rust + Go + TypeScript + Python additionally emit Calls edges. Rust uses
 //! [`extract_rust_call_edges`]: one edge per `call_expression` found within
 //! a `function_item` body, with the source qualifier
 //! `<file_path>::<fn_name>` and the target qualifier the literal text of
@@ -30,8 +30,14 @@
 //! (`function_declaration` or class `method_definition`). Arrow functions
 //! are anonymous and transparent to attribution — calls inside an arrow
 //! attribute to the enclosing named function, or to the file-level
-//! pseudo-node `file::<path>` if no enclosing named function exists. Other
-//! languages remain imports-only; see
+//! pseudo-node `file::<path>` if no enclosing named function exists.
+//! Python follows via [`extract_python_call_edges`]: one edge per `call`
+//! node (note: tree-sitter-python uses bare `call`, not `call_expression`),
+//! attributed to the nearest enclosing `function_definition` (which
+//! covers both top-level functions and class methods — the bare method
+//! name is used, matching TypeScript's no-class-prefix choice). Lambdas
+//! are anonymous and transparent to attribution. Other languages remain
+//! imports-only; see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
@@ -718,6 +724,114 @@ fn push_py_edge(node: tree_sitter::Node<'_>, source: &[u8], file_path: &str, out
         file_path: file_path.to_string(),
         line: node.start_position().row as u32 + 1,
     });
+}
+
+/// Extract function-call edges from a parsed Python source file.
+///
+/// Mirrors [`extract_typescript_call_edges`] but for Python's grammar.
+/// Performs a single recursive walk that threads the **nearest enclosing
+/// named function** down through child nodes; each `call` node it
+/// encounters contributes one edge whose `source_qualified` is
+/// `"<file_path>::<fn_name>"` (or `"file::<file_path>"` if no named
+/// function is in scope) and whose `target_qualified` is the literal text
+/// of the call's first child (`bar`, `obj.method`, `a.b.c`, `arr[0]`).
+///
+/// Note: tree-sitter-python's grammar uses the bare node kind `call`,
+/// not `call_expression` (Rust/Go/TS). This is the only meaningful
+/// surprise vs. the TypeScript implementation.
+///
+/// Python nesting variants:
+///
+/// * `function_definition` — `def foo(...): ...`. Provides a `name`
+///   field and replaces the enclosing-fn slot for its subtree. Covers
+///   both top-level functions and class methods (a `class_definition`
+///   contains `function_definition` children just like the module body
+///   does). Per the v0.5 simpler choice, the source qualifier for a
+///   class method is `<file>::<methodName>` — no class prefix.
+/// * `lambda` — anonymous and transparent to attribution: calls inside a
+///   lambda attribute to the enclosing named function, or to
+///   `file::<path>` if no enclosing named function exists.
+/// * Decorators don't change the function name — tree-sitter-python's
+///   `decorated_definition` wraps the inner `function_definition` whose
+///   `name` field still resolves to the underlying function identifier.
+///
+/// Targets are kept as literal text — `bar` (identifier), `obj.method`
+/// / `a.b.c` (attribute), `arr[0]` (subscript) are emitted verbatim.
+/// Resolving identifiers against the import graph is deferred to a future
+/// symbol-resolution pass.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`], which dispatches
+/// by `Language` and concatenates import + call edges for Python.
+///
+/// Returns an empty vector if the tree has no `call` nodes.
+pub fn extract_python_call_edges(
+    tree: &tree_sitter::Tree,
+    source: &[u8],
+    file_path: &str,
+) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_py_funcs(tree.root_node(), source, file_path, None, &mut edges);
+    edges
+}
+
+fn walk_for_py_funcs(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    enclosing_fn_name: Option<&str>,
+    out: &mut Vec<Edge>,
+) {
+    // Determine whether this node introduces a new enclosing named function.
+    // `function_definition` provides a name and shadows the outer enclosing
+    // fn for its subtree. `lambda` is anonymous — it preserves the outer
+    // enclosing fn so calls inside its body still attribute correctly.
+    let new_enclosing: Option<String> = match node.kind() {
+        "function_definition" => python_function_name(node, source),
+        _ => None,
+    };
+
+    if node.kind() == "call"
+        && let Some(target_node) = node.child(0)
+    {
+        let target = node_text(target_node, source).trim();
+        if !target.is_empty() {
+            let source_qn = match enclosing_fn_name {
+                Some(name) => format!("{}::{}", file_path, name),
+                None => format!("file::{}", file_path),
+            };
+            out.push(Edge {
+                source_qualified: source_qn,
+                target_qualified: target.to_string(),
+                kind: EdgeKind::Calls,
+                file_path: file_path.to_string(),
+                line: target_node.start_position().row as u32 + 1,
+            });
+        }
+    }
+
+    let pass_down: Option<&str> = new_enclosing.as_deref().or(enclosing_fn_name);
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_py_funcs(child, source, file_path, pass_down, out);
+    }
+}
+
+/// Resolve the literal text of a `function_definition` node's name.
+/// tree-sitter-python exposes the name via the `name` field, which points
+/// to an `identifier` node. Returns `None` if the node has no name child
+/// (defensive against malformed parses), in which case the caller treats
+/// this scope as unnamed (calls inside attribute to the outer enclosing
+/// fn or the file pseudo-node).
+fn python_function_name(fn_node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    if let Some(name_node) = fn_node.child_by_field_name("name") {
+        let text = node_text(name_node, source).trim();
+        if !text.is_empty() {
+            return Some(text.to_string());
+        }
+    }
+    None
 }
 
 /// Extract import edges from a parsed Java source file.
