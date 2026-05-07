@@ -17,6 +17,8 @@ use crate::{Result, TrailError};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 /// Resolve Codex's home directory.
@@ -112,13 +114,25 @@ fn is_n_digits(s: &str, n: usize) -> bool {
 /// The remainder of the file is streamed line-by-line. Unknown record types
 /// are ignored. Missing timestamps fall back to the file's modified time.
 pub fn parse_session(path: &Path) -> Result<TrailRecord> {
-    let content = fs::read_to_string(path)?;
-    let mut lines = content.lines().filter(|l| !l.trim().is_empty());
+    let file = File::open(path)?;
+    let mut lines = BufReader::new(file).lines();
 
-    let first = lines
-        .next()
-        .ok_or_else(|| TrailError::Parse("not a codex session".to_string()))?;
-    let meta: Value = serde_json::from_str(first)
+    // Find the first non-empty line — that must be the session_meta.
+    let first_line = loop {
+        match lines.next() {
+            Some(Ok(line)) => {
+                if !line.trim().is_empty() {
+                    break line;
+                }
+            }
+            Some(Err(e)) => return Err(TrailError::Io(e)),
+            None => {
+                return Err(TrailError::Parse("not a codex session".to_string()));
+            }
+        }
+    };
+
+    let meta: Value = serde_json::from_str(&first_line)
         .map_err(|_| TrailError::Parse("not a codex session".to_string()))?;
 
     if !is_codex_session_meta(&meta) {
@@ -148,8 +162,12 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
     let mut started_at: Option<DateTime<Utc>> = meta_ts;
     let mut ended_at: Option<DateTime<Utc>> = meta_ts;
 
-    for raw_line in lines {
-        let v: Value = match serde_json::from_str(raw_line) {
+    for line_result in lines {
+        let raw_line = line_result?;
+        if raw_line.trim().is_empty() {
+            continue;
+        }
+        let v: Value = match serde_json::from_str(&raw_line) {
             Ok(v) => v,
             Err(_) => continue,
         };
@@ -166,7 +184,9 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
 
     let fallback = file_mtime(path).unwrap_or_else(Utc::now);
     let started_at = started_at.unwrap_or(fallback);
-    let ended_at = ended_at.unwrap_or(started_at);
+    // Clamp ended_at to never precede started_at — defensive against clock skew
+    // or async-logged events whose timestamps run behind the session_meta record.
+    let ended_at = ended_at.unwrap_or(started_at).max(started_at);
 
     Ok(TrailRecord {
         session_id,

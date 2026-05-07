@@ -157,6 +157,47 @@ fn rejects_non_codex_session_meta() {
 }
 
 #[test]
+fn clamps_ended_at_to_at_least_started_at() {
+    // session_meta carries a timestamp later than the only message timestamp —
+    // simulating clock skew or async-logged events whose timestamps lag the
+    // session header. Without the clamp the parser would emit
+    // `ended_at < started_at`.
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("rollout-skew.jsonl");
+
+    let lines = vec![
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": "2026-05-07T12:00:00Z",
+            "payload": {
+                "id": "sess-skew",
+                "originator": "codex",
+                "model": "gpt-5",
+                "cwd": "/tmp/skew"
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-05-07T10:00:00Z",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "earlier event"}]
+            }
+        }),
+    ];
+    write_jsonl(&path, &lines);
+
+    let rec = parse_session(&path).expect("parse ok");
+    assert!(
+        rec.ended_at >= rec.started_at,
+        "ended_at must never precede started_at, got started={}, ended={}",
+        rec.started_at,
+        rec.ended_at
+    );
+}
+
+#[test]
 fn handles_unknown_record_types() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("rollout-unknown.jsonl");
