@@ -12,10 +12,20 @@ use illuminate_extract::schema::ExtractionSchema;
 
 pub struct Graph {
     storage: Storage,
-    #[allow(dead_code)]
     db_path: PathBuf,
     #[cfg(feature = "extract")]
     pipeline: Option<ExtractionPipeline>,
+}
+
+impl Graph {
+    /// Path of the database backing this graph.
+    ///
+    /// Returns `:memory:` for in-memory graphs (created via [`Self::in_memory`]).
+    /// Useful for callers (e.g. the MCP server) that need to construct a
+    /// second long-lived consumer over the same SQLite file.
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
+    }
 }
 
 impl Graph {

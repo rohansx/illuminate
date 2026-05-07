@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use illuminate::{Episode, Graph};
+use illuminate_audit::Auditor;
 use illuminate_audit::policy::IntentPolicy;
+use illuminate_audit::response::AuditStatus;
 use illuminate_embed::EmbedEngine;
 use illuminate_reflect::Severity;
 use rusqlite::Connection;
@@ -122,6 +124,32 @@ impl ToolContext {
                 Value::Null
             }
         }
+    }
+
+    /// Build a fresh [`Auditor`] for a single audit call.
+    ///
+    /// `Graph` is not `Clone` (it owns a SQLite connection), so we cannot
+    /// share `self.graph` with the auditor. Instead we re-open the same
+    /// SQLite file via [`Graph::open`] — cheap (~1ms) and yields a connection
+    /// that sees identical data. For in-memory graphs (tests) the audit path
+    /// gets an empty graph; that is consistent with current MCP audit-test
+    /// fixtures, which never seed graph data for the audit handler.
+    fn build_auditor(&self) -> Result<Auditor, String> {
+        let path = {
+            let graph = self.graph.lock().map_err(|e| e.to_string())?;
+            graph.db_path().to_path_buf()
+        };
+
+        let audit_graph = if path.as_os_str() == ":memory:" {
+            Graph::in_memory().map_err(|e| e.to_string())?
+        } else {
+            Graph::open(&path).map_err(|e| e.to_string())?
+        };
+
+        Ok(match self.index_db_path.clone() {
+            Some(idx) => Auditor::with_index(audit_graph, self.policies.clone(), idx),
+            None => Auditor::new(audit_graph, self.policies.clone()),
+        })
     }
 
     /// Populate the in-memory embedding cache from SQLite if it hasn't been loaded yet.
@@ -512,6 +540,15 @@ impl ToolContext {
 
     /// Tool: illuminate_audit
     /// Cross-reference an agent's proposed plan against the decision graph and intent policies.
+    ///
+    /// Delegates the policy + decision-conflict path to [`Auditor::audit_with_files`]
+    /// so the MCP server and CLI produce the same verdict for the same input.
+    /// MCP retains two responsibilities the auditor does not handle:
+    ///   1. mapping empty `ImpactInfo` → JSON `null` (auditor returns an empty
+    ///      object; the existing wire shape promises `null` for "no data").
+    ///   2. surfacing reflexion episodes recorded in the decision graph
+    ///      (`source = "reflexion"`). The auditor's reflexion path consults a
+    ///      `ReflexionStore`, not graph episodes, and is not wired into MCP.
     pub async fn illuminate_audit(&self, args: Value) -> Result<Value, String> {
         let plan = args["plan"]
             .as_str()
@@ -530,135 +567,61 @@ impl ToolContext {
             })
             .unwrap_or_default();
 
+        // Impact JSON keeps the MCP-specific "null when no data" convention.
+        // The auditor would return an empty `ImpactInfo` object for the same
+        // case, so we compute it on the MCP side and ignore `result.impact`.
         let impact_json = self.compute_impact(&files);
 
-        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        // Pull the decision-graph episodes once for the MCP-specific
+        // reflexion surface, then drop the lock before constructing the
+        // auditor (which opens its own connection to the same SQLite file).
+        let reflexion_episodes = {
+            let graph = self.graph.lock().map_err(|e| e.to_string())?;
+            graph.search(&plan, 20).map_err(|e| e.to_string())?
+        };
 
-        // Build auditor with a clone-free approach: we need the graph for Auditor
-        // but it's behind a Mutex. Create a temporary in-memory graph for audit,
-        // or use the search API directly.
-        // For graph conflict detection, we search directly
-        let mut policy_violations = Vec::new();
-        let plan_lower = plan.to_lowercase();
+        let auditor = self.build_auditor()?;
+        let result = auditor
+            .audit_with_files(&plan, &files)
+            .map_err(|e| e.to_string())?;
 
-        // Check intent policies
-        for policy in &self.policies {
-            match policy {
-                IntentPolicy::MustUse {
-                    name,
-                    entity,
-                    reject,
-                    reason,
-                    severity,
-                } => {
-                    for rejected in reject {
-                        if plan_lower.contains(&rejected.to_lowercase()) {
-                            policy_violations.push(json!({
-                                "policy": name,
-                                "expected": entity,
-                                "found": rejected,
-                                "reason": reason,
-                                "severity": format!("{severity:?}").to_lowercase(),
-                            }));
-                        }
-                    }
-                }
-                IntentPolicy::Frozen {
-                    name,
-                    paths,
-                    reason,
-                    severity,
-                    expires,
-                } => {
-                    if let Some(exp) = expires
-                        && chrono::Utc::now() > *exp
-                    {
-                        continue;
-                    }
-                    for path in paths {
-                        let base = path.to_lowercase().replace("/**", "").replace("/*", "");
-                        if plan_lower.contains(&base) {
-                            policy_violations.push(json!({
-                                "policy": name,
-                                "frozen_path": path,
-                                "reason": reason,
-                                "severity": format!("{severity:?}").to_lowercase(),
-                            }));
-                        }
-                    }
-                }
-                IntentPolicy::RejectedPattern {
-                    name,
-                    pattern,
-                    reason,
-                    severity,
-                    ..
-                } => {
-                    if plan_lower.contains(&pattern.to_lowercase()) {
-                        policy_violations.push(json!({
-                            "policy": name,
-                            "pattern": pattern,
-                            "reason": reason,
-                            "severity": format!("{severity:?}").to_lowercase(),
-                        }));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Search graph for decision conflicts
-        let mut decision_conflicts = Vec::new();
-        let search_results = graph.search(&plan, 20).map_err(|e| e.to_string())?;
-        for (episode, score) in &search_results {
-            let content_lower = episode.content.to_lowercase();
-            let has_rejection = [
-                "rejected",
-                "not ",
-                "instead of",
-                "over",
-                "rather than",
-                "avoid",
-                "dropped",
-            ]
+        // Reflexion lookup: scan graph search results for `source =
+        // "reflexion"` episodes and pull `metadata.reflexion`. This is
+        // MCP-specific and overrides anything the auditor might have placed
+        // in `result.reflexions` (which is always empty here because the
+        // server does not wire a `ReflexionStore` into the `Auditor`).
+        let reflexions: Vec<Value> = reflexion_episodes
             .iter()
-            .any(|kw| content_lower.contains(kw));
-
-            if has_rejection && *score > 0.0 {
-                decision_conflicts.push(json!({
-                    "id": episode.id,
-                    "content": episode.content,
-                    "source": episode.source,
-                    "recorded_at": episode.recorded_at.to_rfc3339(),
-                    "relevance_score": score,
-                }));
-            }
-        }
-
-        // Search reflexion episodes
-        let mut reflexions = Vec::new();
-        for (episode, _) in &search_results {
-            if episode.source.as_deref() == Some("reflexion")
-                && let Some(meta) = &episode.metadata
-                && let Some(refl) = meta.get("reflexion")
-            {
-                reflexions.push(json!({
+            .filter_map(|(episode, _)| {
+                if episode.source.as_deref() != Some("reflexion") {
+                    return None;
+                }
+                let refl = episode.metadata.as_ref()?.get("reflexion")?;
+                Some(json!({
                     "failure": refl.get("failure"),
                     "root_cause": refl.get("root_cause"),
                     "corrective_action": refl.get("corrective_action"),
                     "severity": refl.get("severity"),
-                }));
-            }
-        }
+                }))
+            })
+            .collect();
 
-        let has_errors = !policy_violations.is_empty() || !decision_conflicts.is_empty();
-        let has_warnings = !reflexions.is_empty();
-        let status = if has_errors {
-            "violation"
-        } else if has_warnings {
-            "warning"
-        } else {
-            "pass"
+        let policy_violations: Vec<Value> = result
+            .policy_violations
+            .iter()
+            .map(policy_violation_to_json)
+            .collect();
+        let decision_conflicts: Vec<Value> =
+            result.violations.iter().map(violation_to_json).collect();
+
+        // MCP wire status: `result.status` already reflects policy +
+        // decision-conflict severity. Reflexions are graph-derived here, so
+        // upgrade `pass` → `warning` when they exist (matches prior behaviour).
+        let status = match result.status {
+            AuditStatus::Violation => "violation",
+            AuditStatus::Warning => "warning",
+            AuditStatus::Pass if !reflexions.is_empty() => "warning",
+            AuditStatus::Pass => "pass",
         };
 
         Ok(json!({
@@ -943,6 +906,38 @@ fn open_index_connection(path: &Path) -> Option<Mutex<Connection>> {
             None
         }
     }
+}
+
+/// Convert a [`PolicyViolation`] from the auditor into the MCP wire shape.
+///
+/// Uniform `{policy, expected, found, reason, severity}` regardless of
+/// originating policy variant — the auditor already flattens variant-specific
+/// fields into `expected`/`found`. `severity` is rendered lowercase via
+/// `Serialize` on [`AuditSeverity`].
+fn policy_violation_to_json(v: &illuminate_audit::policy::PolicyViolation) -> Value {
+    json!({
+        "policy": v.policy_name,
+        "expected": v.expected,
+        "found": v.found,
+        "reason": v.reason,
+        "severity": serde_json::to_value(&v.severity).unwrap_or(Value::Null),
+    })
+}
+
+/// Convert a decision-conflict [`Violation`] from the auditor into the MCP
+/// wire shape. The historical `relevance_score` field is omitted — the
+/// auditor surface no longer carries the per-result score. Consumers should
+/// use `severity` or the decision metadata for ranking.
+fn violation_to_json(v: &illuminate_audit::response::Violation) -> Value {
+    let ep = v.conflicting_decision.as_ref();
+    json!({
+        "id": ep.map(|e| e.id.clone()),
+        "content": ep.map(|e| e.content.clone()),
+        "source": ep.and_then(|e| e.source.clone()),
+        "recorded_at": ep.map(|e| e.recorded_at.to_rfc3339()),
+        "plan_entity": v.plan_entity,
+        "severity": serde_json::to_value(&v.severity).unwrap_or(Value::Null),
+    })
 }
 
 /// Wrap a tool result into an MCP content array.

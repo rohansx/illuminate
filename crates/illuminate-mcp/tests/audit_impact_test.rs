@@ -6,6 +6,8 @@
 //! actually invokes for every JSON-RPC `tools/call`.
 
 use illuminate::Graph;
+use illuminate_audit::policy::IntentPolicy;
+use illuminate_audit::response::Severity;
 use illuminate_index::edges::{Edge, EdgeKind};
 use illuminate_index::storage::{create_schema, upsert_edges};
 use illuminate_mcp::tools::ToolContext;
@@ -157,4 +159,44 @@ fn populate_minimal_graph(db_path: &std::path::Path) {
 
     upsert_edges(&conn, "crates/billing/src/lib.rs", &[billing_to_payments]).unwrap();
     upsert_edges(&conn, "crates/api/src/lib.rs", &[api_to_billing]).unwrap();
+}
+
+/// Consistency check: when a `RejectedPattern` policy rejects "Redis" and the
+/// agent proposes "add Redis caching", the MCP handler must produce the same
+/// verdict (`status = "violation"`, non-empty `policy_violations`) as
+/// `Auditor::audit_with_files` would. Proves MCP delegates to the auditor
+/// rather than reimplementing policy logic inline.
+#[tokio::test]
+async fn audit_via_auditor_returns_consistent_status() {
+    let graph = Graph::in_memory().unwrap();
+    let policy = IntentPolicy::RejectedPattern {
+        name: "no-redis".to_string(),
+        pattern: "Redis".to_string(),
+        reason: "single-binary deployment story".to_string(),
+        severity: Severity::Error,
+        decision_ref: None,
+    };
+    let ctx = ToolContext::with_policies(graph, None, vec![policy]);
+
+    let resp = ctx
+        .illuminate_audit(json!({"plan": "add Redis caching"}))
+        .await
+        .expect("audit must succeed");
+
+    assert_eq!(
+        resp["status"].as_str(),
+        Some("violation"),
+        "rejected pattern should yield violation status, got {resp:?}"
+    );
+    let violations = resp["policy_violations"]
+        .as_array()
+        .expect("policy_violations must be an array");
+    assert!(
+        !violations.is_empty(),
+        "expected at least one policy violation, got {violations:?}"
+    );
+    assert!(
+        violations.iter().any(|v| v["policy"] == "no-redis"),
+        "expected no-redis policy in violations: {violations:?}"
+    );
 }
