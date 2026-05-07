@@ -762,11 +762,11 @@ fn rebuild_populates_edges_table() {
 }
 
 #[test]
-fn rebuild_populates_no_edges_for_java_file() {
+fn rebuild_populates_no_edges_for_c_file_without_includes() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
-        tmp.path().join("Billing.java"),
-        "package com.acme;\n\npublic class Billing {\n    public void hello() {}\n}\n",
+        tmp.path().join("util.c"),
+        "int add(int a, int b) {\n    return a + b;\n}\n",
     )
     .unwrap();
 
@@ -776,11 +776,11 @@ fn rebuild_populates_no_edges_for_java_file() {
 
     assert!(
         stats.symbols_extracted > 0,
-        "java symbol extractor should still run"
+        "c symbol extractor should still run"
     );
     assert_eq!(
         stats.edges_extracted, 0,
-        "no edge extractor for java yet, edges_extracted should be 0"
+        "no edge extractor for c yet, edges_extracted should be 0"
     );
 
     drop(index);
@@ -789,13 +789,13 @@ fn rebuild_populates_no_edges_for_java_file() {
     let symbol_total: i64 = conn
         .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
         .unwrap();
-    assert!(symbol_total > 0, "java symbols should be persisted");
+    assert!(symbol_total > 0, "c symbols should be persisted");
 
     let edge_total: i64 = conn
         .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap();
     assert_eq!(
         edge_total, 0,
-        "edges table should be empty for java-only project"
+        "edges table should be empty for c-only project without includes"
     );
 }

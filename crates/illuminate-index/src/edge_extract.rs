@@ -1,14 +1,15 @@
 //! Edge extraction from tree-sitter ASTs.
 //!
-//! v0.3 emits import edges for Rust (one per `use_declaration`), Go
-//! (one per `import_spec`, covering single, grouped, aliased, dot, and
-//! blank import forms), TypeScript (one per `import_statement`,
-//! covering named, namespace, default, side-effect, and `import type`
-//! forms), and Python (one per imported module path in `import_statement`
-//! / `import_from_statement`, covering simple, dotted, aliased, multi,
-//! `from`, and relative-import forms). Other languages and other edge
-//! kinds (calls, inheritance) are deferred — see
-//! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
+//! v0.4 emits import edges for Rust + Go + TypeScript + Python + Java.
+//! Rust: one per `use_declaration`. Go: one per `import_spec`, covering
+//! single, grouped, aliased, dot, and blank import forms. TypeScript: one
+//! per `import_statement`, covering named, namespace, default, side-effect,
+//! and `import type` forms. Python: one per imported module path in
+//! `import_statement` / `import_from_statement`, covering simple, dotted,
+//! aliased, multi, `from`, and relative-import forms. Java: one per
+//! `import_declaration`, covering simple, `static`, and wildcard forms.
+//! Other languages and other edge kinds (calls, inheritance) are deferred —
+//! see `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
 //! `file::<file_path>`. We don't yet have function-scoped imports, so this
@@ -37,6 +38,13 @@
 //! Relative imports (`from . import x`, `from .foo import x`) surface the
 //! literal dot-prefixed text from the `relative_import` node — resolving
 //! relative paths against the package layout is deferred.
+//!
+//! For Java, the `target_qualified` is the literal dotted import target,
+//! reconstructed from the `import_declaration` text by stripping the
+//! leading `import ` keyword, an optional `static` modifier, and the
+//! trailing `;`. `import com.foo.Bar;` emits target `com.foo.Bar`,
+//! `import static com.foo.Bar.method;` emits `com.foo.Bar.method`, and
+//! `import com.foo.*;` emits `com.foo.*` verbatim.
 //!
 //! This module is deliberately `pub` so per-language extractors can be
 //! exercised directly by integration tests and downstream consumers without
@@ -337,9 +345,82 @@ fn push_py_edge(node: tree_sitter::Node<'_>, source: &[u8], file_path: &str, out
     });
 }
 
+/// Extract import edges from a parsed Java source file.
+///
+/// Walks the AST for `import_declaration` nodes — this single node kind
+/// covers every Java import form (simple `import com.foo.Bar;`, static
+/// `import static com.foo.Bar.method;`, and wildcard
+/// `import com.foo.*;`). Each declaration contributes one edge whose
+/// `target_qualified` is the literal dotted target reconstructed from the
+/// declaration text.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`].
+///
+/// Returns an empty vector if the tree has no import declarations.
+pub fn extract_java_edges(tree: &tree_sitter::Tree, source: &[u8], file_path: &str) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_java_imports(tree.root_node(), source, file_path, &mut edges);
+    edges
+}
+
+fn walk_for_java_imports(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    out: &mut Vec<Edge>,
+) {
+    if node.kind() == "import_declaration" {
+        let raw = node_text(node, source);
+        if let Some(target) = parse_java_import_target(raw) {
+            out.push(Edge {
+                source_qualified: format!("file::{}", file_path),
+                target_qualified: target,
+                kind: EdgeKind::Imports,
+                file_path: file_path.to_string(),
+                line: node.start_position().row as u32 + 1,
+            });
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_java_imports(child, source, file_path, out);
+    }
+}
+
+/// Reconstruct the import target from an `import_declaration`'s raw text.
+///
+/// Strips the leading `import` keyword, an optional `static` modifier
+/// (only when followed by whitespace, to avoid matching identifiers that
+/// happen to start with `static`), and the trailing `;`. Trims surrounding
+/// whitespace so multi-line or loosely-formatted declarations still produce
+/// a clean target. Returns `None` for empty or malformed declarations so
+/// the walker can skip emitting a useless edge.
+fn parse_java_import_target(decl_text: &str) -> Option<String> {
+    let trimmed = decl_text.trim();
+    let after_kw = trimmed
+        .strip_prefix("import")
+        .unwrap_or(trimmed)
+        .trim_start();
+    let body = after_kw.strip_suffix(';').unwrap_or(after_kw).trim();
+    let target = match body.strip_prefix("static") {
+        Some(rest) if rest.starts_with(char::is_whitespace) => rest.trim(),
+        _ => body,
+    };
+    if target.is_empty() {
+        None
+    } else {
+        Some(target.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{strip_go_import_quotes, strip_ts_string_quotes, use_target};
+    use super::{
+        parse_java_import_target, strip_go_import_quotes, strip_ts_string_quotes, use_target,
+    };
 
     #[test]
     fn use_target_returns_none_for_empty_decl() {
@@ -386,5 +467,35 @@ mod tests {
         assert_eq!(strip_ts_string_quotes("''"), None);
         assert_eq!(strip_ts_string_quotes("\"\""), None);
         assert_eq!(strip_ts_string_quotes(""), None);
+    }
+
+    #[test]
+    fn parse_java_import_target_handles_simple_import() {
+        assert_eq!(
+            parse_java_import_target("import com.foo.Bar;"),
+            Some("com.foo.Bar".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_java_import_target_handles_static_import() {
+        assert_eq!(
+            parse_java_import_target("import static com.foo.Bar.method;"),
+            Some("com.foo.Bar.method".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_java_import_target_handles_wildcard_import() {
+        assert_eq!(
+            parse_java_import_target("import com.foo.*;"),
+            Some("com.foo.*".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_java_import_target_returns_none_for_empty() {
+        assert_eq!(parse_java_import_target("import ;"), None);
+        assert_eq!(parse_java_import_target(""), None);
     }
 }

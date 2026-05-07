@@ -1,9 +1,9 @@
 //! Tests for per-language import edge extraction in illuminate-index.
 //!
 //! These tests cover the `extract_rust_edges`, `extract_go_edges`,
-//! `extract_typescript_edges`, and `extract_python_edges` functions plus the
-//! `index_file_with_edges` combined helper. Other languages still return
-//! empty edges in v0.3.
+//! `extract_typescript_edges`, `extract_python_edges`, and
+//! `extract_java_edges` functions plus the `index_file_with_edges` combined
+//! helper. Other languages still return empty edges in v0.4.
 
 use std::path::Path;
 
@@ -11,7 +11,8 @@ use illuminate_index::edges::EdgeKind;
 use illuminate_index::{
     Language,
     edge_extract::{
-        extract_go_edges, extract_python_edges, extract_rust_edges, extract_typescript_edges,
+        extract_go_edges, extract_java_edges, extract_python_edges, extract_rust_edges,
+        extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -46,6 +47,14 @@ fn parse_python(source: &[u8]) -> tree_sitter::Tree {
         .set_language(&Language::Python.tree_sitter_language())
         .expect("set python language");
     parser.parse(source, None).expect("parse python source")
+}
+
+fn parse_java(source: &[u8]) -> tree_sitter::Tree {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&Language::Java.tree_sitter_language())
+        .expect("set java language");
+    parser.parse(source, None).expect("parse java source")
 }
 
 #[test]
@@ -414,4 +423,90 @@ fn index_file_with_edges_returns_python_imports() {
     assert!(edges.iter().all(|e| e.file_path == "app.py"));
     assert!(edges.iter().any(|e| e.target_qualified == "os"));
     assert!(edges.iter().any(|e| e.target_qualified == "pathlib"));
+}
+
+#[test]
+fn extracts_simple_java_import() {
+    let source = b"package com.acme;\n\nimport com.foo.Bar;\n\npublic class App {}\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_edges(&tree, source, "src/App.java");
+
+    assert_eq!(edges.len(), 1, "expected one java import edge");
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Imports);
+    assert_eq!(edge.source_qualified, "file::src/App.java");
+    assert_eq!(edge.target_qualified, "com.foo.Bar");
+    assert_eq!(edge.file_path, "src/App.java");
+    assert_eq!(edge.line, 3);
+}
+
+#[test]
+fn extracts_static_java_import() {
+    let source = b"package com.acme;\n\nimport static com.foo.Bar.method;\n\npublic class App {}\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_edges(&tree, source, "src/App.java");
+
+    assert_eq!(edges.len(), 1, "expected one static java import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(
+        edges[0].target_qualified, "com.foo.Bar.method",
+        "static keyword should be stripped, full member path preserved"
+    );
+}
+
+#[test]
+fn extracts_wildcard_java_import() {
+    let source = b"package com.acme;\n\nimport com.foo.*;\n\npublic class App {}\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_edges(&tree, source, "src/App.java");
+
+    assert_eq!(edges.len(), 1, "expected one wildcard java import edge");
+    assert_eq!(edges[0].kind, EdgeKind::Imports);
+    assert_eq!(
+        edges[0].target_qualified, "com.foo.*",
+        "wildcard suffix should be preserved verbatim"
+    );
+}
+
+#[test]
+fn extracts_multiple_java_imports() {
+    let source = b"package com.acme;\n\nimport com.foo.Bar;\nimport static com.foo.Bar.method;\nimport com.baz.*;\n\npublic class App {}\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_edges(&tree, source, "src/App.java");
+
+    assert_eq!(edges.len(), 3, "expected three java import edges");
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().any(|e| e.target_qualified == "com.foo.Bar"));
+    assert!(
+        edges
+            .iter()
+            .any(|e| e.target_qualified == "com.foo.Bar.method")
+    );
+    assert!(edges.iter().any(|e| e.target_qualified == "com.baz.*"));
+}
+
+#[test]
+fn index_file_with_edges_returns_java_imports() {
+    let source = b"package com.acme;\n\nimport com.foo.Bar;\nimport static com.foo.Bar.method;\n\npublic class App {\n    public void hello() {}\n}\n";
+    let path = Path::new("App.java");
+
+    let (symbols, edges) = index_file_with_edges(path, source, Language::Java).unwrap();
+
+    assert!(
+        symbols.iter().any(|s| s.name == "App"),
+        "should extract `App` class symbol"
+    );
+    assert_eq!(edges.len(), 2, "should extract two java import edges");
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().all(|e| e.file_path == "App.java"));
+    assert!(edges.iter().any(|e| e.target_qualified == "com.foo.Bar"));
+    assert!(
+        edges
+            .iter()
+            .any(|e| e.target_qualified == "com.foo.Bar.method")
+    );
 }
