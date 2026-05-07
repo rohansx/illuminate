@@ -55,11 +55,15 @@ impl Auditor {
     /// callers may keep one `Auditor` for the lifetime of the process.
     /// A missing or unreadable `index.db` is silently swallowed: audits still
     /// succeed, they just report an empty `ImpactInfo`.
-    pub fn with_index(graph: Graph, policies: Vec<IntentPolicy>, index_db_path: PathBuf) -> Self {
+    pub fn with_index(
+        graph: Graph,
+        policies: Vec<IntentPolicy>,
+        index_db_path: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             graph,
             policies,
-            index_db_path: Some(index_db_path),
+            index_db_path: Some(index_db_path.into()),
             index_conn: OnceLock::new(),
         }
     }
@@ -117,10 +121,10 @@ impl Auditor {
     /// The resulting [`ImpactInfo`] is purely informational — it never
     /// changes `status`. A missing or corrupt `index.db` is treated as
     /// "no impact data available" and the audit still succeeds.
-    pub fn audit_with_files(
+    pub fn audit_with_files<P: AsRef<Path>>(
         &self,
         plan_text: &str,
-        files: &[PathBuf],
+        files: &[P],
     ) -> illuminate::Result<AuditResult> {
         let mut result = self.audit(plan_text)?;
         result.impact = self.compute_impact(files);
@@ -139,7 +143,7 @@ impl Auditor {
 
     /// Compute blast-radius for the supplied files. Always returns a value;
     /// errors from the index layer are swallowed in favour of an empty result.
-    fn compute_impact(&self, files: &[PathBuf]) -> ImpactInfo {
+    fn compute_impact<P: AsRef<Path>>(&self, files: &[P]) -> ImpactInfo {
         if files.is_empty() {
             return ImpactInfo::default();
         }
@@ -147,10 +151,13 @@ impl Auditor {
             return ImpactInfo::default();
         };
         let Ok(conn) = conn_lock.lock() else {
+            tracing::warn!(
+                "illuminate-audit: index.db Mutex poisoned; skipping impact computation"
+            );
             return ImpactInfo::default();
         };
 
-        let seeds = build_seed_qualifiers(&conn, files);
+        let seeds = build_seed_qualifiers(files);
         if seeds.is_empty() {
             return ImpactInfo::default();
         }
@@ -166,7 +173,10 @@ impl Auditor {
                 impacted_symbols: radius.impacted,
                 truncated: radius.truncated,
             },
-            Err(_) => ImpactInfo::default(),
+            Err(e) => {
+                tracing::warn!("illuminate-audit: impact_radius failed ({e}); returning empty");
+                ImpactInfo::default()
+            }
         }
     }
 
@@ -367,46 +377,28 @@ static TECH_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// returns `None` rather than propagating up — the contract for `audit_with_files`
 /// is that audit must still succeed when no code graph is available.
 fn open_index_connection(path: &Path) -> Option<Mutex<Connection>> {
-    if !path.exists() {
-        return None;
+    match Connection::open(path) {
+        Ok(c) => Some(Mutex::new(c)),
+        Err(e) => {
+            tracing::debug!(
+                "illuminate-audit: failed to open index.db at {}: {e}",
+                path.display()
+            );
+            None
+        }
     }
-    Connection::open(path).ok().map(Mutex::new)
 }
 
-/// Build seed qualified-names by looking up each file's symbols in `index.db`.
+/// Build seed qualified-names from the supplied files.
 ///
 /// We seed at the file level (`file::<file_path>`), matching the qualified-name
 /// format produced by the import-edge extractor in `illuminate-index::edge_extract`.
-/// Per-symbol seeding can be layered on later without breaking this contract:
-/// any file with at least one indexed symbol contributes a `file::*` seed.
-fn build_seed_qualifiers(conn: &Connection, files: &[PathBuf]) -> Vec<String> {
-    let mut seeds = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for file in files {
-        let key = file.to_string_lossy().to_string();
-        // `lookup_file` confirms the file is actually in the index; if it's
-        // not (e.g. ignored, never parsed) we skip it rather than feeding a
-        // dangling seed into the CTE.
-        match illuminate_index::storage::lookup_file(conn, &key) {
-            Ok(symbols) if !symbols.is_empty() => {
-                let qn = format!("file::{key}");
-                if seen.insert(qn.clone()) {
-                    seeds.push(qn);
-                }
-            }
-            _ => {
-                // Fall back to a file-level seed even when no symbols are
-                // indexed — edges produced by the import-edge extractor
-                // reference `file::<path>` directly, and the CTE will still
-                // pick up any incoming edges from other files.
-                let qn = format!("file::{key}");
-                if seen.insert(qn.clone()) {
-                    seeds.push(qn);
-                }
-            }
-        }
-    }
-    seeds
+/// Per-symbol seeding can be layered on later without breaking this contract.
+fn build_seed_qualifiers<P: AsRef<Path>>(files: &[P]) -> Vec<String> {
+    files
+        .iter()
+        .map(|p| format!("file::{}", p.as_ref().to_string_lossy()))
+        .collect()
 }
 
 static REJECTION_INDICATORS: &[&str] = &[
