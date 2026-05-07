@@ -20,7 +20,11 @@
 //! the literal text of the call's function-path child (`bar`,
 //! `module::bar`, `x.method`, `Type::associated`). `self`/`crate`/`super`
 //! and relative paths are kept as literal text — symbol resolution is
-//! deferred to a later pass. Other languages remain imports-only; see
+//! deferred to a later pass. Go follows the same model via
+//! [`extract_go_call_edges`]: one edge per `call_expression` found within a
+//! `function_declaration` or `method_declaration` body, with target text
+//! taken verbatim from the call's first child (`bar`, `pkg.Bar`,
+//! `obj.method`). Other languages remain imports-only; see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
@@ -311,6 +315,128 @@ fn strip_go_import_quotes(raw: &str) -> Option<String> {
         None
     } else {
         Some(target.to_string())
+    }
+}
+
+/// Extract function-call edges from a parsed Go source file.
+///
+/// Mirrors [`extract_rust_call_edges`] but for Go's grammar. Performs a
+/// two-stage walk: the outer walk descends from the root looking for
+/// `function_declaration` (free function) and `method_declaration`
+/// (method on a receiver) nodes; for each one it captures the function
+/// name (the `name` field — an `identifier` for free functions and a
+/// `field_identifier` for methods) and recurses through the body
+/// collecting every `call_expression`. Each call contributes one edge
+/// whose `source_qualified` is `"<file_path>::<fn_name>"` and whose
+/// `target_qualified` is the literal text of the call's first child:
+/// `bar` (identifier), `pkg.Bar` / `obj.method` (selector_expression).
+///
+/// Anonymous functions (`func_literal`) do not have their own name. Calls
+/// inside a `func_literal` are attributed to the enclosing named function
+/// because we do not descend into nested `function_declaration` /
+/// `method_declaration` nodes from the call walker but do descend into
+/// `func_literal` bodies — keeping the outer name as the source qualifier
+/// matches Go's lexical-scope intuition (the closure runs inside its
+/// enclosing function).
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`], which dispatches
+/// by `Language` and concatenates import + call edges for Go.
+///
+/// Returns an empty vector if the tree has no function definitions or
+/// none of those functions contain calls.
+pub fn extract_go_call_edges(
+    tree: &tree_sitter::Tree,
+    source: &[u8],
+    file_path: &str,
+) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_go_funcs(tree.root_node(), source, file_path, &mut edges);
+    edges
+}
+
+fn walk_for_go_funcs(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    out: &mut Vec<Edge>,
+) {
+    if matches!(node.kind(), "function_declaration" | "method_declaration")
+        && let Some(fn_name) = go_function_name(node, source)
+    {
+        let source_qn = format!("{}::{}", file_path, fn_name);
+        walk_for_go_calls_within(node, source, file_path, &source_qn, out);
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_go_funcs(child, source, file_path, out);
+    }
+}
+
+/// Resolve the literal text of a `function_declaration` /
+/// `method_declaration` node's name. tree-sitter-go exposes the name via
+/// the `name` field — an `identifier` for top-level functions and a
+/// `field_identifier` for methods. Returns `None` if the node has no name
+/// child (defensive against malformed parses), in which case the caller
+/// skips emitting edges for that function.
+fn go_function_name(fn_node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    if let Some(name_node) = fn_node.child_by_field_name("name") {
+        let text = node_text(name_node, source);
+        if !text.is_empty() {
+            return Some(text.to_string());
+        }
+    }
+    // Fallback: scan children for the first identifier-shaped node.
+    let mut cursor = fn_node.walk();
+    for child in fn_node.children(&mut cursor) {
+        if matches!(child.kind(), "identifier" | "field_identifier") {
+            let text = node_text(child, source);
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn walk_for_go_calls_within(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    source_qn: &str,
+    out: &mut Vec<Edge>,
+) {
+    if node.kind() == "call_expression"
+        && let Some(fn_path_node) = node.child(0)
+    {
+        let target = node_text(fn_path_node, source).trim();
+        if !target.is_empty() {
+            out.push(Edge {
+                source_qualified: source_qn.to_string(),
+                target_qualified: target.to_string(),
+                kind: EdgeKind::Calls,
+                file_path: file_path.to_string(),
+                line: fn_path_node.start_position().row as u32 + 1,
+            });
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        // Skip descent into nested `function_declaration` / `method_declaration`
+        // bodies — the outer `walk_for_go_funcs` pass visits them separately
+        // and attributes their calls to their own qualifier. Without this
+        // guard, nested calls would be double-attributed.
+        //
+        // We DO descend into `func_literal` (anonymous functions); they have
+        // no name of their own, so their calls are attributed to the
+        // enclosing named function via the current `source_qn`.
+        if matches!(child.kind(), "function_declaration" | "method_declaration") {
+            continue;
+        }
+        walk_for_go_calls_within(child, source, file_path, source_qn, out);
     }
 }
 

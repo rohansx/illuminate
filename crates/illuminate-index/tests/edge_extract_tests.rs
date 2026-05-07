@@ -11,8 +11,9 @@ use illuminate_index::edges::EdgeKind;
 use illuminate_index::{
     Language,
     edge_extract::{
-        extract_c_edges, extract_go_edges, extract_java_edges, extract_python_edges,
-        extract_rust_call_edges, extract_rust_edges, extract_typescript_edges,
+        extract_c_edges, extract_go_call_edges, extract_go_edges, extract_java_edges,
+        extract_python_edges, extract_rust_call_edges, extract_rust_edges,
+        extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -232,11 +233,14 @@ fn index_file_with_edges_returns_go_imports() {
         symbols.iter().any(|s| s.name == "Hello"),
         "should extract `Hello` function symbol"
     );
-    assert_eq!(edges.len(), 2, "should extract two go import edges");
-    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
-    assert!(edges.iter().all(|e| e.file_path == "billing.go"));
-    assert!(edges.iter().any(|e| e.target_qualified == "fmt"));
-    assert!(edges.iter().any(|e| e.target_qualified == "os"));
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    assert_eq!(imports.len(), 2, "should extract two go import edges");
+    assert!(imports.iter().all(|e| e.file_path == "billing.go"));
+    assert!(imports.iter().any(|e| e.target_qualified == "fmt"));
+    assert!(imports.iter().any(|e| e.target_qualified == "os"));
 }
 
 #[test]
@@ -822,4 +826,149 @@ fn index_file_with_edges_returns_imports_and_calls() {
     assert_eq!(calls.len(), 1, "should have one call edge, got {:?}", calls);
     assert_eq!(calls[0].source_qualified, "src/lib.rs::x");
     assert_eq!(calls[0].target_qualified, "bar");
+}
+
+#[test]
+fn extracts_simple_go_call() {
+    let source = b"package main\n\nfunc main() {\n    fmt.Println(\"x\")\n}\n";
+    let tree = parse_go(source);
+
+    let edges = extract_go_call_edges(&tree, source, "main.go");
+
+    assert_eq!(edges.len(), 1, "expected one go call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "main.go::main");
+    assert_eq!(edge.target_qualified, "fmt.Println");
+    assert_eq!(edge.file_path, "main.go");
+    assert_eq!(edge.line, 4);
+}
+
+#[test]
+fn extracts_local_go_call() {
+    let source = b"package main\n\nfunc a() {\n    b()\n}\n";
+    let tree = parse_go(source);
+
+    let edges = extract_go_call_edges(&tree, source, "main.go");
+
+    assert_eq!(edges.len(), 1, "expected one go call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "main.go::a");
+    assert_eq!(edge.target_qualified, "b");
+}
+
+#[test]
+fn extracts_method_call_go() {
+    // A method declared on `*Receiver`, plus a free function `caller` that
+    // invokes the method via a receiver value `r.m()`. The Calls edge for
+    // the method invocation should surface with target `r.m` (the literal
+    // selector text) and source `<file>::caller`.
+    let source =
+        b"package main\n\nfunc (r *Receiver) m() {}\n\nfunc caller(r *Receiver) {\n    r.m()\n}\n";
+    let tree = parse_go(source);
+
+    let edges = extract_go_call_edges(&tree, source, "main.go");
+
+    assert_eq!(
+        edges.len(),
+        1,
+        "expected one go method call edge, got {:?}",
+        edges
+    );
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "main.go::caller");
+    assert_eq!(edge.target_qualified, "r.m");
+}
+
+#[test]
+fn extracts_nested_go_calls() {
+    let source = b"package main\n\nfunc a() {\n    fmt.Println(strconv.Itoa(1))\n}\n";
+    let tree = parse_go(source);
+
+    let edges = extract_go_call_edges(&tree, source, "main.go");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "expected two go call edges, got {:?}",
+        edges
+    );
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Calls));
+    assert!(
+        edges.iter().all(|e| e.source_qualified == "main.go::a"),
+        "all calls should be sourced from a, got {:?}",
+        edges
+            .iter()
+            .map(|e| &e.source_qualified)
+            .collect::<Vec<_>>()
+    );
+    assert!(edges.iter().any(|e| e.target_qualified == "fmt.Println"));
+    assert!(edges.iter().any(|e| e.target_qualified == "strconv.Itoa"));
+}
+
+#[test]
+fn multiple_go_funcs_each_get_their_own_calls() {
+    let source = b"package main\n\nfunc a() {\n    b()\n}\n\nfunc c() {\n    d()\n}\n";
+    let tree = parse_go(source);
+
+    let edges = extract_go_call_edges(&tree, source, "src/m.go");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "expected two go call edges, got {:?}",
+        edges
+    );
+    let a_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "b")
+        .expect("should have b call");
+    assert_eq!(a_edge.source_qualified, "src/m.go::a");
+    let c_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "d")
+        .expect("should have d call");
+    assert_eq!(c_edge.source_qualified, "src/m.go::c");
+}
+
+#[test]
+fn function_with_no_calls_yields_no_call_edges_go() {
+    let source = b"package main\n\nfunc a() {}\n";
+    let tree = parse_go(source);
+
+    let edges = extract_go_call_edges(&tree, source, "main.go");
+
+    assert!(
+        edges.is_empty(),
+        "empty go function body should yield no call edges, got {:?}",
+        edges
+    );
+}
+
+#[test]
+fn index_file_with_edges_returns_imports_and_calls_go() {
+    let source = b"package main\n\nimport \"fmt\"\n\nfunc a() {\n    fmt.Println(\"x\")\n}\n";
+    let path = Path::new("main.go");
+
+    let (_symbols, edges) = index_file_with_edges(path, source, Language::Go).unwrap();
+
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    let calls: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Calls).collect();
+
+    assert_eq!(imports.len(), 1, "should have one go import edge");
+    assert_eq!(imports[0].target_qualified, "fmt");
+
+    assert_eq!(
+        calls.len(),
+        1,
+        "should have one go call edge, got {:?}",
+        calls
+    );
+    assert_eq!(calls[0].source_qualified, "main.go::a");
+    assert_eq!(calls[0].target_qualified, "fmt.Println");
 }
