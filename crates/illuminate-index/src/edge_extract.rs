@@ -14,7 +14,7 @@
 //! `.hpp` files dispatch through `Language::C`, and `#include` extraction
 //! works even when C++ class/template/namespace bodies parse imperfectly.
 //!
-//! Rust + Go + TypeScript + Python additionally emit Calls edges. Rust uses
+//! Rust + Go + TypeScript + Python + Java additionally emit Calls edges. Rust uses
 //! [`extract_rust_call_edges`]: one edge per `call_expression` found within
 //! a `function_item` body, with the source qualifier
 //! `<file_path>::<fn_name>` and the target qualifier the literal text of
@@ -36,8 +36,16 @@
 //! attributed to the nearest enclosing `function_definition` (which
 //! covers both top-level functions and class methods — the bare method
 //! name is used, matching TypeScript's no-class-prefix choice). Lambdas
-//! are anonymous and transparent to attribution. Other languages remain
-//! imports-only; see
+//! are anonymous and transparent to attribution. Java follows via
+//! [`extract_java_call_edges`]: one edge per `method_invocation` node
+//! (note: tree-sitter-java uses `method_invocation`, not `call_expression`),
+//! attributed to the nearest enclosing `method_declaration` or
+//! `constructor_declaration` (constructor-body calls attribute to the
+//! constructor's class-name identifier — `<file>::A` for `class A { A() {...} }`).
+//! Targets are reconstructed from the invocation's `name` field plus its
+//! optional `object` field text: bare `foo()` → `foo`; `obj.foo()` →
+//! `obj.foo`; `Class.staticMethod()` → `Class.staticMethod`. Other languages
+//! remain imports-only; see
 //! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
@@ -903,6 +911,116 @@ fn parse_java_import_target(decl_text: &str) -> Option<String> {
     } else {
         Some(target.to_string())
     }
+}
+
+/// Extract function-call edges from a parsed Java source file.
+///
+/// Mirrors [`extract_python_call_edges`] but for Java's grammar. Performs a
+/// single recursive walk that threads the **nearest enclosing named
+/// function** down through child nodes; each `method_invocation` it
+/// encounters contributes one edge whose `source_qualified` is
+/// `"<file_path>::<fn_name>"` (or `"file::<file_path>"` if no named function
+/// is in scope) and whose `target_qualified` is reconstructed from the
+/// invocation's `name` field plus an optional `object` field.
+///
+/// Note: tree-sitter-java's grammar uses `method_invocation` (not
+/// `call_expression` like Rust/Go/TS, and not bare `call` like Python).
+/// The `name` field is always an `identifier`. The `object` field, when
+/// present, may itself be an `identifier`, a `field_access` (e.g.
+/// `obj.field`), or another `method_invocation` (chained calls). Whatever
+/// the kind, we emit the verbatim text — symbol resolution is deferred to a
+/// later pass.
+///
+/// Java nesting variants:
+///
+/// * `method_declaration` — `void foo() { ... }`. Provides a `name` field
+///   pointing at an `identifier` and replaces the enclosing-fn slot for its
+///   subtree. Covers both top-level methods and methods inside nested
+///   classes — per the v0.5 simpler choice, the source qualifier is the
+///   bare method name (`<file>::foo`), no class prefix.
+/// * `constructor_declaration` — `A() { ... }`. Treated identically to
+///   `method_declaration`: its `name` field points at the constructor's
+///   class-name `identifier`, and calls inside the body attribute to that
+///   identifier (`<file>::A`).
+///
+/// Targets are kept verbatim — `bar` (bare identifier), `obj.method`
+/// (field-access object), `Class.staticMethod` (type-qualified static
+/// invocation), `obj.field.method` (chained `field_access` object) are all
+/// emitted using the literal source text of the `object` and `name` fields.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`], which dispatches
+/// by `Language` and concatenates import + call edges for Java.
+///
+/// Returns an empty vector if the tree has no `method_invocation` nodes.
+pub fn extract_java_call_edges(
+    tree: &tree_sitter::Tree,
+    source: &[u8],
+    file_path: &str,
+) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_java_funcs(tree.root_node(), source, file_path, None, &mut edges);
+    edges
+}
+
+fn walk_for_java_funcs(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    enclosing_fn_name: Option<&str>,
+    out: &mut Vec<Edge>,
+) {
+    // `method_declaration` and `constructor_declaration` both expose their
+    // identifier via the `name` field. Either kind shadows the outer
+    // enclosing fn for its subtree.
+    let new_enclosing: Option<String> = match node.kind() {
+        "method_declaration" | "constructor_declaration" => node
+            .child_by_field_name("name")
+            .and_then(|n| n.utf8_text(source).ok().map(String::from)),
+        _ => None,
+    };
+
+    if node.kind() == "method_invocation"
+        && let Some(target) = java_invocation_target(node, source)
+    {
+        let source_qn = match enclosing_fn_name {
+            Some(name) => format!("{}::{}", file_path, name),
+            None => format!("file::{}", file_path),
+        };
+        let line = node.start_position().row as u32 + 1;
+        out.push(Edge {
+            source_qualified: source_qn,
+            target_qualified: target,
+            kind: EdgeKind::Calls,
+            file_path: file_path.to_string(),
+            line,
+        });
+    }
+
+    let pass_down: Option<&str> = new_enclosing.as_deref().or(enclosing_fn_name);
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_java_funcs(child, source, file_path, pass_down, out);
+    }
+}
+
+/// Reconstruct the call target for a `method_invocation` node from its
+/// `name` field plus an optional `object` field. Returns `None` if the
+/// `name` field is missing (defensive against malformed parses).
+fn java_invocation_target(node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    let name = node
+        .child_by_field_name("name")?
+        .utf8_text(source)
+        .ok()?
+        .to_string();
+    if let Some(obj) = node.child_by_field_name("object") {
+        let obj_text = obj.utf8_text(source).unwrap_or("");
+        if !obj_text.is_empty() {
+            return Some(format!("{}.{}", obj_text, name));
+        }
+    }
+    Some(name)
 }
 
 /// Extract include edges from a parsed C source file.

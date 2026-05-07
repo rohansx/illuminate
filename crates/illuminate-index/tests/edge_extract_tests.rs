@@ -11,9 +11,10 @@ use illuminate_index::edges::EdgeKind;
 use illuminate_index::{
     Language,
     edge_extract::{
-        extract_c_edges, extract_go_call_edges, extract_go_edges, extract_java_edges,
-        extract_python_call_edges, extract_python_edges, extract_rust_call_edges,
-        extract_rust_edges, extract_typescript_call_edges, extract_typescript_edges,
+        extract_c_edges, extract_go_call_edges, extract_go_edges, extract_java_call_edges,
+        extract_java_edges, extract_python_call_edges, extract_python_edges,
+        extract_rust_call_edges, extract_rust_edges, extract_typescript_call_edges,
+        extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -1291,4 +1292,136 @@ fn index_file_with_edges_returns_imports_and_calls_python() {
     );
     assert_eq!(calls[0].source_qualified, "src/app.py::a");
     assert_eq!(calls[0].target_qualified, "bar");
+}
+
+#[test]
+fn extracts_simple_java_call() {
+    let source = b"class A { void foo() { bar(); } }\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_call_edges(&tree, source, "src/A.java");
+
+    assert_eq!(
+        edges.len(),
+        1,
+        "expected one java call edge, got {:?}",
+        edges
+    );
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/A.java::foo");
+    assert_eq!(edge.target_qualified, "bar");
+    assert_eq!(edge.file_path, "src/A.java");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_method_call_java() {
+    let source = b"class A { void foo() { obj.method(); } }\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_call_edges(&tree, source, "src/A.java");
+
+    assert_eq!(
+        edges.len(),
+        1,
+        "expected one java call edge, got {:?}",
+        edges
+    );
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/A.java::foo");
+    assert_eq!(edge.target_qualified, "obj.method");
+}
+
+#[test]
+fn extracts_static_method_call_java() {
+    let source = b"class A { void foo() { Math.max(1, 2); } }\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_call_edges(&tree, source, "src/A.java");
+
+    assert_eq!(
+        edges.len(),
+        1,
+        "expected one java call edge, got {:?}",
+        edges
+    );
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/A.java::foo");
+    assert_eq!(edge.target_qualified, "Math.max");
+}
+
+#[test]
+fn extracts_constructor_call_attributes_to_constructor() {
+    let source = b"class A { A() { setup(); } }\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_call_edges(&tree, source, "src/A.java");
+
+    assert_eq!(
+        edges.len(),
+        1,
+        "expected one java call edge from constructor, got {:?}",
+        edges
+    );
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(
+        edge.source_qualified, "src/A.java::A",
+        "constructor body calls should attribute to the constructor name"
+    );
+    assert_eq!(edge.target_qualified, "setup");
+}
+
+#[test]
+fn multiple_java_methods_each_get_their_own_calls() {
+    let source = b"class A { void foo() { x(); } void bar() { y(); } }\n";
+    let tree = parse_java(source);
+
+    let edges = extract_java_call_edges(&tree, source, "src/A.java");
+
+    assert_eq!(
+        edges.len(),
+        2,
+        "expected two java call edges, got {:?}",
+        edges
+    );
+    let foo_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "x")
+        .expect("should have x call");
+    assert_eq!(foo_edge.source_qualified, "src/A.java::foo");
+    let bar_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "y")
+        .expect("should have y call");
+    assert_eq!(bar_edge.source_qualified, "src/A.java::bar");
+}
+
+#[test]
+fn index_file_with_edges_returns_imports_and_calls_java() {
+    let source = b"import java.util.List;\n\nclass A { void foo() { List.of(); } }\n";
+    let path = Path::new("src/A.java");
+
+    let (_symbols, edges) = index_file_with_edges(path, source, Language::Java).unwrap();
+
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    let calls: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Calls).collect();
+
+    assert_eq!(imports.len(), 1, "should have one java import edge");
+    assert_eq!(imports[0].target_qualified, "java.util.List");
+
+    assert_eq!(
+        calls.len(),
+        1,
+        "should have one java call edge, got {:?}",
+        calls
+    );
+    assert_eq!(calls[0].source_qualified, "src/A.java::foo");
+    assert_eq!(calls[0].target_qualified, "List.of");
 }
