@@ -333,6 +333,19 @@ Delete trail files older than N days.
 illuminate trail purge --older-than DAYS [--dry-run]
 ```
 
+### `illuminate trail install-service`
+
+Generate a systemd user unit at `~/.config/systemd/user/illuminate-trail.service` that runs `illuminate trail watch` at login. Linux only.
+
+```bash
+illuminate trail install-service           # write the unit
+systemctl --user daemon-reload
+systemctl --user enable --now illuminate-trail
+journalctl --user -u illuminate-trail -f   # tail the watcher
+```
+
+Pass `--dry-run` to inspect the unit content without writing. Pass `--force` to overwrite an existing unit.
+
 ---
 
 ## Reflect commands

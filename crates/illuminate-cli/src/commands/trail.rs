@@ -33,6 +33,18 @@ pub enum TrailCmd {
         #[arg(long)]
         ident: Option<String>,
     },
+    /// Install a systemd user unit that runs `illuminate trail watch` at login (Linux)
+    InstallService {
+        /// Override the unit file location (default: ~/.config/systemd/user/illuminate-trail.service)
+        #[arg(long)]
+        path: Option<std::path::PathBuf>,
+        /// Print the unit file to stdout instead of writing it
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite if the unit file already exists
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 pub fn run(cmd: TrailCmd) -> std::io::Result<()> {
@@ -42,6 +54,7 @@ pub fn run(cmd: TrailCmd) -> std::io::Result<()> {
         TrailCmd::Show { ident } => cmd_show(&ident),
         TrailCmd::Watch { sessions_root } => cmd_watch(sessions_root),
         TrailCmd::Register { ident } => cmd_register(ident.as_deref()),
+        TrailCmd::InstallService { path, dry_run, force } => cmd_install_service(path, dry_run, force),
     }
 }
 
@@ -260,4 +273,97 @@ fn agent_label(a: &illuminate_trail::record::AgentKind) -> &'static str {
         illuminate_trail::record::AgentKind::Cursor => "cursor",
         illuminate_trail::record::AgentKind::Codex => "codex",
     }
+}
+
+fn cmd_install_service(
+    path: Option<std::path::PathBuf>,
+    dry_run: bool,
+    force: bool,
+) -> std::io::Result<()> {
+    if !cfg!(target_os = "linux") {
+        eprintln!("install-service: systemd is Linux-only.");
+        eprintln!("On macOS, run `illuminate trail watch` directly under launchctl or a terminal multiplexer.");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "systemd unit install is Linux-only",
+        ));
+    }
+
+    // Locate the binary that's currently running. If we're invoked via PATH,
+    // `current_exe()` resolves to its real location.
+    let exec_path = std::env::current_exe()?
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from("illuminate"));
+
+    let unit = render_unit(&exec_path);
+
+    if dry_run {
+        print!("{unit}");
+        return Ok(());
+    }
+
+    let target = match path {
+        Some(p) => p,
+        None => {
+            let home = std::env::var_os("HOME").ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set")
+            })?;
+            std::path::PathBuf::from(home)
+                .join(".config/systemd/user/illuminate-trail.service")
+        }
+    };
+
+    if target.exists() && !force {
+        eprintln!(
+            "{} already exists. Pass --force to overwrite, or --dry-run to inspect.",
+            target.display()
+        );
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "service file exists",
+        ));
+    }
+
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&target, unit)?;
+    println!("wrote {}", target.display());
+    println!();
+    println!("Next steps (run as your user, NOT root):");
+    println!("  systemctl --user daemon-reload");
+    println!("  systemctl --user enable --now illuminate-trail.service");
+    println!();
+    println!("Inspect status:");
+    println!("  systemctl --user status illuminate-trail");
+    println!("  journalctl --user -u illuminate-trail -f");
+    println!();
+    println!("Stop / disable later:");
+    println!("  systemctl --user disable --now illuminate-trail.service");
+    Ok(())
+}
+
+fn render_unit(exec: &std::path::Path) -> String {
+    format!(
+        "[Unit]\n\
+         Description=Illuminate trail watcher (capture Claude Code sessions to .illuminate/trail/)\n\
+         Documentation=https://github.com/rohansx/illuminate\n\
+         After=default.target\n\
+         \n\
+         [Service]\n\
+         Type=simple\n\
+         ExecStart={exec} trail watch\n\
+         Restart=on-failure\n\
+         RestartSec=10\n\
+         # Logging: systemd captures stdout/stderr; view via `journalctl --user -u illuminate-trail`.\n\
+         StandardOutput=journal\n\
+         StandardError=journal\n\
+         # Soft resource caps so a misbehaving watcher cannot starve the user session.\n\
+         MemoryMax=512M\n\
+         CPUQuota=20%\n\
+         \n\
+         [Install]\n\
+         WantedBy=default.target\n",
+        exec = exec.display()
+    )
 }
