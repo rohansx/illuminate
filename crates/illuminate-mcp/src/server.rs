@@ -40,12 +40,27 @@ impl McpServer {
         policies: Vec<IntentPolicy>,
         index_db_path: Option<PathBuf>,
     ) -> Self {
+        Self::with_index_and_root(graph, embed, policies, index_db_path, None)
+    }
+
+    /// Build an `McpServer` with index, policies, and a repo root used to
+    /// normalize ABSOLUTE file paths agents pass via `illuminate_audit` into
+    /// the repo-relative form the indexer stored. Without `repo_root`,
+    /// absolute paths silently miss the index — see Task R / `Auditor::with_index_and_root`.
+    pub fn with_index_and_root(
+        graph: Graph,
+        embed: Option<EmbedEngine>,
+        policies: Vec<IntentPolicy>,
+        index_db_path: Option<PathBuf>,
+        repo_root: Option<PathBuf>,
+    ) -> Self {
         Self {
-            ctx: Arc::new(ToolContext::with_index(
+            ctx: Arc::new(ToolContext::with_index_and_root(
                 graph,
                 embed,
                 policies,
                 index_db_path,
+                repo_root,
             )),
         }
     }

@@ -31,6 +31,13 @@ pub struct Auditor {
     /// on the first audit that supplies file paths and reused for subsequent
     /// calls (constraint: no per-request `Connection::open`).
     index_db_path: Option<PathBuf>,
+    /// Optional repo root used to normalize ABSOLUTE file paths supplied by
+    /// callers (CLI/MCP/agent tools) into the repo-relative form the indexer
+    /// stored in `index.db`. When `None`, paths pass through verbatim — the
+    /// pre-Task-R behaviour. Stored once at construction so we don't have to
+    /// re-walk the filesystem (or re-derive from `index_db_path`) on each
+    /// call to `audit_with_files`.
+    repo_root: Option<PathBuf>,
     /// Lazily-initialized long-lived connection. `None` inside the `OnceLock`
     /// payload means initialization was attempted but failed (missing file,
     /// open error) — we won't retry, just return an empty `ImpactInfo`.
@@ -45,6 +52,7 @@ impl Auditor {
             graph,
             policies,
             index_db_path: None,
+            repo_root: None,
             index_conn: OnceLock::new(),
         }
     }
@@ -56,15 +64,41 @@ impl Auditor {
     /// callers may keep one `Auditor` for the lifetime of the process.
     /// A missing or unreadable `index.db` is silently swallowed: audits still
     /// succeed, they just report an empty `ImpactInfo`.
+    ///
+    /// Path-format note: callers must pass repo-relative paths to
+    /// `audit_with_files` for index lookups to hit. Use
+    /// [`Self::with_index_and_root`] when callers may supply absolute paths
+    /// that need normalization.
     pub fn with_index(
         graph: Graph,
         policies: Vec<IntentPolicy>,
         index_db_path: impl Into<PathBuf>,
     ) -> Self {
+        Self::with_index_and_root(graph, policies, index_db_path, None::<PathBuf>)
+    }
+
+    /// Construct an auditor with both a code-graph index and a repo root.
+    ///
+    /// The repo root is used to normalize ABSOLUTE paths in
+    /// [`Self::audit_with_files`] into the repo-relative form the indexer
+    /// stored in `index.db` (see `CodeIndex::index_project`, which strips
+    /// the project root before persisting). Without normalization,
+    /// `lookup_file("/abs/.../foo.rs")` finds zero rows even though the
+    /// indexer recorded `src/foo.rs`.
+    ///
+    /// When `repo_root` is `None`, paths pass through verbatim — the
+    /// pre-Task-R behaviour preserved by [`Self::with_index`].
+    pub fn with_index_and_root(
+        graph: Graph,
+        policies: Vec<IntentPolicy>,
+        index_db_path: impl Into<PathBuf>,
+        repo_root: Option<impl Into<PathBuf>>,
+    ) -> Self {
         Self {
             graph,
             policies,
             index_db_path: Some(index_db_path.into()),
+            repo_root: repo_root.map(Into::into),
             index_conn: OnceLock::new(),
         }
     }
@@ -169,18 +203,19 @@ impl Auditor {
             return ImpactInfo::default();
         };
 
-        let seeds = build_seed_qualifiers(files);
+        let seeds = build_seed_qualifiers(files, &self.repo_root);
         if seeds.is_empty() {
             return ImpactInfo::default();
         }
 
         // Per-file defined symbols. We look these up before running the BFS
         // so a failure in `impact_radius` still leaves us with useful data.
-        // Path strings are passed through as-supplied; see the
-        // `audit_with_files` doc comment on the path-format contract.
+        // Paths are normalized against `self.repo_root` (when set) so
+        // ABSOLUTE paths from agent callers map to the repo-relative form
+        // the indexer stored — see the doc on `with_index_and_root`.
         let mut defined_symbols: Vec<String> = Vec::new();
         for f in files {
-            let path_str = f.as_ref().to_string_lossy();
+            let path_str = normalize_path(f.as_ref(), &self.repo_root);
             match illuminate_index::storage::lookup_file(&conn, &path_str) {
                 Ok(symbols) => {
                     for sym in symbols {
@@ -446,6 +481,32 @@ pub fn resolve_index_db_from_cwd(explicit: Option<&Path>) -> Option<PathBuf> {
     resolve_index_db(explicit, &cwd)
 }
 
+/// Walk ancestors from `start_dir` looking for a `.illuminate/` directory
+/// and return the directory that contains it (the repo root).
+///
+/// Mirrors [`resolve_index_db`] but yields the project root rather than the
+/// `index.db` path — used by callers that need to normalize ABSOLUTE paths
+/// into the repo-relative form the indexer stored.
+pub fn resolve_repo_root(start_dir: &Path) -> Option<PathBuf> {
+    let mut cur: Option<&Path> = Some(start_dir);
+    while let Some(d) = cur {
+        let candidate = d.join(".illuminate");
+        if candidate.is_dir() {
+            return Some(d.to_path_buf());
+        }
+        cur = d.parent();
+    }
+    None
+}
+
+/// Convenience wrapper around [`resolve_repo_root`] using the process's
+/// current working directory as `start_dir`. Returns `None` if cwd is
+/// inaccessible or no `.illuminate/` ancestor exists.
+pub fn resolve_repo_root_from_cwd() -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
+    resolve_repo_root(&cwd)
+}
+
 /// Open an `index.db` at `path` for the long-lived audit connection.
 ///
 /// Wrapped in a function so the failure path (missing file, permission error)
@@ -468,12 +529,32 @@ fn open_index_connection(path: &Path) -> Option<Mutex<Connection>> {
 ///
 /// We seed at the file level (`file::<file_path>`), matching the qualified-name
 /// format produced by the import-edge extractor in `illuminate-index::edge_extract`.
+/// Paths are normalized against `repo_root` (when set) so ABSOLUTE paths from
+/// agent callers map to the repo-relative form the indexer stored.
 /// Per-symbol seeding can be layered on later without breaking this contract.
-fn build_seed_qualifiers<P: AsRef<Path>>(files: &[P]) -> Vec<String> {
+fn build_seed_qualifiers<P: AsRef<Path>>(files: &[P], repo_root: &Option<PathBuf>) -> Vec<String> {
     files
         .iter()
-        .map(|p| format!("file::{}", p.as_ref().to_string_lossy()))
+        .map(|p| format!("file::{}", normalize_path(p.as_ref(), repo_root)))
         .collect()
+}
+
+/// Normalize a single file path against an optional repo root.
+///
+/// When `repo_root` is `Some(root)` and `path` is absolute and lives under
+/// `root`, returns the repo-relative form (matching what the indexer stored
+/// via `strip_prefix(root)` in `CodeIndex::index_project`). Otherwise returns
+/// the path's lossy string form unchanged. Relative paths are always passed
+/// through — they are assumed to already be in the indexer's stored form.
+fn normalize_path<P: AsRef<Path>>(path: P, repo_root: &Option<PathBuf>) -> String {
+    let path = path.as_ref();
+    if let Some(root) = repo_root
+        && path.is_absolute()
+        && let Ok(rel) = path.strip_prefix(root)
+    {
+        return rel.to_string_lossy().to_string();
+    }
+    path.to_string_lossy().to_string()
 }
 
 static REJECTION_INDICATORS: &[&str] = &[

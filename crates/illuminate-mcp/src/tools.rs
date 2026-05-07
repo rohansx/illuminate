@@ -29,6 +29,10 @@ pub struct ToolContext {
     /// Optional path to the code-graph `index.db` for blast-radius reporting.
     /// Resolved at server startup via `illuminate_audit::resolve_index_db`.
     index_db_path: Option<PathBuf>,
+    /// Optional repo root used to normalize ABSOLUTE paths agent callers pass
+    /// in their `files` arrays into the repo-relative form the indexer stored.
+    /// Resolved at server startup via `illuminate_audit::resolve_repo_root_from_cwd`.
+    repo_root: Option<PathBuf>,
     /// Long-lived SQLite connection to the code-graph index. Initialized on
     /// the first `illuminate_audit` call that supplies files. `None` inside
     /// the `OnceLock` payload means the open attempt failed (missing file,
@@ -44,6 +48,7 @@ impl ToolContext {
             embedding_cache: Mutex::new(None),
             policies: Vec::new(),
             index_db_path: None,
+            repo_root: None,
             index_conn: OnceLock::new(),
         }
     }
@@ -59,6 +64,7 @@ impl ToolContext {
             embedding_cache: Mutex::new(None),
             policies,
             index_db_path: None,
+            repo_root: None,
             index_conn: OnceLock::new(),
         }
     }
@@ -73,12 +79,29 @@ impl ToolContext {
         policies: Vec<IntentPolicy>,
         index_db_path: Option<PathBuf>,
     ) -> Self {
+        Self::with_index_and_root(graph, embed, policies, index_db_path, None)
+    }
+
+    /// Construct a `ToolContext` with both an index and a repo root.
+    ///
+    /// `repo_root` is forwarded to the auditor (via [`Auditor::with_index_and_root`])
+    /// so ABSOLUTE paths agents pass in `illuminate_audit`'s `files` array
+    /// get normalized to the repo-relative form the indexer stored. Without
+    /// this, lookups silently miss when agents supply absolute paths.
+    pub fn with_index_and_root(
+        graph: Graph,
+        embed: Option<EmbedEngine>,
+        policies: Vec<IntentPolicy>,
+        index_db_path: Option<PathBuf>,
+        repo_root: Option<PathBuf>,
+    ) -> Self {
         Self {
             graph: Arc::new(Mutex::new(graph)),
             embed: embed.map(Arc::new),
             embedding_cache: Mutex::new(None),
             policies,
             index_db_path,
+            repo_root,
             index_conn: OnceLock::new(),
         }
     }
@@ -110,7 +133,7 @@ impl ToolContext {
 
         let seeds: Vec<String> = files
             .iter()
-            .map(|p| format!("file::{}", p.to_string_lossy()))
+            .map(|p| format!("file::{}", normalize_mcp_path(p, &self.repo_root)))
             .collect();
 
         match illuminate_index::storage::impact_radius(&conn, &seeds, IMPACT_DEPTH, IMPACT_NODES) {
@@ -147,7 +170,12 @@ impl ToolContext {
         };
 
         Ok(match self.index_db_path.clone() {
-            Some(idx) => Auditor::with_index(audit_graph, self.policies.clone(), idx),
+            Some(idx) => Auditor::with_index_and_root(
+                audit_graph,
+                self.policies.clone(),
+                idx,
+                self.repo_root.clone(),
+            ),
             None => Auditor::new(audit_graph, self.policies.clone()),
         })
     }
@@ -888,6 +916,20 @@ impl ToolContext {
             "results": results,
         }))
     }
+}
+
+/// Normalize a single file path against an optional repo root. Mirrors the
+/// helper in `illuminate-audit` so MCP's local `compute_impact` (which
+/// builds seeds without going through the auditor) keeps absolute-path
+/// behaviour aligned with the auditor's seed/lookup normalization.
+fn normalize_mcp_path(path: &Path, repo_root: &Option<PathBuf>) -> String {
+    if let Some(root) = repo_root
+        && path.is_absolute()
+        && let Ok(rel) = path.strip_prefix(root)
+    {
+        return rel.to_string_lossy().to_string();
+    }
+    path.to_string_lossy().to_string()
 }
 
 /// Open an `index.db` at `path` for the long-lived audit connection.

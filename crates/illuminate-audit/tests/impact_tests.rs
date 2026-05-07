@@ -225,6 +225,122 @@ fn audit_with_files_defined_symbols_uses_relative_path_format() {
     );
 }
 
+#[test]
+fn audit_with_files_normalizes_absolute_paths_when_root_set() {
+    // The indexer stores `Symbol.file_path` as repo-relative (stripped via
+    // `strip_prefix(root)` in `CodeIndex::index_project`). When agents pass
+    // ABSOLUTE paths through CLI/MCP, the auditor must normalize them
+    // against the repo root before consulting the index.
+    let project = tempdir().unwrap();
+    let src_dir = project.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("foo.rs"), "pub fn alpha() -> u32 { 1 }\n").unwrap();
+
+    let illum_dir = project.path().join(".illuminate");
+    std::fs::create_dir_all(&illum_dir).unwrap();
+    let db_path = illum_dir.join("index.db");
+    {
+        let mut idx = CodeIndex::open(&db_path).unwrap();
+        idx.index_project(project.path()).unwrap();
+    }
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor =
+        Auditor::with_index_and_root(graph, vec![], db_path, Some(project.path().to_path_buf()));
+
+    // Pass an ABSOLUTE path that the agent might supply.
+    let abs_foo = project.path().join("src").join("foo.rs");
+    let files = vec![abs_foo];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert!(
+        result
+            .impact
+            .defined_symbols
+            .iter()
+            .any(|s| s.ends_with("::alpha")),
+        "absolute path should be normalized to repo-relative; got defined_symbols={:?}",
+        result.impact.defined_symbols
+    );
+    assert!(
+        result
+            .impact
+            .seed_symbols
+            .iter()
+            .any(|s| s == "file::src/foo.rs"),
+        "seed should be normalized to repo-relative; got seed_symbols={:?}",
+        result.impact.seed_symbols
+    );
+}
+
+#[test]
+fn audit_with_files_passes_through_relative_paths_with_root() {
+    // When the auditor knows a repo root but the caller already supplied a
+    // relative path, the path must be left alone (no spurious strip_prefix).
+    let project = tempdir().unwrap();
+    let src_dir = project.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("foo.rs"), "pub fn alpha() -> u32 { 1 }\n").unwrap();
+
+    let illum_dir = project.path().join(".illuminate");
+    std::fs::create_dir_all(&illum_dir).unwrap();
+    let db_path = illum_dir.join("index.db");
+    {
+        let mut idx = CodeIndex::open(&db_path).unwrap();
+        idx.index_project(project.path()).unwrap();
+    }
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor =
+        Auditor::with_index_and_root(graph, vec![], db_path, Some(project.path().to_path_buf()));
+
+    let files = vec![PathBuf::from("src/foo.rs")];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert!(
+        result
+            .impact
+            .defined_symbols
+            .iter()
+            .any(|s| s == "src/foo.rs::alpha"),
+        "relative path should pass through unchanged; got defined_symbols={:?}",
+        result.impact.defined_symbols
+    );
+}
+
+#[test]
+fn audit_with_files_passes_through_when_root_unset() {
+    // Without a repo root, absolute paths are passed through verbatim and
+    // miss the relative-path rows in the index — preserves the prior
+    // (pre-Task-R) behaviour for backward compatibility of `with_index`.
+    let project = tempdir().unwrap();
+    let src_dir = project.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("foo.rs"), "pub fn alpha() -> u32 { 1 }\n").unwrap();
+
+    let illum_dir = project.path().join(".illuminate");
+    std::fs::create_dir_all(&illum_dir).unwrap();
+    let db_path = illum_dir.join("index.db");
+    {
+        let mut idx = CodeIndex::open(&db_path).unwrap();
+        idx.index_project(project.path()).unwrap();
+    }
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    // Note: `with_index`, NOT `with_index_and_root` — no repo_root supplied.
+    let auditor = Auditor::with_index(graph, vec![], db_path);
+
+    let abs_foo = project.path().join("src").join("foo.rs");
+    let files = vec![abs_foo];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert!(
+        result.impact.defined_symbols.is_empty(),
+        "without repo_root, absolute paths must miss; got defined_symbols={:?}",
+        result.impact.defined_symbols
+    );
+}
+
 /// Build a minimal index.db with three files in a chain:
 ///   billing → payments  (Imports edge, billing is source)
 ///   api     → billing   (Imports edge, api is source)

@@ -6,6 +6,7 @@ use illuminate::Episode;
 use illuminate_audit::Auditor;
 use illuminate_audit::policy::parse_policies;
 use illuminate_audit::resolve_index_db_from_cwd;
+use illuminate_audit::resolve_repo_root_from_cwd;
 use illuminate_audit::response::AuditResult;
 
 /// Cap on impacted-symbol entries shown in human-readable output.
@@ -24,10 +25,11 @@ pub fn run(
     let policies = load_policies()?;
 
     let resolved_index = resolve_index_db_from_cwd(index_db.as_deref());
+    let resolved_root = resolve_repo_root_from_cwd();
 
     let result = match (resolved_index, files.is_empty()) {
         (Some(path), false) => {
-            let auditor = Auditor::with_index(graph, policies, path);
+            let auditor = Auditor::with_index_and_root(graph, policies, path, resolved_root);
             auditor
                 .audit_with_files(&plan_text, &files)
                 .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?

@@ -129,11 +129,18 @@ async fn main() {
         eprintln!("illuminate-mcp: no code graph index found (run `illuminate index --rebuild`)");
     }
 
+    // Resolve the repo root the same way so absolute paths in audit `files`
+    // arrays normalize to the repo-relative form the indexer stored.
+    let repo_root = illuminate_audit::resolve_repo_root_from_cwd();
+    if let Some(ref r) = repo_root {
+        eprintln!("illuminate-mcp: repo root at {}", r.display());
+    }
+
     if !policies.is_empty() {
         eprintln!("illuminate-mcp: loaded {} intent policies", policies.len());
     }
 
-    let server = McpServer::with_index(graph, embed, policies, index_db_path);
+    let server = McpServer::with_index_and_root(graph, embed, policies, index_db_path, repo_root);
     server.run().await;
 }
 
