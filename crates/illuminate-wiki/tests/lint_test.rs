@@ -1,4 +1,4 @@
-use illuminate_wiki::lint::{lint_page, LintCode};
+use illuminate_wiki::lint::{LintCode, lint_page};
 use illuminate_wiki::page::parse_page;
 
 const CLEAN_DECISION: &str = r#"---
@@ -31,7 +31,10 @@ fn invalid_status_flagged() {
     let bad = CLEAN_DECISION.replace("status: active", "status: archived");
     let p = parse_page(&bad).unwrap();
     let errs = lint_page(&p);
-    assert!(errs.iter().any(|e| matches!(e.code, LintCode::InvalidStatus)));
+    assert!(
+        errs.iter()
+            .any(|e| matches!(e.code, LintCode::InvalidStatus))
+    );
 }
 
 #[test]
@@ -42,7 +45,10 @@ fn bad_date_order_flagged() {
     );
     let p = parse_page(&bad).unwrap();
     let errs = lint_page(&p);
-    assert!(errs.iter().any(|e| matches!(e.code, LintCode::BadDateOrder)));
+    assert!(
+        errs.iter()
+            .any(|e| matches!(e.code, LintCode::BadDateOrder))
+    );
 }
 
 #[test]
@@ -50,9 +56,10 @@ fn missing_decision_section_flagged() {
     let bad = CLEAN_DECISION.replace("## Context\ny\n", "");
     let p = parse_page(&bad).unwrap();
     let errs = lint_page(&p);
-    assert!(errs
-        .iter()
-        .any(|e| matches!(e.code, LintCode::MissingDecisionSection)));
+    assert!(
+        errs.iter()
+            .any(|e| matches!(e.code, LintCode::MissingDecisionSection))
+    );
 }
 
 #[test]
@@ -60,7 +67,10 @@ fn id_slug_mismatch_flagged() {
     let bad = CLEAN_DECISION.replace("id: dec-2025-12-no-redis", "id: garbage_id");
     let p = parse_page(&bad).unwrap();
     let errs = lint_page(&p);
-    assert!(errs.iter().any(|e| matches!(e.code, LintCode::IdSlugMismatch)));
+    assert!(
+        errs.iter()
+            .any(|e| matches!(e.code, LintCode::IdSlugMismatch))
+    );
 }
 
 #[test]
@@ -85,7 +95,8 @@ yes
 "#; // missing "## Lesson for future agents"
     let p = parse_page(f).unwrap();
     let errs = lint_page(&p);
-    assert!(errs
-        .iter()
-        .any(|e| matches!(e.code, LintCode::MissingFailureSection)));
+    assert!(
+        errs.iter()
+            .any(|e| matches!(e.code, LintCode::MissingFailureSection))
+    );
 }

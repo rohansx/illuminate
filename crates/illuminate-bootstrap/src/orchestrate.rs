@@ -1,7 +1,7 @@
 //! Run bootstrap sources in order, dedupe candidates, write wiki pages, register episodes.
 
-use crate::candidate::BootstrapCandidate;
 use crate::Result;
+use crate::candidate::BootstrapCandidate;
 use chrono::Utc;
 use illuminate_wiki::page::PageType;
 use std::collections::HashSet;
@@ -107,7 +107,10 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
 }
 
 fn normalize_body(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 fn read_threshold(repo_root: &std::path::Path) -> Option<f32> {

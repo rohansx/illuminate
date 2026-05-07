@@ -25,7 +25,10 @@ Use Memcached, not Redis. Rationale: lower memory footprint, simpler ops.
 fn parses_nygard_adr() {
     let p = PathBuf::from("docs/adr/0042-memcached.md");
     let c = parse_adr(&p, NYGARD).expect("must parse");
-    assert_eq!(c.id_slug, "adr-0042-use-memcached-for-billing-service-caching");
+    assert_eq!(
+        c.id_slug,
+        "adr-0042-use-memcached-for-billing-service-caching"
+    );
     assert_eq!(c.confidence, 1.0);
     assert!(c.body.contains("## Decision"));
     assert!(c.body.contains("Use Memcached"));

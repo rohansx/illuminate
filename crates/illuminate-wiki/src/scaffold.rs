@@ -5,7 +5,8 @@
 use crate::Result;
 use std::path::Path;
 
-const SCHEMA_STUB: &str = "# wiki schema\n\nSee `docs/SCHEMA.md` in the illuminate repo for the canonical schema.\n";
+const SCHEMA_STUB: &str =
+    "# wiki schema\n\nSee `docs/SCHEMA.md` in the illuminate repo for the canonical schema.\n";
 const INDEX_STUB: &str = "# wiki\n\n_Populated by `illuminate wiki rebuild`._\n";
 const LOG_STUB: &str = "# wiki log\n\nAppend-only audit log of wiki changes.\n";
 const GITKEEP: &str = "";

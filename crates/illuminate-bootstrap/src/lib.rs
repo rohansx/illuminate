@@ -3,8 +3,8 @@
 //! Each source produces [`BootstrapCandidate`]s; the orchestrator dedupes,
 //! writes wiki markdown pages, and registers graph episodes.
 
-pub mod agent_files;
 pub mod adr;
+pub mod agent_files;
 pub mod candidate;
 pub mod orchestrate;
 

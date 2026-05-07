@@ -32,12 +32,11 @@ pub fn serve(wiki_root: &Path, port: u16) -> std::io::Result<()> {
             Ok(html) => html,
             Err(msg) => format!("<h1>not found</h1><p>{msg}</p><p><a href=\"/\">index</a></p>"),
         };
-        let response = tiny_http::Response::from_string(html)
-            .with_header(
-                "Content-Type: text/html; charset=utf-8"
-                    .parse::<tiny_http::Header>()
-                    .unwrap(),
-            );
+        let response = tiny_http::Response::from_string(html).with_header(
+            "Content-Type: text/html; charset=utf-8"
+                .parse::<tiny_http::Header>()
+                .unwrap(),
+        );
         let _ = request.respond(response);
     }
     Ok(())
@@ -82,7 +81,7 @@ fn render_index_page(root: &Path) -> String {
     let pages: Vec<WikiPage> = walked.into_iter().filter_map(|w| w.page.ok()).collect();
     let md = render_index(&pages);
     let body_html = {
-        use pulldown_cmark::{html, Options, Parser};
+        use pulldown_cmark::{Options, Parser, html};
         let parser = Parser::new_ext(&md, Options::all());
         let mut h = String::new();
         html::push_html(&mut h, parser);

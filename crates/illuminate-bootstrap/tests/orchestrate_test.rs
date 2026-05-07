@@ -42,7 +42,10 @@ fn collapses_same_content_across_agent_files() {
     let report = run_bootstrap(tmp.path()).unwrap();
     // 3 candidates found, but only 1 unique body → 1 page
     assert!(report.candidates_found >= 1);
-    assert_eq!(report.pages_written, 1, "duplicates across agent files must collapse to one page");
+    assert_eq!(
+        report.pages_written, 1,
+        "duplicates across agent files must collapse to one page"
+    );
 }
 
 #[test]

@@ -50,7 +50,7 @@ fn id_to_relative_path(id: &str, kind: &PageType) -> String {
 
 /// Render the body of a wiki page as HTML (for `wiki serve`).
 pub fn render_body_html(page: &WikiPage) -> String {
-    use pulldown_cmark::{html, Options, Parser};
+    use pulldown_cmark::{Options, Parser, html};
     let parser = Parser::new_ext(&page.body, Options::all());
     let mut html_out = String::new();
     html::push_html(&mut html_out, parser);

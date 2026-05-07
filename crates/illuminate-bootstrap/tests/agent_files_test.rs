@@ -19,8 +19,14 @@ Just some text without decision signals.
 fn extracts_sections_with_decision_signals() {
     let cands = parse_agent_file("CLAUDE.md", SAMPLE);
     let titles: Vec<_> = cands.iter().map(|c| c.title.as_str()).collect();
-    assert!(titles.contains(&"Caching"), "caching section must be captured");
-    assert!(titles.contains(&"Style"), "style section has 'use' / 'prefer' signals");
+    assert!(
+        titles.contains(&"Caching"),
+        "caching section must be captured"
+    );
+    assert!(
+        titles.contains(&"Style"),
+        "style section has 'use' / 'prefer' signals"
+    );
 }
 
 #[test]
@@ -41,7 +47,10 @@ fn id_slug_combines_filename_and_heading() {
 fn skips_noise_headings_like_always_do() {
     let s = "## Always do\n\nUse 2-space indents. Prefer explicit imports.\n";
     let cands = parse_agent_file("CLAUDE.md", s);
-    assert!(cands.is_empty(), "always do is a list-section marker; should be skipped");
+    assert!(
+        cands.is_empty(),
+        "always do is a list-section marker; should be skipped"
+    );
 }
 
 #[test]
@@ -55,7 +64,10 @@ fn skips_noise_headings_resources() {
 fn skips_bullet_dominated_sections() {
     let s = "## Tools we use\n\n- We use Postgres\n- We use Redis\n- We use Memcached\n- We always check types\n";
     let cands = parse_agent_file("CLAUDE.md", s);
-    assert!(cands.is_empty(), "bullet-dominated lists are reference, not decisions");
+    assert!(
+        cands.is_empty(),
+        "bullet-dominated lists are reference, not decisions"
+    );
 }
 
 #[test]
@@ -63,7 +75,11 @@ fn skips_code_example_blocks() {
     let s = "## Write: ALTER TABLE users DROP COLUMN preferences;\n\nExample of bad SQL we never want:\n\n```sql\nALTER TABLE users DROP COLUMN preferences;\n```\n\nUse migrations instead.\n";
     let cands = parse_agent_file("CLAUDE.md", s);
     // The "Write:" prefix or excessive code content should disqualify
-    assert!(cands.is_empty(), "code example sections should be skipped, got: {:?}", cands.iter().map(|c| &c.title).collect::<Vec<_>>());
+    assert!(
+        cands.is_empty(),
+        "code example sections should be skipped, got: {:?}",
+        cands.iter().map(|c| &c.title).collect::<Vec<_>>()
+    );
 }
 
 #[test]

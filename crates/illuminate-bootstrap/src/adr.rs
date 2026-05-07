@@ -1,17 +1,13 @@
 //! Parse Nygard-style ADRs (`# 0042: Title`, sections Status/Context/Decision/Consequences).
 
-use crate::candidate::BootstrapCandidate;
 use crate::Result;
+use crate::candidate::BootstrapCandidate;
 use illuminate_wiki::page::PageType;
 use regex::Regex;
 use std::path::Path;
 use std::sync::OnceLock;
 
-const ADR_DIRS: &[&str] = &[
-    "docs/adr",
-    "docs/decisions",
-    "architecture/decisions",
-];
+const ADR_DIRS: &[&str] = &["docs/adr", "docs/decisions", "architecture/decisions"];
 
 pub fn collect(repo_root: &Path) -> Result<Vec<BootstrapCandidate>> {
     let mut out = Vec::new();
@@ -63,8 +59,7 @@ pub fn parse_adr(path: &Path, content: &str) -> Option<BootstrapCandidate> {
 
 fn canonicalize_sections(content: &str) -> String {
     let want = ["Decision", "Context", "Consequences"];
-    let mut sections: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    let mut sections: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut current: Option<String> = None;
     let mut buf: Vec<String> = Vec::new();
     for line in content.lines() {
@@ -85,7 +80,12 @@ fn canonicalize_sections(content: &str) -> String {
     let mut out = String::new();
     for sect in &want {
         out.push_str(&format!("## {sect}\n\n"));
-        out.push_str(sections.get(*sect).map(String::as_str).unwrap_or("_Section not present in source ADR._"));
+        out.push_str(
+            sections
+                .get(*sect)
+                .map(String::as_str)
+                .unwrap_or("_Section not present in source ADR._"),
+        );
         out.push_str("\n\n");
     }
     out

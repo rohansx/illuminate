@@ -4,8 +4,8 @@
 //! so callers can decide how to handle bad pages (the linter and rebuilder
 //! treat parse failures differently).
 
-use crate::page::{parse_page, WikiPage};
 use crate::Result;
+use crate::page::{WikiPage, parse_page};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]

@@ -25,8 +25,7 @@ static ID_RE: OnceLock<Regex> = OnceLock::new();
 
 fn id_regex() -> &'static Regex {
     ID_RE.get_or_init(|| {
-        Regex::new(r"(?i)^(dec|pat|fail|mod)-[a-z0-9-]+$")
-            .expect("id regex is valid")
+        Regex::new(r"(?i)^(dec|pat|fail|mod)-[a-z0-9-]+$").expect("id regex is valid")
     })
 }
 

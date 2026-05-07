@@ -1,4 +1,4 @@
-use illuminate_wiki::page::{parse_page, PageType};
+use illuminate_wiki::page::{PageType, parse_page};
 
 const VALID: &str = r#"---
 id: dec-2025-12-no-redis
