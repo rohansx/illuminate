@@ -146,7 +146,7 @@ impl ReflexionStore {
         }
 
         // Sort by recorded_at descending (most recent first) and limit
-        results.sort_by(|a, b| b.recorded_at.cmp(&a.recorded_at));
+        results.sort_by_key(|r| std::cmp::Reverse(r.recorded_at));
         results.truncate(limit);
 
         Ok(results)
