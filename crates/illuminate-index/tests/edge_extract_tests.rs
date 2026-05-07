@@ -11,10 +11,10 @@ use illuminate_index::edges::EdgeKind;
 use illuminate_index::{
     Language,
     edge_extract::{
-        extract_c_edges, extract_go_call_edges, extract_go_edges, extract_java_call_edges,
-        extract_java_edges, extract_python_call_edges, extract_python_edges,
-        extract_rust_call_edges, extract_rust_edges, extract_typescript_call_edges,
-        extract_typescript_edges,
+        extract_c_call_edges, extract_c_edges, extract_go_call_edges, extract_go_edges,
+        extract_java_call_edges, extract_java_edges, extract_python_call_edges,
+        extract_python_edges, extract_rust_call_edges, extract_rust_edges,
+        extract_typescript_call_edges, extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -1424,4 +1424,136 @@ fn index_file_with_edges_returns_imports_and_calls_java() {
     );
     assert_eq!(calls[0].source_qualified, "src/A.java::foo");
     assert_eq!(calls[0].target_qualified, "List.of");
+}
+
+#[test]
+fn extracts_simple_c_call() {
+    let source = b"int main() { foo(); return 0; }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_call_edges(&tree, source, "src/main.c");
+
+    assert_eq!(edges.len(), 1, "expected one c call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/main.c::main");
+    assert_eq!(edge.target_qualified, "foo");
+    assert_eq!(edge.file_path, "src/main.c");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_field_call_c() {
+    let source = b"void f(struct S *s) { s->method(); }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_call_edges(&tree, source, "src/f.c");
+
+    assert_eq!(edges.len(), 1, "expected one c call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/f.c::f");
+    assert_eq!(
+        edge.target_qualified, "s->method",
+        "arrow operator should be preserved verbatim"
+    );
+}
+
+#[test]
+fn extracts_dot_field_call_c() {
+    let source = b"void f(struct S s) { s.method(); }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_call_edges(&tree, source, "src/f.c");
+
+    assert_eq!(edges.len(), 1, "expected one c call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/f.c::f");
+    assert_eq!(edge.target_qualified, "s.method");
+}
+
+#[test]
+fn extracts_static_function_call_c() {
+    let source = b"void caller() { strcpy(dst, src); }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_call_edges(&tree, source, "src/caller.c");
+
+    assert_eq!(edges.len(), 1, "expected one c call edge, got {:?}", edges);
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Calls);
+    assert_eq!(edge.source_qualified, "src/caller.c::caller");
+    assert_eq!(edge.target_qualified, "strcpy");
+}
+
+#[test]
+fn multiple_c_funcs_each_get_their_own_calls() {
+    let source = b"void a() { x(); } void b() { y(); }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_call_edges(&tree, source, "src/m.c");
+
+    assert_eq!(edges.len(), 2, "expected two c call edges, got {:?}", edges);
+    let a_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "x")
+        .expect("should have x call");
+    assert_eq!(a_edge.source_qualified, "src/m.c::a");
+    let b_edge = edges
+        .iter()
+        .find(|e| e.target_qualified == "y")
+        .expect("should have y call");
+    assert_eq!(b_edge.source_qualified, "src/m.c::b");
+}
+
+#[test]
+fn index_file_with_edges_returns_includes_and_calls_c() {
+    let source = b"#include <stdio.h>\n\nint main() { printf(\"hi\"); return 0; }\n";
+    let path = Path::new("src/main.c");
+
+    let (_symbols, edges) = index_file_with_edges(path, source, Language::C).unwrap();
+
+    let imports: Vec<_> = edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Imports)
+        .collect();
+    let calls: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Calls).collect();
+
+    assert_eq!(imports.len(), 1, "should have one c import edge");
+    assert_eq!(imports[0].target_qualified, "stdio.h");
+
+    assert_eq!(
+        calls.len(),
+        1,
+        "should have one c call edge, got {:?}",
+        calls
+    );
+    assert_eq!(calls[0].source_qualified, "src/main.c::main");
+    assert_eq!(calls[0].target_qualified, "printf");
+}
+
+#[test]
+fn extracts_cpp_method_call_via_c_grammar() {
+    // C++ `Foo::method` produces an ERROR node for the `Foo::` qualifier
+    // under tree-sitter-c, but the `function_declarator` for `method()`
+    // still parses cleanly and the `helper()` call inside the body is
+    // surfaced. We assert the call is captured even when surrounding C++
+    // syntax parses imperfectly.
+    let source = b"void Foo::method() { helper(); }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_call_edges(&tree, source, "src/foo.cpp");
+
+    assert!(
+        edges.iter().any(|e| e.target_qualified == "helper"),
+        "should capture helper() call even when class qualifier produces an ERROR node, got {:?}",
+        edges,
+    );
+    let helper = edges
+        .iter()
+        .find(|e| e.target_qualified == "helper")
+        .unwrap();
+    assert_eq!(helper.kind, EdgeKind::Calls);
+    assert_eq!(helper.file_path, "src/foo.cpp");
 }

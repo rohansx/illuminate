@@ -14,7 +14,7 @@
 //! `.hpp` files dispatch through `Language::C`, and `#include` extraction
 //! works even when C++ class/template/namespace bodies parse imperfectly.
 //!
-//! Rust + Go + TypeScript + Python + Java additionally emit Calls edges. Rust uses
+//! Rust + Go + TypeScript + Python + Java + C additionally emit Calls edges. Rust uses
 //! [`extract_rust_call_edges`]: one edge per `call_expression` found within
 //! a `function_item` body, with the source qualifier
 //! `<file_path>::<fn_name>` and the target qualifier the literal text of
@@ -44,9 +44,18 @@
 //! constructor's class-name identifier — `<file>::A` for `class A { A() {...} }`).
 //! Targets are reconstructed from the invocation's `name` field plus its
 //! optional `object` field text: bare `foo()` → `foo`; `obj.foo()` →
-//! `obj.foo`; `Class.staticMethod()` → `Class.staticMethod`. Other languages
-//! remain imports-only; see
-//! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
+//! `obj.foo`; `Class.staticMethod()` → `Class.staticMethod`. C follows via
+//! [`extract_c_call_edges`]: one edge per `call_expression` node attributed
+//! to the nearest enclosing `function_definition`. The function name is
+//! reached via the nested `declarator` field chain
+//! (`function_definition` → `function_declarator` → `identifier`). Targets
+//! are taken verbatim from the call's first child's text: bare `foo()` →
+//! `foo`; `obj->method()` → `obj->method` (arrow operator preserved);
+//! `obj.method()` → `obj.method`. C++ files (`.cpp`/`.cc`/`.cxx`/`.hpp`)
+//! reuse `Language::C` and surface call edges best-effort: class-qualified
+//! definitions like `void Foo::method()` produce an ERROR node for the
+//! `Foo::` qualifier in tree-sitter-c, but inner `function_declarator`s
+//! and `call_expression`s still parse cleanly.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
 //! `file::<file_path>`. We don't yet have function-scoped imports, so this
@@ -1072,6 +1081,106 @@ fn walk_for_c_includes(
     for child in node.children(&mut cursor) {
         walk_for_c_includes(child, source, file_path, out);
     }
+}
+
+/// Extract function-call edges from a parsed C source file.
+///
+/// Walks the AST attributing every `call_expression` to the nearest
+/// enclosing `function_definition`. The defining function's name is
+/// reached via the nested `declarator` field chain
+/// (`function_definition` → `function_declarator` → `identifier`); when
+/// that chain is interrupted by qualifiers, function pointers, or other
+/// declarator wrappers, we fall back to a recursive search for a
+/// `function_declarator` descendant. Calls outside any function attribute
+/// to the file-level pseudo-node `file::<file_path>`.
+///
+/// The call target is taken verbatim from the `call_expression`'s first
+/// child's text: a bare `foo()` yields `foo`, `obj->method()` yields
+/// `obj->method` (arrow operator preserved), and `obj.method()` yields
+/// `obj.method`. Function-pointer calls like `(*ptr)()` keep the
+/// parenthesized expression text verbatim.
+///
+/// Public so downstream consumers and integration tests can target the
+/// per-language extractor directly. The recommended entry point for most
+/// callers is [`crate::index_file_with_edges`].
+///
+/// Returns an empty vector if the tree has no calls.
+pub fn extract_c_call_edges(tree: &tree_sitter::Tree, source: &[u8], file_path: &str) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_c_funcs(tree.root_node(), source, file_path, None, &mut edges);
+    edges
+}
+
+fn walk_for_c_funcs(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    enclosing_fn_name: Option<&str>,
+    out: &mut Vec<Edge>,
+) {
+    // `function_definition` shadows the enclosing function for its subtree.
+    // The name is reached through nested `declarator` fields; if extraction
+    // fails (defensive parses, malformed declarators), keep the outer name
+    // rather than dropping every nested call on the floor.
+    let new_enclosing: Option<String> = if node.kind() == "function_definition" {
+        c_function_name(node, source)
+    } else {
+        None
+    };
+
+    if node.kind() == "call_expression"
+        && let Some(target_node) = node.child(0)
+    {
+        let target = node_text(target_node, source).trim();
+        if !target.is_empty() {
+            let source_qn = match enclosing_fn_name {
+                Some(name) => format!("{}::{}", file_path, name),
+                None => format!("file::{}", file_path),
+            };
+            out.push(Edge {
+                source_qualified: source_qn,
+                target_qualified: target.to_string(),
+                kind: EdgeKind::Calls,
+                file_path: file_path.to_string(),
+                line: target_node.start_position().row as u32 + 1,
+            });
+        }
+    }
+
+    let pass_down: Option<&str> = new_enclosing.as_deref().or(enclosing_fn_name);
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_c_funcs(child, source, file_path, pass_down, out);
+    }
+}
+
+/// Extract the function name from a `function_definition` node.
+///
+/// The expected chain is `function_definition.declarator (function_declarator)
+/// .declarator (identifier)`. When the outer declarator is wrapped (e.g.
+/// `pointer_declarator` for functions returning pointers) we recurse to find
+/// the inner `function_declarator` before grabbing its `declarator` field.
+fn c_function_name(fn_def: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    let declarator = fn_def.child_by_field_name("declarator")?;
+    let fn_decl = find_function_declarator(declarator)?;
+    let name_node = fn_decl.child_by_field_name("declarator")?;
+    Some(node_text(name_node, source).to_string())
+}
+
+/// Locate a `function_declarator` descendant, peeling pointer/array/etc.
+/// declarator wrappers along the way. Returns the node itself when it is
+/// already a `function_declarator`.
+fn find_function_declarator(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    if node.kind() == "function_declarator" {
+        return Some(node);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(found) = find_function_declarator(child) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// Strip the surrounding `<>` or `"..."` delimiters from a C include
