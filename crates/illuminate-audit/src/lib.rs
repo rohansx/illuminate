@@ -203,7 +203,7 @@ impl Auditor {
             return ImpactInfo::default();
         };
 
-        let seeds = build_seed_qualifiers(files, &self.repo_root);
+        let mut seeds = build_seed_qualifiers(files, &self.repo_root);
         if seeds.is_empty() {
             return ImpactInfo::default();
         }
@@ -213,13 +213,24 @@ impl Auditor {
         // Paths are normalized against `self.repo_root` (when set) so
         // ABSOLUTE paths from agent callers map to the repo-relative form
         // the indexer stored — see the doc on `with_index_and_root`.
+        //
+        // We also lift each `<path>::<sym>` qualifier into the BFS seed set
+        // so `impact_radius` can traverse Calls edges (whose source qualifier
+        // is `<path>::<fn>` rather than `file::<path>`). Without this, the
+        // recursive-CTE BFS only reaches Imports edges; Calls edges sit
+        // unreachable because no seed matches their source. `seed_symbols`
+        // therefore holds the union of file-level and symbol-level seeds —
+        // semantically "things the BFS started from" — while `defined_symbols`
+        // remains the narrower "symbols inside touched files" view.
         let mut defined_symbols: Vec<String> = Vec::new();
         for f in files {
             let path_str = normalize_path(f.as_ref(), &self.repo_root);
             match illuminate_index::storage::lookup_file(&conn, &path_str) {
                 Ok(symbols) => {
                     for sym in symbols {
-                        defined_symbols.push(format!("{path_str}::{}", sym.name));
+                        let qualifier = format!("{path_str}::{}", sym.name);
+                        defined_symbols.push(qualifier.clone());
+                        seeds.push(qualifier);
                     }
                 }
                 Err(e) => {
@@ -525,13 +536,17 @@ fn open_index_connection(path: &Path) -> Option<Mutex<Connection>> {
     }
 }
 
-/// Build seed qualified-names from the supplied files.
+/// Build file-level seed qualified-names from the supplied files.
 ///
 /// We seed at the file level (`file::<file_path>`), matching the qualified-name
 /// format produced by the import-edge extractor in `illuminate-index::edge_extract`.
 /// Paths are normalized against `repo_root` (when set) so ABSOLUTE paths from
 /// agent callers map to the repo-relative form the indexer stored.
-/// Per-symbol seeding can be layered on later without breaking this contract.
+///
+/// Symbol-level seeds (`<path>::<sym>`) are layered on by [`Auditor::compute_impact`]
+/// after `lookup_file` resolves which symbols live in each touched file —
+/// they are the ones that let the BFS traverse Calls edges in addition to
+/// Imports edges.
 fn build_seed_qualifiers<P: AsRef<Path>>(files: &[P], repo_root: &Option<PathBuf>) -> Vec<String> {
     files
         .iter()

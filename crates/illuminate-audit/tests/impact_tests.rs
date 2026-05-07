@@ -341,6 +341,154 @@ fn audit_with_files_passes_through_when_root_unset() {
     );
 }
 
+#[test]
+fn audit_with_files_seeds_include_symbol_level_qualifiers() {
+    // When the index knows about symbols inside the touched file, the seed
+    // set fed to `impact_radius` must include both the file-level pseudo-node
+    // (`file::<path>`) AND a `<path>::<sym>` qualifier for every symbol in
+    // the file. Without symbol-level seeds the BFS would miss every Calls
+    // edge (whose source qualifier is `<path>::<fn>`).
+    let project = tempdir().unwrap();
+    let src_dir = project.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("foo.rs"),
+        "pub fn alpha() -> u32 { 1 }\n\npub fn beta() -> u32 { 2 }\n",
+    )
+    .unwrap();
+
+    let db_dir = tempdir().unwrap();
+    let db_path = db_dir.path().join("index.db");
+    {
+        let mut idx = CodeIndex::open(&db_path).unwrap();
+        idx.index_project(project.path()).unwrap();
+    }
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor = Auditor::with_index(graph, vec![], db_path);
+
+    let files = vec![PathBuf::from("src/foo.rs")];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert!(
+        result
+            .impact
+            .seed_symbols
+            .iter()
+            .any(|s| s == "file::src/foo.rs"),
+        "seed_symbols missing file-level seed: {:?}",
+        result.impact.seed_symbols
+    );
+    assert!(
+        result
+            .impact
+            .seed_symbols
+            .iter()
+            .any(|s| s == "src/foo.rs::alpha"),
+        "seed_symbols missing symbol-level seed for alpha: {:?}",
+        result.impact.seed_symbols
+    );
+    assert!(
+        result
+            .impact
+            .seed_symbols
+            .iter()
+            .any(|s| s == "src/foo.rs::beta"),
+        "seed_symbols missing symbol-level seed for beta: {:?}",
+        result.impact.seed_symbols
+    );
+}
+
+#[test]
+fn audit_with_files_impact_traverses_outgoing_call_edges() {
+    // Forward-chain Calls test: alpha -> beta -> gamma, all in one file.
+    // Seeding by file alone leaves the BFS unable to walk Calls edges
+    // because their source qualifier is `<path>::<fn>`. With symbol-level
+    // seeds the BFS starts at `src/lib.rs::alpha`, follows the outgoing
+    // Calls edge (target `beta`), which itself has an outgoing Calls edge
+    // (target `gamma`). Both bare names should appear in `impacted_symbols`.
+    let project = tempdir().unwrap();
+    let src_dir = project.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("lib.rs"),
+        r#"
+pub fn alpha() { beta(); }
+pub fn beta() { gamma(); }
+pub fn gamma() {}
+"#,
+    )
+    .unwrap();
+
+    let db_dir = tempdir().unwrap();
+    let db_path = db_dir.path().join("index.db");
+    {
+        let mut idx = CodeIndex::open(&db_path).unwrap();
+        idx.index_project(project.path()).unwrap();
+    }
+
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor = Auditor::with_index(graph, vec![], db_path);
+
+    let files = vec![PathBuf::from("src/lib.rs")];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    // Symbol seeds must be present (precondition of the lift).
+    assert!(
+        result
+            .impact
+            .seed_symbols
+            .iter()
+            .any(|s| s == "src/lib.rs::alpha"),
+        "seed_symbols missing symbol-level seed for alpha: {:?}",
+        result.impact.seed_symbols
+    );
+
+    // BFS should walk `src/lib.rs::alpha` -> Calls -> `beta` (target qn is
+    // the bare callee name as emitted by `extract_rust_call_edges`).
+    assert!(
+        result.impact.impacted_symbols.iter().any(|s| s == "beta"),
+        "impacted_symbols should include callee `beta` reached via outgoing \
+         Calls edge from symbol seed `src/lib.rs::alpha`: {:?}",
+        result.impact.impacted_symbols
+    );
+    // Depth-2 reaches `gamma` via `<path>::beta -> gamma`. `<path>::beta`
+    // is itself a seed (depth 0), so the outgoing edge from it is depth 1
+    // and lands `gamma` at depth 1.
+    assert!(
+        result.impact.impacted_symbols.iter().any(|s| s == "gamma"),
+        "impacted_symbols should include downstream callee `gamma` reached \
+         via the Calls edge from `src/lib.rs::beta`: {:?}",
+        result.impact.impacted_symbols
+    );
+}
+
+#[test]
+fn audit_with_files_symbol_seeds_empty_when_no_index() {
+    // Without an index path configured, `compute_impact` returns an empty
+    // ImpactInfo — there is no `lookup_file` to draw symbol qualifiers from,
+    // so `seed_symbols` is empty (no file-level OR symbol-level entries).
+    let graph = illuminate::Graph::in_memory().unwrap();
+    let auditor = Auditor::new(graph, vec![]);
+
+    let files = vec![PathBuf::from("src/foo.rs")];
+    let result = auditor.audit_with_files(PLAN_TEXT, &files).unwrap();
+
+    assert!(
+        result.impact.seed_symbols.is_empty(),
+        "no index means no seeds (file-level or symbol-level): {:?}",
+        result.impact.seed_symbols
+    );
+    assert!(
+        !result
+            .impact
+            .seed_symbols
+            .iter()
+            .any(|s| s.contains("::") && !s.starts_with("file::")),
+        "seed_symbols must not contain symbol-level entries when index unavailable"
+    );
+}
+
 /// Build a minimal index.db with three files in a chain:
 ///   billing → payments  (Imports edge, billing is source)
 ///   api     → billing   (Imports edge, api is source)
