@@ -200,6 +200,29 @@ enum Commands {
         json: bool,
     },
 
+    /// Inspect a file's blast-radius via the code graph (read-only).
+    Impact {
+        /// Files to inspect (repo-relative paths)
+        #[arg(num_args = 1..)]
+        files: Vec<PathBuf>,
+
+        /// Path to index.db (default: <repo>/.illuminate/index.db)
+        #[arg(long)]
+        index_db: Option<PathBuf>,
+
+        /// BFS max depth (default: 2)
+        #[arg(long)]
+        depth: Option<u32>,
+
+        /// BFS max nodes (default: 50)
+        #[arg(long)]
+        max_nodes: Option<usize>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// PreToolUse hook - auto-audit Write/Edit calls (reads from stdin)
     AuditHook,
 
@@ -400,6 +423,13 @@ fn main() {
             index_db,
             json,
         } => commands::audit::run(plan, files, index_db, json),
+        Commands::Impact {
+            files,
+            index_db,
+            depth,
+            max_nodes,
+            json,
+        } => commands::impact::run(files, index_db, depth, max_nodes, json),
         Commands::Trail { cmd } => {
             commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io)
         }

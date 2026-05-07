@@ -25,6 +25,7 @@ illuminate-wiki = { version = "0.8.0", path = "../illuminate-wiki" }
 illuminate-bootstrap = { version = "0.8.0", path = "../illuminate-bootstrap" }
 clap = { workspace = true }
 rusqlite = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

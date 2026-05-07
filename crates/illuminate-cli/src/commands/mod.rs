@@ -5,6 +5,7 @@ pub mod entities;
 pub mod export;
 pub mod failures;
 pub mod hook;
+pub mod impact;
 pub mod index;
 pub mod init;
 pub mod log;
