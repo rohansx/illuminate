@@ -1434,8 +1434,10 @@ dependencies = [
  "illuminate-index",
  "illuminate-reflect",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "toml",
 ]

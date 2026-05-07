@@ -12,6 +12,26 @@ pub struct AuditResult {
     pub violations: Vec<Violation>,
     pub policy_violations: Vec<PolicyViolation>,
     pub reflexions: Vec<ReflexionEpisode>,
+    /// Optional blast-radius information from the code graph.
+    /// Always informational — never affects `status`. Empty when no
+    /// `index.db` is configured or when no files were supplied.
+    #[serde(default)]
+    pub impact: ImpactInfo,
+}
+
+/// Blast-radius information for the files an agent proposes to touch.
+///
+/// Computed by joining the supplied file list against `index.db` and running
+/// [`illuminate_index::storage::impact_radius`] over the resulting seeds.
+/// Caps (`max_depth`, `max_nodes`) are applied by the caller.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ImpactInfo {
+    /// Qualified names of symbols touched by the proposed file changes.
+    pub seed_symbols: Vec<String>,
+    /// Qualified names of symbols transitively impacted (callers + callees within depth cap).
+    pub impacted_symbols: Vec<String>,
+    /// True if the result hit the node cap.
+    pub truncated: bool,
 }
 
 /// Overall audit status.
