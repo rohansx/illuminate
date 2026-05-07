@@ -115,10 +115,9 @@ fn cursor_disk_kv_table_exists(conn: &Connection) -> Result<bool> {
 /// blob. We sort/group these in [`group_into_records`].
 ///
 /// `input_tokens` / `output_tokens` are captured from the bubble's
-/// `tokenCount` object when present. They are not yet surfaced on
-/// [`TrailRecord`] — downstream ingestion (cost-per-decision attribution)
-/// will pick them up — but we extract them here so the parser is
-/// spec-complete and the data is preserved end-to-end.
+/// `tokenCount` object when present and summed per-conversation onto
+/// [`TrailRecord::input_tokens`] / [`TrailRecord::output_tokens`] in
+/// [`group_into_records`].
 struct BubbleRow {
     rowid: i64,
     conversation_id: String,
@@ -126,12 +125,7 @@ struct BubbleRow {
     created_at: Option<DateTime<Utc>>,
     text: String,
     bubble_type: i64,
-    // Token counts are captured but not yet read by the grouping path; the
-    // downstream ingestion change will surface them on `TrailRecord`. The
-    // allows below silence clippy until that change lands.
-    #[allow(dead_code)]
     input_tokens: Option<u64>,
-    #[allow(dead_code)]
     output_tokens: Option<u64>,
 }
 
@@ -364,6 +358,19 @@ fn group_into_records(rows: Vec<BubbleRow>) -> Vec<TrailRecord> {
             .find_map(|b| b.model.clone())
             .unwrap_or_else(|| "unknown".to_string());
 
+        // Token accounting: `reduce` returns `None` if no bubble surfaces a
+        // value, which is the right semantic — `Some(0)` would mean
+        // "session truly recorded zero tokens", whereas `None` means "the
+        // source carried no usage data for this session".
+        let input_tokens = bubbles
+            .iter()
+            .filter_map(|b| b.input_tokens)
+            .reduce(|a, b| a + b);
+        let output_tokens = bubbles
+            .iter()
+            .filter_map(|b| b.output_tokens)
+            .reduce(|a, b| a + b);
+
         let messages: Vec<Message> = bubbles
             .iter()
             .filter(|b| !b.text.is_empty())
@@ -394,6 +401,8 @@ fn group_into_records(rows: Vec<BubbleRow>) -> Vec<TrailRecord> {
             messages,
             files_touched: Vec::new(),
             tool_invocations: Vec::new(),
+            input_tokens,
+            output_tokens,
         });
     }
 

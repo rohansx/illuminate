@@ -18,6 +18,8 @@ fn sample_record() -> TrailRecord {
         }],
         files_touched: vec![],
         tool_invocations: vec![],
+        input_tokens: None,
+        output_tokens: None,
     }
 }
 

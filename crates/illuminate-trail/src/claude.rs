@@ -36,6 +36,12 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
     let mut repo_path: Option<PathBuf> = None;
     let mut started_at: Option<DateTime<Utc>> = None;
     let mut ended_at: Option<DateTime<Utc>> = None;
+    // Token accounting from `message.usage` on assistant records. We start
+    // each accumulator as `None` so that a session with no usage data
+    // surfaces as `None` (rather than `Some(0)`), and only flip to
+    // `Some(total)` when at least one record carries real usage.
+    let mut total_input_tokens: Option<u64> = None;
+    let mut total_output_tokens: Option<u64> = None;
 
     for rec in &records {
         match rec {
@@ -82,6 +88,14 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
                     });
                 }
                 tool_invocations.extend(calls);
+                if let Some(usage) = &message.usage {
+                    if let Some(i) = usage.input_tokens {
+                        total_input_tokens = Some(total_input_tokens.unwrap_or(0) + i);
+                    }
+                    if let Some(o) = usage.output_tokens {
+                        total_output_tokens = Some(total_output_tokens.unwrap_or(0) + o);
+                    }
+                }
             }
             RawRecord::Attachment { timestamp, cwd, .. } => {
                 ended_at = Some(*timestamp);
@@ -110,6 +124,8 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
         messages,
         files_touched: Vec::new(),
         tool_invocations,
+        input_tokens: total_input_tokens,
+        output_tokens: total_output_tokens,
     })
 }
 

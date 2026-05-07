@@ -198,6 +198,97 @@ fn clamps_ended_at_to_at_least_started_at() {
 }
 
 #[test]
+fn extracts_token_counts_from_payload_usage() {
+    // Codex rollout events MAY carry `payload.usage.input_tokens` /
+    // `payload.usage.output_tokens` (best-effort plumbing). When present,
+    // the parser must sum them onto the TrailRecord's totals.
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("rollout-tokens.jsonl");
+
+    let lines = vec![
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": "2026-05-07T10:00:00Z",
+            "payload": {
+                "id": "sess-tok",
+                "originator": "codex",
+                "model": "gpt-5",
+                "cwd": "/home/me/proj"
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-05-07T10:00:01Z",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "first"}],
+                "usage": {"input_tokens": 100, "output_tokens": 40}
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-05-07T10:00:02Z",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "second"}],
+                "usage": {"input_tokens": 50, "output_tokens": 20}
+            }
+        }),
+    ];
+    write_jsonl(&path, &lines);
+
+    let rec = parse_session(&path).expect("parse ok");
+    assert_eq!(rec.input_tokens, Some(150), "100 + 50");
+    assert_eq!(rec.output_tokens, Some(60), "40 + 20");
+}
+
+#[test]
+fn codex_session_without_usage_data_surfaces_none() {
+    // Most real codex rollouts do not carry usage data; the parser must
+    // gracefully degrade to `None` rather than `Some(0)` so downstream
+    // consumers can distinguish "no data" from "truly zero".
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("rollout-no-tokens.jsonl");
+
+    let lines = vec![
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": "2026-05-07T10:00:00Z",
+            "payload": {
+                "id": "sess-nt",
+                "originator": "codex",
+                "model": "gpt-5",
+                "cwd": "/home/me/proj"
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-05-07T10:00:01Z",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hi"}]
+            }
+        }),
+    ];
+    write_jsonl(&path, &lines);
+
+    let rec = parse_session(&path).expect("parse ok");
+    assert!(
+        rec.input_tokens.is_none(),
+        "no usage data => None, got {:?}",
+        rec.input_tokens
+    );
+    assert!(
+        rec.output_tokens.is_none(),
+        "no usage data => None, got {:?}",
+        rec.output_tokens
+    );
+}
+
+#[test]
 fn handles_unknown_record_types() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("rollout-unknown.jsonl");

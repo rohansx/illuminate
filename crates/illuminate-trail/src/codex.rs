@@ -161,6 +161,14 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
     let mut messages: Vec<Message> = Vec::new();
     let mut started_at: Option<DateTime<Utc>> = meta_ts;
     let mut ended_at: Option<DateTime<Utc>> = meta_ts;
+    // Token accounting is best-effort for Codex: the rollout schema does
+    // not always carry usage data, and when it does the field may live at
+    // `payload.usage.{input_tokens, output_tokens}` on `event_msg` /
+    // `response_item` records. We accumulate any values we find and
+    // fall through to `None` on sessions that surface nothing — keeping
+    // semantics aligned with the Cursor / Claude paths.
+    let mut total_input_tokens: Option<u64> = None;
+    let mut total_output_tokens: Option<u64> = None;
 
     for line_result in lines {
         let raw_line = line_result?;
@@ -180,6 +188,15 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
         if let Some(msg) = extract_message(&v, ts) {
             messages.push(msg);
         }
+
+        if let Some((i, o)) = extract_usage(&v) {
+            if let Some(i) = i {
+                total_input_tokens = Some(total_input_tokens.unwrap_or(0) + i);
+            }
+            if let Some(o) = o {
+                total_output_tokens = Some(total_output_tokens.unwrap_or(0) + o);
+            }
+        }
     }
 
     let fallback = file_mtime(path).unwrap_or_else(Utc::now);
@@ -198,6 +215,8 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
         messages,
         files_touched: Vec::new(),
         tool_invocations: Vec::new(),
+        input_tokens: total_input_tokens,
+        output_tokens: total_output_tokens,
     })
 }
 
@@ -266,6 +285,40 @@ fn extract_message(v: &Value, ts: Option<DateTime<Utc>>) -> Option<Message> {
         timestamp: ts.unwrap_or_else(Utc::now),
         text,
     })
+}
+
+/// Best-effort token usage extraction from a Codex rollout line.
+///
+/// Returns `Some((input, output))` when the line carries a
+/// `payload.usage.input_tokens` and/or `payload.usage.output_tokens` — both
+/// inner options track which fields were actually present. Returns `None`
+/// when the line carries no `payload.usage` object at all so the caller
+/// can keep the session-level totals as `None` rather than `Some(0)`.
+///
+/// We tolerate JSON-number and JSON-string encodings on each field
+/// (mirrors Cursor's mixed encoding tolerance) and silently drop anything
+/// that doesn't decode cleanly.
+fn extract_usage(v: &Value) -> Option<(Option<u64>, Option<u64>)> {
+    let usage = v.get("payload").and_then(|p| p.get("usage"))?;
+    let input = read_u64_field(usage, "input_tokens");
+    let output = read_u64_field(usage, "output_tokens");
+    if input.is_none() && output.is_none() {
+        return None;
+    }
+    Some((input, output))
+}
+
+/// Read a token-count field tolerant to mixed JSON encoding (number or
+/// string). Returns `None` for missing/null/non-numeric/negative values.
+fn read_u64_field(v: &Value, field: &str) -> Option<u64> {
+    let raw = v.get(field)?;
+    if let Some(n) = raw.as_u64() {
+        return Some(n);
+    }
+    if let Some(s) = raw.as_str() {
+        return s.parse::<u64>().ok();
+    }
+    None
 }
 
 /// Concatenate `text` fields of content blocks whose `type` matches `want_tags`.

@@ -259,6 +259,87 @@ fn extracts_token_counts_from_bubble() {
     let records = parse_state_db(&path).expect("parse ok");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].session_id, "conv-tok");
+    assert_eq!(
+        records[0].input_tokens,
+        Some(1234),
+        "TrailRecord must surface inputTokens summed from the bubble's tokenCount"
+    );
+    assert_eq!(
+        records[0].output_tokens,
+        Some(567),
+        "TrailRecord must surface outputTokens summed from the bubble's tokenCount"
+    );
+}
+
+#[test]
+fn summed_tokens_across_multiple_bubbles() {
+    // Two bubbles in the same conversation, each with their own token
+    // counts. The grouped TrailRecord must report the SUM, not the value
+    // from any individual bubble.
+    let (_dir, path) = build_db("state.vscdb");
+    {
+        let conn = open_db(&path);
+        create_cursor_disk_kv(&conn);
+
+        let b1 = serde_json::json!({
+            "tokenCount": {"inputTokens": 100, "outputTokens": 50},
+            "modelInfo": {"modelName": "claude-4.6-sonnet"},
+            "createdAt": iso_now(),
+            "conversationId": "conv-sum",
+            "text": "first",
+            "type": 1
+        });
+        let b2 = serde_json::json!({
+            "tokenCount": {"inputTokens": 200, "outputTokens": 75},
+            "modelInfo": {"modelName": "claude-4.6-sonnet"},
+            "createdAt": iso_now(),
+            "conversationId": "conv-sum",
+            "text": "second",
+            "type": 2
+        });
+        insert_bubble(&conn, "bubbleId:conv-sum:001", &b1.to_string());
+        insert_bubble(&conn, "bubbleId:conv-sum:002", &b2.to_string());
+    }
+
+    let records = parse_state_db(&path).expect("parse ok");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].input_tokens, Some(300), "100 + 200 = 300");
+    assert_eq!(records[0].output_tokens, Some(125), "50 + 75 = 125");
+}
+
+#[test]
+fn tokens_default_to_none_when_absent() {
+    // A bubble with no `tokenCount` field must produce a record whose
+    // token totals are `None` — distinct from `Some(0)`. `None` means the
+    // source carried no usage data; `Some(0)` would imply the session
+    // truly recorded zero tokens, which loses information.
+    let (_dir, path) = build_db("state.vscdb");
+    {
+        let conn = open_db(&path);
+        create_cursor_disk_kv(&conn);
+
+        let b = serde_json::json!({
+            "modelInfo": {"modelName": "claude-4.6-sonnet"},
+            "createdAt": iso_now(),
+            "conversationId": "conv-none",
+            "text": "no token data here",
+            "type": 1
+        });
+        insert_bubble(&conn, "bubbleId:conv-none:001", &b.to_string());
+    }
+
+    let records = parse_state_db(&path).expect("parse ok");
+    assert_eq!(records.len(), 1);
+    assert!(
+        records[0].input_tokens.is_none(),
+        "absent tokenCount must surface as None, got {:?}",
+        records[0].input_tokens
+    );
+    assert!(
+        records[0].output_tokens.is_none(),
+        "absent tokenCount must surface as None, got {:?}",
+        records[0].output_tokens
+    );
 }
 
 #[test]

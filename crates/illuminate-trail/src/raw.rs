@@ -62,6 +62,23 @@ pub struct MessageBlock {
     pub role: String,
     /// Content can be a plain string or an array of typed blocks.
     pub content: serde_json::Value,
+    /// Per-message token accounting on assistant turns. User turns rarely
+    /// carry this, but the field is `Option`al so the same struct backs both.
+    #[serde(default)]
+    pub usage: Option<UsageBlock>,
+}
+
+/// Token-accounting block that Claude Code attaches to assistant `message`
+/// records. We capture only `input_tokens` and `output_tokens` proper;
+/// `cache_creation_input_tokens` / `cache_read_input_tokens` are
+/// intentionally ignored to keep the surfaced totals comparable to
+/// Cursor's `tokenCount` shape.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UsageBlock {
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
