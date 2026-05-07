@@ -1,11 +1,21 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use illuminate::{Episode, Graph};
 use illuminate_audit::policy::IntentPolicy;
 use illuminate_embed::EmbedEngine;
 use illuminate_reflect::Severity;
+use rusqlite::Connection;
 use serde_json::{Value, json};
+
+/// Default depth cap for impact-radius traversal in MCP audits.
+/// Mirrors `illuminate-audit::DEFAULT_IMPACT_DEPTH` so CLI and MCP report
+/// the same blast radius for identical inputs.
+const IMPACT_DEPTH: u32 = 2;
+
+/// Default node cap for impact-radius traversal in MCP audits.
+const IMPACT_NODES: usize = 50;
 
 pub struct ToolContext {
     pub graph: Arc<Mutex<Graph>>,
@@ -14,6 +24,14 @@ pub struct ToolContext {
     embedding_cache: Mutex<Option<HashMap<String, Vec<f32>>>>,
     /// Intent policies loaded from illuminate.toml.
     policies: Vec<IntentPolicy>,
+    /// Optional path to the code-graph `index.db` for blast-radius reporting.
+    /// Resolved at server startup via `illuminate_audit::resolve_index_db`.
+    index_db_path: Option<PathBuf>,
+    /// Long-lived SQLite connection to the code-graph index. Initialized on
+    /// the first `illuminate_audit` call that supplies files. `None` inside
+    /// the `OnceLock` payload means the open attempt failed (missing file,
+    /// permission error) — we won't retry, just report no impact.
+    index_conn: OnceLock<Option<Mutex<Connection>>>,
 }
 
 impl ToolContext {
@@ -23,6 +41,8 @@ impl ToolContext {
             embed: embed.map(Arc::new),
             embedding_cache: Mutex::new(None),
             policies: Vec::new(),
+            index_db_path: None,
+            index_conn: OnceLock::new(),
         }
     }
 
@@ -36,6 +56,71 @@ impl ToolContext {
             embed: embed.map(Arc::new),
             embedding_cache: Mutex::new(None),
             policies,
+            index_db_path: None,
+            index_conn: OnceLock::new(),
+        }
+    }
+
+    /// Construct a `ToolContext` with a code-graph index. The connection is
+    /// opened lazily on the first `illuminate_audit` call that supplies files
+    /// — a missing or unreadable `index.db` is silently swallowed in favour of
+    /// returning a `null` impact field on the audit response.
+    pub fn with_index(
+        graph: Graph,
+        embed: Option<EmbedEngine>,
+        policies: Vec<IntentPolicy>,
+        index_db_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            graph: Arc::new(Mutex::new(graph)),
+            embed: embed.map(Arc::new),
+            embedding_cache: Mutex::new(None),
+            policies,
+            index_db_path,
+            index_conn: OnceLock::new(),
+        }
+    }
+
+    /// Lazily open the long-lived `index.db` connection. Returns `None` if
+    /// no path is configured or if the file failed to open.
+    fn index_connection(&self) -> Option<&Mutex<Connection>> {
+        let path = self.index_db_path.as_ref()?;
+        self.index_conn
+            .get_or_init(|| open_index_connection(path))
+            .as_ref()
+    }
+
+    /// Compute blast-radius for the supplied files. Returns `Value::Null`
+    /// when no impact data is available (no index, no files, or open error).
+    /// Errors from the index layer are swallowed and surface as `null` —
+    /// the audit must always succeed.
+    fn compute_impact(&self, files: &[PathBuf]) -> Value {
+        if files.is_empty() {
+            return Value::Null;
+        }
+        let Some(conn_lock) = self.index_connection() else {
+            return Value::Null;
+        };
+        let Ok(conn) = conn_lock.lock() else {
+            tracing::warn!("illuminate-mcp: index.db Mutex poisoned; reporting no impact");
+            return Value::Null;
+        };
+
+        let seeds: Vec<String> = files
+            .iter()
+            .map(|p| format!("file::{}", p.to_string_lossy()))
+            .collect();
+
+        match illuminate_index::storage::impact_radius(&conn, &seeds, IMPACT_DEPTH, IMPACT_NODES) {
+            Ok(radius) => json!({
+                "seed_symbols": radius.seeds,
+                "impacted_symbols": radius.impacted,
+                "truncated": radius.truncated,
+            }),
+            Err(e) => {
+                tracing::warn!("illuminate-mcp: impact_radius failed ({e}); reporting no impact");
+                Value::Null
+            }
         }
     }
 
@@ -433,6 +518,20 @@ impl ToolContext {
             .ok_or("missing required field: plan")?
             .to_string();
 
+        // Optional `files` argument: when present and an index.db is
+        // configured, surfaces blast-radius data in the response. Missing or
+        // empty array → impact is `null`.
+        let files: Vec<PathBuf> = args["files"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(PathBuf::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let impact_json = self.compute_impact(&files);
+
         let graph = self.graph.lock().map_err(|e| e.to_string())?;
 
         // Build auditor with a clone-free approach: we need the graph for Auditor
@@ -567,6 +666,7 @@ impl ToolContext {
             "policy_violations": policy_violations,
             "decision_conflicts": decision_conflicts,
             "reflexions": reflexions,
+            "impact": impact_json,
         }))
     }
 
@@ -827,6 +927,24 @@ impl ToolContext {
     }
 }
 
+/// Open an `index.db` at `path` for the long-lived audit connection.
+///
+/// Wrapped in a function so the failure path (missing file, permission error)
+/// returns `None` rather than propagating up — `illuminate_audit` is designed
+/// to succeed even when no code graph is available, just with `impact: null`.
+fn open_index_connection(path: &Path) -> Option<Mutex<Connection>> {
+    match Connection::open(path) {
+        Ok(c) => Some(Mutex::new(c)),
+        Err(e) => {
+            tracing::debug!(
+                "illuminate-mcp: failed to open index.db at {}: {e}",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
 /// Wrap a tool result into an MCP content array.
 pub fn tool_result(result: Result<Value, String>) -> Value {
     let text = match result {
@@ -946,11 +1064,12 @@ pub fn tools_list() -> Value {
             },
             {
                 "name": "illuminate_audit",
-                "description": "Cross-reference an agent's proposed plan against the decision graph and intent policies. Returns structured warnings with source attribution. Use this BEFORE writing code to check for architectural conflicts.",
+                "description": "Cross-reference an agent's proposed plan against the decision graph, intent policies, and code-graph blast radius. Use BEFORE writing code.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "plan": {"type": "string", "description": "The agent's proposed plan or action in natural language"}
+                        "plan": {"type": "string", "description": "The agent's proposed plan or action in natural language"},
+                        "files": {"type": "array", "items": {"type": "string"}, "description": "Optional: files the plan would touch (enables blast-radius reporting)"}
                     },
                     "required": ["plan"]
                 }

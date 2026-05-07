@@ -118,12 +118,22 @@ async fn main() {
     // Load intent policies from illuminate.toml if present
     let policies = load_policies(&db_path);
 
-    let server = if policies.is_empty() {
-        McpServer::new(graph, embed)
+    // Resolve the code-graph index.db using the same ancestor-walk used by
+    // the CLI (see `illuminate_audit::resolve_index_db`). Found here means
+    // `illuminate_audit` calls with a `files` argument can surface blast
+    // radius; not found means impact is silently `null` in audit responses.
+    let index_db_path = illuminate_audit::resolve_index_db_from_cwd(None);
+    if let Some(ref p) = index_db_path {
+        eprintln!("illuminate-mcp: code graph index at {}", p.display());
     } else {
+        eprintln!("illuminate-mcp: no code graph index found (run `illuminate index --rebuild`)");
+    }
+
+    if !policies.is_empty() {
         eprintln!("illuminate-mcp: loaded {} intent policies", policies.len());
-        McpServer::with_policies(graph, embed, policies)
-    };
+    }
+
+    let server = McpServer::with_index(graph, embed, policies, index_db_path);
     server.run().await;
 }
 

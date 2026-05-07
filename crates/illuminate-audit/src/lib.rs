@@ -10,6 +10,7 @@ use illuminate::Graph;
 use illuminate_reflect::ReflexionStore;
 use regex::Regex;
 use rusqlite::Connection;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, OnceLock};
 
@@ -370,6 +371,41 @@ static TECH_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         r"(?i)\b(?:Redis|Memcached|PostgreSQL?|MongoDB|MySQL|SQLite|Kafka|RabbitMQ|gRPC|REST|GraphQL|Docker|Kubernetes|React|Vue|Angular|Express|Django|Flask|Spring|Tokio|Actix)\b"
     ).unwrap()
 });
+
+/// Resolve an `index.db` path. Explicit `explicit` wins; otherwise walk
+/// ancestors from `start_dir` looking for `<repo>/.illuminate/index.db`.
+///
+/// This is the canonical resolution used by both the CLI and the MCP server
+/// so a single project root yields the same code-graph file in either entry
+/// point. Callers that have no explicit override should pass
+/// `env::current_dir().unwrap_or_default()` as `start_dir`.
+pub fn resolve_index_db(explicit: Option<&Path>, start_dir: &Path) -> Option<PathBuf> {
+    if let Some(p) = explicit {
+        return if p.is_file() {
+            Some(p.to_path_buf())
+        } else {
+            None
+        };
+    }
+
+    let mut cur: Option<&Path> = Some(start_dir);
+    while let Some(d) = cur {
+        let candidate = d.join(".illuminate").join("index.db");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        cur = d.parent();
+    }
+    None
+}
+
+/// Convenience wrapper around [`resolve_index_db`] that uses the process's
+/// current working directory as `start_dir`. Returns `None` if the cwd is
+/// not accessible, matching the conservative behaviour the CLI depends on.
+pub fn resolve_index_db_from_cwd(explicit: Option<&Path>) -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
+    resolve_index_db(explicit, &cwd)
+}
 
 /// Open an `index.db` at `path` for the long-lived audit connection.
 ///

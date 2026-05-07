@@ -1,10 +1,11 @@
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::open_graph;
 use illuminate::Episode;
 use illuminate_audit::Auditor;
 use illuminate_audit::policy::parse_policies;
+use illuminate_audit::resolve_index_db_from_cwd;
 use illuminate_audit::response::AuditResult;
 
 /// Cap on impacted-symbol entries shown in human-readable output.
@@ -22,7 +23,7 @@ pub fn run(
     // Load policies from illuminate.toml if present
     let policies = load_policies()?;
 
-    let resolved_index = resolve_index_db(index_db);
+    let resolved_index = resolve_index_db_from_cwd(index_db.as_deref());
 
     let result = match (resolved_index, files.is_empty()) {
         (Some(path), false) => {
@@ -189,27 +190,6 @@ const STOPWORDS: &[&str] = &[
     "before", "between", "through", "without", "this", "that", "these", "those", "with", "from",
     "into", "than",
 ];
-
-/// Resolve an `index.db` path. Explicit `--index-db` wins; otherwise walk
-/// ancestors from `cwd` looking for `<repo>/.illuminate/index.db`. Mirrors
-/// the ancestor-walk pattern in [`load_policies`] so both files surface
-/// from the same project root.
-fn resolve_index_db(explicit: Option<PathBuf>) -> Option<PathBuf> {
-    if let Some(p) = explicit {
-        return if p.is_file() { Some(p) } else { None };
-    }
-
-    let cwd = env::current_dir().ok()?;
-    let mut cur: Option<&Path> = Some(cwd.as_path());
-    while let Some(d) = cur {
-        let candidate = d.join(".illuminate").join("index.db");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        cur = d.parent();
-    }
-    None
-}
 
 fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
     let cwd = env::current_dir().map_err(illuminate::IlluminateError::Io)?;

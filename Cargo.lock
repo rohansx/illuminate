@@ -1549,14 +1549,17 @@ dependencies = [
  "illuminate",
  "illuminate-audit",
  "illuminate-embed",
+ "illuminate-index",
  "illuminate-reflect",
  "illuminate-route",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
  "toml",
+ "tracing",
  "uuid",
 ]
 

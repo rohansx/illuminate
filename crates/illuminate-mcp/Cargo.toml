@@ -18,8 +18,11 @@ path = "src/main.rs"
 illuminate = { path = "../illuminate-core", version = "0.8.0" }
 illuminate-embed = { path = "../illuminate-embed", version = "0.8.0" }
 illuminate-audit = { path = "../illuminate-audit", version = "0.8.0" }
+illuminate-index = { path = "../illuminate-index", version = "0.8.0" }
 illuminate-reflect = { path = "../illuminate-reflect", version = "0.8.0" }
 illuminate-route = { path = "../illuminate-route", version = "0.8.0" }
+rusqlite = { workspace = true }
+tracing = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true, features = ["derive"] }

@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use illuminate::Graph;
@@ -27,6 +28,25 @@ impl McpServer {
     ) -> Self {
         Self {
             ctx: Arc::new(ToolContext::with_policies(graph, embed, policies)),
+        }
+    }
+
+    /// Build an `McpServer` with both intent policies and a code-graph
+    /// `index.db`. The connection to `index.db` is opened lazily on the
+    /// first audit that supplies files — a missing path is silently ignored.
+    pub fn with_index(
+        graph: Graph,
+        embed: Option<EmbedEngine>,
+        policies: Vec<IntentPolicy>,
+        index_db_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            ctx: Arc::new(ToolContext::with_index(
+                graph,
+                embed,
+                policies,
+                index_db_path,
+            )),
         }
     }
 
