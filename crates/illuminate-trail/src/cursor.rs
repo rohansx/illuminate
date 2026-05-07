@@ -114,6 +114,12 @@ fn schema_looks_like_cursor(conn: &Connection) -> Result<bool> {
 
 /// One materialized row from `cursorDiskKV` after we've decoded the JSON
 /// blob. We sort/group these in [`group_into_records`].
+///
+/// `input_tokens` / `output_tokens` are captured from the bubble's
+/// `tokenCount` object when present. They are not yet surfaced on
+/// [`TrailRecord`] — downstream ingestion (cost-per-decision attribution)
+/// will pick them up — but we extract them here so the parser is
+/// spec-complete and the data is preserved end-to-end.
 struct BubbleRow {
     rowid: i64,
     conversation_id: String,
@@ -121,6 +127,13 @@ struct BubbleRow {
     created_at: Option<DateTime<Utc>>,
     text: String,
     bubble_type: i64,
+    // Token counts are captured but not yet read by the grouping path; the
+    // downstream ingestion change will surface them on `TrailRecord`. The
+    // allows below silence clippy until that change lands.
+    #[allow(dead_code)]
+    input_tokens: Option<u64>,
+    #[allow(dead_code)]
+    output_tokens: Option<u64>,
 }
 
 fn read_bubble_rows(conn: &Connection) -> Result<Vec<BubbleRow>> {
@@ -201,6 +214,8 @@ fn read_bubble_rows(conn: &Connection) -> Result<Vec<BubbleRow>> {
             created_at: parsed.created_at,
             text: parsed.text,
             bubble_type: parsed.bubble_type,
+            input_tokens: parsed.input_tokens,
+            output_tokens: parsed.output_tokens,
         });
     }
 
@@ -236,6 +251,8 @@ struct ParsedBubble {
     created_at: Option<DateTime<Utc>>,
     text: String,
     bubble_type: i64,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
 }
 
 fn parse_bubble_json(s: &str) -> Option<ParsedBubble> {
@@ -254,6 +271,9 @@ fn parse_bubble_json(s: &str) -> Option<ParsedBubble> {
     let raw_text = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
     let text = truncate_chars(raw_text, TEXT_PREVIEW_CHARS);
     let bubble_type = v.get("type").and_then(|t| t.as_i64()).unwrap_or(0);
+    let token_count = v.get("tokenCount");
+    let input_tokens = token_count.and_then(|t| read_u64_field(t, "inputTokens"));
+    let output_tokens = token_count.and_then(|t| read_u64_field(t, "outputTokens"));
 
     Some(ParsedBubble {
         conversation_id,
@@ -261,7 +281,38 @@ fn parse_bubble_json(s: &str) -> Option<ParsedBubble> {
         created_at,
         text,
         bubble_type,
+        input_tokens,
+        output_tokens,
     })
+}
+
+/// Read a token-count field tolerant to Cursor's mixed encoding. Cursor
+/// sometimes serializes counts as JSON numbers, sometimes as strings — we
+/// accept both and return `None` for anything else (missing, null, float,
+/// negative, malformed string).
+fn read_u64_field(v: &serde_json::Value, field: &str) -> Option<u64> {
+    let raw = v.get(field)?;
+    if let Some(n) = raw.as_u64() {
+        return Some(n);
+    }
+    if let Some(s) = raw.as_str() {
+        return s.parse::<u64>().ok();
+    }
+    None
+}
+
+/// Test-only accessor: parse a single bubble JSON blob and return the
+/// `(input_tokens, output_tokens)` pair captured into [`ParsedBubble`].
+/// Exposed so integration tests can verify the spec-mandated extraction
+/// without needing to make the internal struct public.
+///
+/// Marked `#[doc(hidden)]` because it is not part of the supported API —
+/// callers should consume token data from the future `TrailRecord` field
+/// once the downstream change lands.
+#[doc(hidden)]
+pub fn parse_bubble_token_counts_for_test(s: &str) -> Option<(Option<u64>, Option<u64>)> {
+    let parsed = parse_bubble_json(s)?;
+    Some((parsed.input_tokens, parsed.output_tokens))
 }
 
 fn truncate_chars(s: &str, max: usize) -> String {

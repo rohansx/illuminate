@@ -206,6 +206,41 @@ fn respects_lookback_days_floor() {
 }
 
 #[test]
+fn extracts_token_counts_from_bubble() {
+    // Spec item: bubble JSON parsing must capture `tokenCount.inputTokens`
+    // and `tokenCount.outputTokens`. We verify via the doc-hidden test
+    // accessor on the parser, which surfaces the parsed-bubble token data
+    // without exposing the internal struct on the public API.
+    let bubble = serde_json::json!({
+        "tokenCount": {"inputTokens": 1234, "outputTokens": 567},
+        "modelInfo": {"modelName": "claude-4.6-sonnet"},
+        "createdAt": iso_now(),
+        "conversationId": "conv-tok",
+        "text": "count me",
+        "type": 1
+    });
+
+    let (input, output) =
+        illuminate_trail::cursor::parse_bubble_token_counts_for_test(&bubble.to_string())
+            .expect("parser should accept a well-formed bubble");
+    assert_eq!(input, Some(1234), "inputTokens must be captured");
+    assert_eq!(output, Some(567), "outputTokens must be captured");
+
+    // End-to-end: writing the same bubble through the SQL path must still
+    // produce a usable TrailRecord (regression guard against the spec fix
+    // accidentally breaking the grouping pipeline).
+    let (_dir, path) = build_db("state.vscdb");
+    {
+        let conn = open_db(&path);
+        create_cursor_disk_kv(&conn);
+        insert_bubble(&conn, "bubbleId:conv-tok:001", &bubble.to_string());
+    }
+    let records = parse_state_db(&path).expect("parse ok");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].session_id, "conv-tok");
+}
+
+#[test]
 fn bubble_type_1_marks_user_role() {
     let (_dir, path) = build_db("state.vscdb");
     {
