@@ -33,6 +33,12 @@ pub enum WikiCmd {
         #[arg(long, default_value = "10")]
         limit: usize,
     },
+    /// Walk the review queue and accept/reject candidate pages
+    Review {
+        /// Non-interactive mode: print candidates with details and exit (no prompts)
+        #[arg(long)]
+        list: bool,
+    },
 }
 
 pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
@@ -43,6 +49,7 @@ pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
         WikiCmd::Init => cmd_init(),
         WikiCmd::Serve { port } => cmd_serve(port),
         WikiCmd::Search { query, limit } => cmd_search(&query, limit),
+        WikiCmd::Review { list } => cmd_review(list),
     }
 }
 
@@ -253,6 +260,192 @@ fn first_match_snippet(text: &str, query: &str, window: usize) -> String {
     } else {
         String::new()
     }
+}
+
+fn cmd_review(list_only: bool) -> std::io::Result<()> {
+    use illuminate_wiki::page::{parse_page, PageType};
+
+    let root = repo_root()?;
+    let review_dir = root.join(".illuminate/wiki/_review");
+    if !review_dir.is_dir() {
+        println!("(no review queue at {})", review_dir.display());
+        return Ok(());
+    }
+
+    let mut entries: Vec<_> = std::fs::read_dir(&review_dir)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+        .collect();
+    entries.sort();
+
+    if entries.is_empty() {
+        println!("(review queue empty)");
+        return Ok(());
+    }
+
+    if list_only {
+        for path in &entries {
+            let content = std::fs::read_to_string(path).unwrap_or_default();
+            match parse_page(&content) {
+                Ok(p) => println!(
+                    "{}  {}  conf={}  type={:?}",
+                    p.front.id,
+                    p.front.title,
+                    p.front
+                        .confidence
+                        .map(|c| format!("{:.2}", c))
+                        .unwrap_or_else(|| "?".into()),
+                    p.front.page_type,
+                ),
+                Err(_) => println!("{}  (unparseable)", path.display()),
+            }
+        }
+        return Ok(());
+    }
+
+    println!(
+        "review queue: {} candidates in {}",
+        entries.len(),
+        review_dir.display()
+    );
+    println!();
+
+    let mut idx = 0;
+    while idx < entries.len() {
+        let path = entries[idx].clone();
+        let content = std::fs::read_to_string(&path)?;
+        let page = match parse_page(&content) {
+            Ok(p) => p,
+            Err(e) => {
+                println!(
+                    "[{}/{}] {} — UNPARSEABLE: {e}",
+                    idx + 1,
+                    entries.len(),
+                    path.display()
+                );
+                println!("  Choose: [r]eject  [s]kip  [q]uit");
+                match prompt_char()? {
+                    'r' => {
+                        let _ = std::fs::remove_file(&path);
+                        idx += 1;
+                    }
+                    'q' => return Ok(()),
+                    _ => idx += 1,
+                }
+                continue;
+            }
+        };
+
+        println!(
+            "─── [{}/{}] {} ───",
+            idx + 1,
+            entries.len(),
+            page.front.id
+        );
+        println!("title:      {}", page.front.title);
+        println!("type:       {:?}", page.front.page_type);
+        println!("status:     {}", page.front.status);
+        println!(
+            "confidence: {}",
+            page.front
+                .confidence
+                .map(|c| format!("{:.2}", c))
+                .unwrap_or_else(|| "?".into())
+        );
+        if let Some(s) = page.front.sources.first() {
+            println!("source:     {} ({})", s.r#ref, s.kind);
+        }
+        println!();
+        for line in page.body.lines().take(30) {
+            println!("  {line}");
+        }
+        if page.body.lines().count() > 30 {
+            println!(
+                "  ... ({} more lines)",
+                page.body.lines().count() - 30
+            );
+        }
+        println!();
+
+        print!("[a]ccept  [r]eject  [e]dit  [s]kip  [q]uit > ");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        match prompt_char()? {
+            'a' => {
+                let dest_dir = match page.front.page_type {
+                    PageType::Decision => root.join(".illuminate/wiki/decisions"),
+                    PageType::Pattern => root.join(".illuminate/wiki/patterns"),
+                    PageType::Failure => root.join(".illuminate/wiki/failures"),
+                    PageType::Module => root.join(".illuminate/wiki/modules"),
+                };
+                std::fs::create_dir_all(&dest_dir)?;
+                let dest = dest_dir.join(path.file_name().unwrap());
+                std::fs::rename(&path, &dest)?;
+                append_log(&root, &page.front.id, "ACCEPT")?;
+                println!("accepted -> {}", dest.display());
+                idx += 1;
+            }
+            'r' => {
+                std::fs::remove_file(&path)?;
+                append_log(&root, &page.front.id, "REJECT")?;
+                println!("rejected and deleted");
+                idx += 1;
+            }
+            'e' => {
+                let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".into());
+                let status = std::process::Command::new(&editor).arg(&path).status();
+                match status {
+                    Ok(s) if s.success() => {
+                        // re-prompt by NOT incrementing idx
+                        continue;
+                    }
+                    Ok(_) | Err(_) => {
+                        eprintln!("editor failed; skipping");
+                        idx += 1;
+                    }
+                }
+            }
+            's' => {
+                println!("skipped (still in queue)");
+                idx += 1;
+            }
+            'q' => return Ok(()),
+            other => {
+                println!("unknown choice '{other}'; skipping");
+                idx += 1;
+            }
+        }
+        println!();
+    }
+
+    println!("review complete");
+    Ok(())
+}
+
+fn prompt_char() -> std::io::Result<char> {
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf)?;
+    Ok(buf
+        .trim()
+        .chars()
+        .next()
+        .unwrap_or(' ')
+        .to_ascii_lowercase())
+}
+
+fn append_log(root: &std::path::Path, id: &str, verb: &str) -> std::io::Result<()> {
+    let log_path = root.join(".illuminate/wiki/log.md");
+    let entry = format!(
+        "{}  {verb}  {id}  (review)\n",
+        chrono::Utc::now().to_rfc3339()
+    );
+    let mut existing = std::fs::read_to_string(&log_path).unwrap_or_default();
+    if !existing.is_empty() && !existing.ends_with('\n') {
+        existing.push('\n');
+    }
+    existing.push_str(&entry);
+    std::fs::write(&log_path, existing)?;
+    Ok(())
 }
 
 fn register_pages(

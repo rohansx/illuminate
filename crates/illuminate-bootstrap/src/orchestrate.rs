@@ -13,6 +13,7 @@ pub struct BootstrapReport {
     pub candidates_found: usize,
     pub pages_written: usize,
     pub pages_skipped_existing: usize,
+    pub pages_queued_for_review: usize,
 }
 
 pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
@@ -60,13 +61,15 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
 
     // 4. Write wiki pages.
     let wiki = repo_root.join(".illuminate").join("wiki");
+    let auto_merge_threshold = read_threshold(repo_root).unwrap_or(0.7);
     let now = Utc::now();
     for c in &candidates {
-        let dir = match c.page_type {
-            PageType::Decision => wiki.join("decisions"),
-            PageType::Pattern => wiki.join("patterns"),
-            PageType::Failure => wiki.join("failures"),
-            PageType::Module => wiki.join("modules"),
+        let dir = match (c.confidence < auto_merge_threshold, c.page_type) {
+            (true, _) => wiki.join("_review"),
+            (false, PageType::Decision) => wiki.join("decisions"),
+            (false, PageType::Pattern) => wiki.join("patterns"),
+            (false, PageType::Failure) => wiki.join("failures"),
+            (false, PageType::Module) => wiki.join("modules"),
         };
         std::fs::create_dir_all(&dir)?;
         let page_path = dir.join(format!("{}.md", c.id_slug));
@@ -75,18 +78,23 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
             continue;
         }
         std::fs::write(&page_path, c.to_markdown(now))?;
-        report.pages_written += 1;
+        if c.confidence < auto_merge_threshold {
+            report.pages_queued_for_review += 1;
+        } else {
+            report.pages_written += 1;
+        }
     }
 
     // 5. Append a single line to log.md for the run.
     let log_path = wiki.join("log.md");
     let entry = format!(
-        "{}  BOOTSTRAP  sources={:?} candidates={} written={} skipped={}\n",
+        "{}  BOOTSTRAP  sources={:?} candidates={} written={} skipped={} queued={}\n",
         now.to_rfc3339(),
         report.sources_run,
         report.candidates_found,
         report.pages_written,
         report.pages_skipped_existing,
+        report.pages_queued_for_review,
     );
     let mut existing = std::fs::read_to_string(&log_path).unwrap_or_default();
     if !existing.is_empty() && !existing.ends_with('\n') {
@@ -100,4 +108,15 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
 
 fn normalize_body(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+fn read_threshold(repo_root: &std::path::Path) -> Option<f32> {
+    let path = repo_root.join(".illuminate").join("illuminate.toml");
+    let content = std::fs::read_to_string(&path).ok()?;
+    let value: toml::Value = toml::from_str(&content).ok()?;
+    value
+        .get("wiki")?
+        .get("auto_merge_threshold")?
+        .as_float()
+        .map(|f| f as f32)
 }

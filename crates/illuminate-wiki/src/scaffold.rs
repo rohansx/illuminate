@@ -17,7 +17,7 @@ pub fn write_scaffold(repo_root: &Path) -> Result<()> {
     write_if_missing(&wiki.join("schema.md"), SCHEMA_STUB)?;
     write_if_missing(&wiki.join("index.md"), INDEX_STUB)?;
     write_if_missing(&wiki.join("log.md"), LOG_STUB)?;
-    for sub in &["decisions", "patterns", "failures", "modules"] {
+    for sub in &["decisions", "patterns", "failures", "modules", "_review"] {
         let dir = wiki.join(sub);
         std::fs::create_dir_all(&dir)?;
         write_if_missing(&dir.join(".gitkeep"), GITKEEP)?;
