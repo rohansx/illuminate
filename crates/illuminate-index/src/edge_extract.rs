@@ -1,6 +1,6 @@
 //! Edge extraction from tree-sitter ASTs.
 //!
-//! v0.5 emits import edges for Rust + Go + TypeScript + Python + Java + C.
+//! v0.4 emits import edges for Rust + Go + TypeScript + Python + Java + C.
 //! Rust: one per `use_declaration`. Go: one per `import_spec`, covering
 //! single, grouped, aliased, dot, and blank import forms. TypeScript: one
 //! per `import_statement`, covering named, namespace, default, side-effect,

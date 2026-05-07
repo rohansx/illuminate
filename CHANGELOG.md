@@ -4,7 +4,46 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.4.0] — 2026-05-07
+
+### Added — impact pipeline + multi-language edge coverage
+
+- **Cursor session capture** via `state.vscdb` SQLite (`cursorDiskKV` table). Format knowledge ported from codeburn (MIT). New: `default_state_db_path()`, `parse_state_db()`. Handles bubble JSON, ROWID cutoff for >250k row DBs, lookback-days floor, token-count extraction. (`crates/illuminate-trail/src/cursor.rs`)
+- **Codex session capture** via `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. Format knowledge ported from codeburn (MIT). New: `default_codex_dir()`, `discover_sessions()`, `parse_session()`. Streams via `BufReader`, clamps `ended_at >= started_at` for clock-skew resilience. (`crates/illuminate-trail/src/codex.rs`)
+- **Edges schema in `index.db`** — `edges(source_qualified, target_qualified, kind, file_path, line)` with indexes on source/target/kind/file. Bidirectional BFS via SQLite recursive CTE: `storage::impact_radius(seeds, max_depth, max_nodes)` returns blast-radius reachable from changed files in either direction. Pattern informed by code-review-graph (MIT).
+- **Per-language import edge extraction** — Rust (`use_declaration`), Go (`import_spec` covering single/grouped/aliased/dot/blank), TypeScript (`import_statement` covering named/namespace/default/side-effect/`import type`), Python (`import_statement` + `import_from_statement` covering simple/dotted/aliased/multi/from/relative), Java (`import_declaration` covering simple/static/wildcard), C (`preproc_include` covering quoted and system forms; C++ `.cpp/.cc/.cxx/.hpp` also dispatched through this best-effort).
+- **Indexer populates edges during rebuild.** `CodeIndex::index_project` calls `index_file_with_edges` and persists both symbols and edges. New `IndexStats.edges_extracted`. (`crates/illuminate-index/src/indexer.rs`)
+- **`Auditor::audit_with_files`** with long-lived `OnceLock<Option<Mutex<Connection>>>` index connection. Returns `ImpactInfo { seed_symbols, defined_symbols, impacted_symbols, truncated }`. Caps: `DEFAULT_IMPACT_DEPTH = 2`, `DEFAULT_IMPACT_NODES = 50`. Missing/corrupt `index.db` degrades gracefully to empty impact. (`crates/illuminate-audit/src/lib.rs`)
+- **`Auditor::with_index`** constructor accepting `impl Into<PathBuf>`. Existing `Auditor::new` and `Auditor::audit` signatures unchanged. Shared `resolve_index_db_from_cwd()` helper used by both CLI and MCP for ancestor-walk index path resolution.
+- **CLI `audit` extended** with `--index-db <PATH>` flag and positional file args. Prints "Blast radius: N symbols across M files" and "Defined symbols in touched files: N" sections in human output (capped at 10 entries each). JSON output unchanged shape, now includes `impact` field. (`crates/illuminate-cli/src/commands/audit.rs`)
+- **`illuminate impact <files...>`** new CLI subcommand. Read-only inspection of file blast-radius. Prints defined symbols, imports, and impact-radius per file. `--json` for scripting. `--depth` and `--max-nodes` overrides. (`crates/illuminate-cli/src/commands/impact.rs`)
+- **MCP `illuminate_audit` accepts `files` arg** and surfaces `impact` in the JSON response. Handler delegates to `Auditor::audit_with_files` (single source of truth shared with CLI) rather than the previous inline policy/conflict reimplementation.
+- **`TrailRecord` carries optional `input_tokens` / `output_tokens`** (sum across messages in a session). Plumbed from Cursor (bubble `tokenCount`), Claude Code (`message.usage`), and Codex (`payload.usage`, defensive). Cache buckets explicitly excluded from totals for cross-agent comparability. Foundation for future cost-attribution analytics. (`crates/illuminate-trail/src/record.rs`, `cursor.rs`, `claude.rs`, `codex.rs`, `raw.rs::UsageBlock`)
+- **`watcher.rs` migrated to `tracing`** — replaced `eprintln!` calls with `tracing::warn!` for consistency with `illuminate-audit` and `illuminate-mcp`.
+- **Two-graph architecture made explicit** in `docs/ARCHITECTURE.md` — code graph (`illuminate-index`) ↔ decision graph (`illuminate-core`) joined by `illuminate-audit`. Capture diagram corrected: Cursor uses `state.vscdb`, Codex uses `rollout-*.jsonl`. New "Related Projects" section credits codeburn (MIT) and code-review-graph (MIT) whose format knowledge informed this release.
+- **Wiki review queue (v0.2 item).** Interactive `illuminate wiki review` walks low-confidence bootstrap candidates. Accept/reject/edit/skip/quit prompts. `--list` for scripting.
+- **Trail systemd user unit.** `illuminate trail install-service` writes `~/.config/systemd/user/illuminate-trail.service` with resource caps (MemoryMax=512M, CPUQuota=20%).
+- **Pre-write hook smoke tests.** `crates/illuminate-cli/tests/audit_hook_smoke.rs` exercises the `audit-hook` subcommand end-to-end with stdin JSON.
+
+### Fixed
+
+- `illuminate init --hooks` no longer registers a bogus `--stdin` flag on `audit-hook`.
+- Pre-write hook policy loader walks ancestors for `.illuminate/illuminate.toml` (matches `illuminate audit` behavior).
+- Bootstrap content-hash dedup collapses identical content across `CLAUDE.md` / `.cursorrules` / `.windsurfrules`.
+- Audit FTS5 fallback surfaces related graph episodes on clean plans (helps when graph has bootstrapped pages but no NER-extracted entities).
+- Workspace-wide `cargo fmt` drift fixed; CI green.
+
+### Deferred to v0.5+
+
+- Within-function call/inheritance edges across all six languages (currently only file-level imports).
+- Symbol-scoped edges (currently `source_qualified` is always `file::<path>`).
+- Path normalization in `audit_with_files` (currently pass-through; documented).
+- Cost-attribution analytics consumer for the new token fields.
+- MCP `:memory:` graph fallback edge case.
+- Cache-bucket token fields (`cache_creation_input_tokens` etc.) on `TrailRecord` for accurate Anthropic cost math.
+- Dedicated `Language::Cpp` (currently `.cpp/.cc/.cxx/.hpp` route through C extractor; `#include` works, body parsing best-effort).
+
+## [0.1.0] — 2026-05-06 → 2026-05-07
 
 ### Added — v0.1 closed loop (2026-05-06 → 2026-05-07)
 

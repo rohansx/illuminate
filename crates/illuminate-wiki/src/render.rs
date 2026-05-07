@@ -22,7 +22,7 @@ pub fn render_index(pages: &[WikiPage]) -> String {
         if subset.is_empty() {
             continue;
         }
-        subset.sort_by(|a, b| b.front.created.cmp(&a.front.created));
+        subset.sort_by_key(|p| std::cmp::Reverse(p.front.created));
         out.push_str(&format!("## {label}\n\n"));
         for p in subset {
             out.push_str(&format!(
