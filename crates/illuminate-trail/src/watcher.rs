@@ -46,11 +46,11 @@ pub fn run_watcher(opts: WatcherOpts) -> Result<()> {
                         continue;
                     }
                     if let Err(e) = handle_one(&path, opts.on_imported.as_ref()) {
-                        eprintln!("[trail] import failed for {}: {e}", path.display());
+                        tracing::warn!(path = %path.display(), error = %e, "trail import failed");
                     }
                 }
             }
-            Ok(Err(e)) => eprintln!("[trail] watch error: {e}"),
+            Ok(Err(e)) => tracing::warn!(error = %e, "trail watch error"),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
@@ -66,7 +66,7 @@ fn scan_dir(root: &Path, cb: Option<&ImportCallback>) {
     let walker = match std::fs::read_dir(root) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("[trail] scan_dir: cannot read {}: {e}", root.display());
+            tracing::warn!(path = %root.display(), error = %e, "trail scan_dir cannot read directory");
             return;
         }
     };
@@ -77,7 +77,7 @@ fn scan_dir(root: &Path, cb: Option<&ImportCallback>) {
         } else if p.extension().and_then(|e| e.to_str()) == Some("jsonl")
             && let Err(e) = handle_one(&p, cb)
         {
-            eprintln!("[trail] import failed for {}: {e}", p.display());
+            tracing::warn!(path = %p.display(), error = %e, "trail import failed");
         }
     }
 }
