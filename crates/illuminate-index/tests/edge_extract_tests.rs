@@ -1,9 +1,9 @@
 //! Tests for per-language import edge extraction in illuminate-index.
 //!
 //! These tests cover the `extract_rust_edges`, `extract_go_edges`,
-//! `extract_typescript_edges`, `extract_python_edges`, and
-//! `extract_java_edges` functions plus the `index_file_with_edges` combined
-//! helper. Other languages still return empty edges in v0.4.
+//! `extract_typescript_edges`, `extract_python_edges`, `extract_java_edges`,
+//! and `extract_c_edges` functions plus the `index_file_with_edges` combined
+//! helper. As of v0.5, all six supported languages emit import edges.
 
 use std::path::Path;
 
@@ -11,8 +11,8 @@ use illuminate_index::edges::EdgeKind;
 use illuminate_index::{
     Language,
     edge_extract::{
-        extract_go_edges, extract_java_edges, extract_python_edges, extract_rust_edges,
-        extract_typescript_edges,
+        extract_c_edges, extract_go_edges, extract_java_edges, extract_python_edges,
+        extract_rust_edges, extract_typescript_edges,
     },
     index_file_with_edges,
 };
@@ -55,6 +55,14 @@ fn parse_java(source: &[u8]) -> tree_sitter::Tree {
         .set_language(&Language::Java.tree_sitter_language())
         .expect("set java language");
     parser.parse(source, None).expect("parse java source")
+}
+
+fn parse_c(source: &[u8]) -> tree_sitter::Tree {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&Language::C.tree_sitter_language())
+        .expect("set c language");
+    parser.parse(source, None).expect("parse c source")
 }
 
 #[test]
@@ -509,4 +517,87 @@ fn index_file_with_edges_returns_java_imports() {
             .iter()
             .any(|e| e.target_qualified == "com.foo.Bar.method")
     );
+}
+
+#[test]
+fn extracts_quoted_c_include() {
+    let source = b"#include \"foo.h\"\n\nint main(void) { return 0; }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_edges(&tree, source, "src/main.c");
+
+    assert_eq!(edges.len(), 1, "expected one quoted include edge");
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Imports);
+    assert_eq!(edge.source_qualified, "file::src/main.c");
+    assert_eq!(edge.target_qualified, "foo.h");
+    assert_eq!(edge.file_path, "src/main.c");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_system_c_include() {
+    let source = b"#include <stdio.h>\n\nint main(void) { return 0; }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_edges(&tree, source, "src/main.c");
+
+    assert_eq!(edges.len(), 1, "expected one system include edge");
+    let edge = &edges[0];
+    assert_eq!(edge.kind, EdgeKind::Imports);
+    assert_eq!(edge.source_qualified, "file::src/main.c");
+    assert_eq!(
+        edge.target_qualified, "stdio.h",
+        "angle brackets should be stripped"
+    );
+    assert_eq!(edge.file_path, "src/main.c");
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn extracts_multiple_c_includes() {
+    let source =
+        b"#include <stdio.h>\n#include \"foo.h\"\n#include <stdlib.h>\n\nint main(void) { return 0; }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_edges(&tree, source, "src/main.c");
+
+    assert_eq!(edges.len(), 3, "expected three c include edges");
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().all(|e| e.file_path == "src/main.c"));
+    assert!(edges.iter().any(|e| e.target_qualified == "stdio.h"));
+    assert!(edges.iter().any(|e| e.target_qualified == "foo.h"));
+    assert!(edges.iter().any(|e| e.target_qualified == "stdlib.h"));
+}
+
+#[test]
+fn extracts_nested_path_c_include() {
+    let source = b"#include \"lib/util.h\"\n\nint main(void) { return 0; }\n";
+    let tree = parse_c(source);
+
+    let edges = extract_c_edges(&tree, source, "src/main.c");
+
+    assert_eq!(edges.len(), 1, "expected one nested include edge");
+    assert_eq!(
+        edges[0].target_qualified, "lib/util.h",
+        "nested header path should be preserved verbatim"
+    );
+}
+
+#[test]
+fn index_file_with_edges_returns_c_includes() {
+    let source = b"#include <stdio.h>\n#include \"foo.h\"\n\nint add(int a, int b) {\n    return a + b;\n}\n";
+    let path = Path::new("util.c");
+
+    let (symbols, edges) = index_file_with_edges(path, source, Language::C).unwrap();
+
+    assert!(
+        symbols.iter().any(|s| s.name == "add"),
+        "should extract `add` function symbol"
+    );
+    assert_eq!(edges.len(), 2, "should extract two c include edges");
+    assert!(edges.iter().all(|e| e.kind == EdgeKind::Imports));
+    assert!(edges.iter().all(|e| e.file_path == "util.c"));
+    assert!(edges.iter().any(|e| e.target_qualified == "stdio.h"));
+    assert!(edges.iter().any(|e| e.target_qualified == "foo.h"));
 }

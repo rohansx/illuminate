@@ -1,6 +1,6 @@
 //! Edge extraction from tree-sitter ASTs.
 //!
-//! v0.4 emits import edges for Rust + Go + TypeScript + Python + Java.
+//! v0.5 emits import edges for Rust + Go + TypeScript + Python + Java + C.
 //! Rust: one per `use_declaration`. Go: one per `import_spec`, covering
 //! single, grouped, aliased, dot, and blank import forms. TypeScript: one
 //! per `import_statement`, covering named, namespace, default, side-effect,
@@ -8,8 +8,11 @@
 //! `import_statement` / `import_from_statement`, covering simple, dotted,
 //! aliased, multi, `from`, and relative-import forms. Java: one per
 //! `import_declaration`, covering simple, `static`, and wildcard forms.
-//! Other languages and other edge kinds (calls, inheritance) are deferred —
-//! see `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
+//! C: one per `preproc_include`, covering both quoted (`#include "foo.h"`)
+//! and system (`#include <stdio.h>`) forms. C++ headers reuse the C parser
+//! (`.cpp`/`.cc`/`.cxx`/`.hpp`) and are exercised by the next coverage task.
+//! Other edge kinds (calls, inheritance) are deferred — see
+//! `docs/superpowers/plans/2026-05-07-cross-agent-coverage-and-edges.md`.
 //!
 //! The `source_qualified` for an import edge is the file-level pseudo-node
 //! `file::<file_path>`. We don't yet have function-scoped imports, so this
@@ -45,6 +48,14 @@
 //! trailing `;`. `import com.foo.Bar;` emits target `com.foo.Bar`,
 //! `import static com.foo.Bar.method;` emits `com.foo.Bar.method`, and
 //! `import com.foo.*;` emits `com.foo.*` verbatim.
+//!
+//! For C, the `target_qualified` is the header path with surrounding
+//! delimiters stripped. `#include <stdio.h>` emits target `stdio.h` (angle
+//! brackets removed) and `#include "lib/util.h"` emits target `lib/util.h`
+//! (double quotes removed, nested path preserved). System vs. local lookup
+//! semantics are intentionally not encoded in the target — both forms
+//! resolve to the same logical header in the graph, matching how downstream
+//! consumers reason about C dependencies.
 //!
 //! This module is deliberately `pub` so per-language extractors can be
 //! exercised directly by integration tests and downstream consumers without
@@ -416,10 +427,82 @@ fn parse_java_import_target(decl_text: &str) -> Option<String> {
     }
 }
 
+/// Extract include edges from a parsed C source file.
+///
+/// Walks the AST for `preproc_include` nodes — this single node kind covers
+/// both `#include <stdio.h>` (whose payload is a `system_lib_string` child)
+/// and `#include "foo.h"` (whose payload is a `string_literal` child). Each
+/// directive contributes one edge whose `target_qualified` is the header
+/// path with surrounding `<>` or `"..."` delimiters stripped.
+///
+/// Public so downstream consumers and integration tests can target
+/// the per-language extractor directly. The recommended entry point
+/// for most callers is [`crate::index_file_with_edges`].
+///
+/// Returns an empty vector if the tree has no include directives.
+pub fn extract_c_edges(tree: &tree_sitter::Tree, source: &[u8], file_path: &str) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    walk_for_c_includes(tree.root_node(), source, file_path, &mut edges);
+    edges
+}
+
+fn walk_for_c_includes(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    file_path: &str,
+    out: &mut Vec<Edge>,
+) {
+    if node.kind() == "preproc_include" {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let kind = child.kind();
+            if kind == "system_lib_string" || kind == "string_literal" {
+                let raw = node_text(child, source);
+                if let Some(target) = strip_c_include_delimiters(raw) {
+                    out.push(Edge {
+                        source_qualified: format!("file::{}", file_path),
+                        target_qualified: target,
+                        kind: EdgeKind::Imports,
+                        file_path: file_path.to_string(),
+                        line: child.start_position().row as u32 + 1,
+                    });
+                }
+                break;
+            }
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_c_includes(child, source, file_path, out);
+    }
+}
+
+/// Strip the surrounding `<>` or `"..."` delimiters from a C include
+/// payload (`system_lib_string` or `string_literal`). Returns `None` for
+/// empty paths so the walker can skip emitting a useless edge.
+fn strip_c_include_delimiters(s: &str) -> Option<String> {
+    let s = s.trim();
+    let inner = if let Some(rest) = s.strip_prefix('<').and_then(|r| r.strip_suffix('>')) {
+        rest
+    } else if let Some(rest) = s.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+        rest
+    } else {
+        s
+    };
+    let inner = inner.trim();
+    if inner.is_empty() {
+        None
+    } else {
+        Some(inner.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_java_import_target, strip_go_import_quotes, strip_ts_string_quotes, use_target,
+        parse_java_import_target, strip_c_include_delimiters, strip_go_import_quotes,
+        strip_ts_string_quotes, use_target,
     };
 
     #[test]
@@ -497,5 +580,28 @@ mod tests {
     fn parse_java_import_target_returns_none_for_empty() {
         assert_eq!(parse_java_import_target("import ;"), None);
         assert_eq!(parse_java_import_target(""), None);
+    }
+
+    #[test]
+    fn strip_c_include_delimiters_unwraps_angle_and_quote_forms() {
+        assert_eq!(
+            strip_c_include_delimiters("<stdio.h>"),
+            Some("stdio.h".to_string())
+        );
+        assert_eq!(
+            strip_c_include_delimiters("\"foo.h\""),
+            Some("foo.h".to_string())
+        );
+        assert_eq!(
+            strip_c_include_delimiters("\"lib/util.h\""),
+            Some("lib/util.h".to_string())
+        );
+    }
+
+    #[test]
+    fn strip_c_include_delimiters_returns_none_for_empty() {
+        assert_eq!(strip_c_include_delimiters("<>"), None);
+        assert_eq!(strip_c_include_delimiters("\"\""), None);
+        assert_eq!(strip_c_include_delimiters(""), None);
     }
 }
