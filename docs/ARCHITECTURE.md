@@ -239,7 +239,7 @@ Crate responsibilities:
 | `illuminate-trail` | Watches `~/.claude/projects/`, Cursor session storage, Codex sessions. Captures and normalizes session jsonl into `trail/` files. |
 | `illuminate-extract` | NER pipeline. GLiNER for entities, GLiREL for relations, all-MiniLM-L6-v2 for embeddings. All ONNX, local. Outputs structured decisions for the graph. |
 | `illuminate-embed` | Embedding service. Used by extract and by the audit query path for semantic search over the graph. |
-| `illuminate-index` | Tree-sitter–based code indexer. Maps file paths and symbols to graph entities so audits know which decisions apply to which files. |
+| `illuminate-index` | Tree-sitter–based code indexer. Extracts symbols (functions, classes, structs, traits) and edges (calls, imports, inherits) and stores them in a separate `index.db`. Scope is deliberately narrower than a general code-review tool: just enough to serve the file→entities→decisions join in `illuminate-audit`. |
 | `illuminate-audit` | Policy engine. Reads `illuminate.toml` + queries the graph. Returns violations, warnings, relevant past decisions for a proposed change. |
 | `illuminate-watch` | Daemon harness. Long-running process that hosts trail-watcher and ingestion workers. Run as user systemd service or background process. |
 | `illuminate-reflect` | Failure capture. Hooks into CI logs, parses incident reports, manual `illuminate failure log` entries. Writes to graph as failure entities. |
@@ -334,6 +334,59 @@ What happens during a single `illuminate_audit` call from an agent:
 Total round-trip target: < 200ms for typical queries. No LLM in the path means it's bounded by SQLite query time + embedding similarity, both of which are fast on local hardware.
 
 See `AUDIT.md` for the full audit-tool contract.
+
+---
+
+## Two Graphs, One Audit
+
+Illuminate runs two graphs side-by-side. They live in different SQLite files and answer different questions; `illuminate-audit` is the only place they get joined.
+
+```
+   ┌─────────────────────────────┐     ┌─────────────────────────────┐
+   │     illuminate-index        │     │     illuminate-core         │
+   │     (CODE GRAPH)            │     │     (DECISION GRAPH)        │
+   │                             │     │                             │
+   │  nodes: functions, classes, │     │  nodes: decisions,          │
+   │         structs, traits     │     │         patterns, failures, │
+   │  edges: calls, imports,     │     │         modules, prompts    │
+   │         inherits, refs      │     │  edges: references,         │
+   │                             │     │         supersedes,         │
+   │  source: tree-sitter parse  │     │         contradicts,        │
+   │          of working tree    │     │         applies-to          │
+   │                             │     │                             │
+   │  storage: index.db (SQLite) │     │  storage: graph.db          │
+   │                             │     │           (ctxgraph SQLite) │
+   └────────────┬────────────────┘     └─────────────┬───────────────┘
+                │                                    │
+                │   shared keys: file paths,         │
+                │   module names, symbol hashes      │
+                │                                    │
+                └─────────────────┬──────────────────┘
+                                  │
+                                  ▼
+                       ┌─────────────────────┐
+                       │  illuminate-audit   │
+                       │                     │
+                       │  cross-graph join:  │
+                       │  agent touches X    │
+                       │   → which entities  │
+                       │     in code graph?  │
+                       │   → impact radius   │
+                       │     (BFS over       │
+                       │     calls/imports)? │
+                       │   → which decisions │
+                       │     reference those │
+                       │     entities in the │
+                       │     decision graph? │
+                       └─────────────────────┘
+```
+
+The split matters for two reasons:
+
+1. **Different update cadences.** The code graph rebuilds when source changes (every commit, or on-demand). The decision graph grows monotonically as sessions/PRs are ingested. Keeping them separate avoids invalidating one when the other changes.
+2. **Different mental models.** Structural questions ("what calls `cache_get`?") are mechanical and language-bound. Semantic questions ("what did the team decide about caching?") are temporal and prose-bound. Conflating them produces a graph that's hard to query for either.
+
+`illuminate-audit` is the only crate that holds both `index.db` and `graph.db` open at once. Everything else operates on one or the other.
 
 ---
 
@@ -503,6 +556,24 @@ See `BOOTSTRAP.md` for the full bootstrap pipeline.
 This is the architecture cloakpipe-adjacent buyers (Harvey, Abridge, Hippocratic AI, regulated verticals) need. It's not a marketing point. It's a constraint that drove the design from day one.
 
 See `PRIVACY.md` for the full threat model and data-handling specification.
+
+---
+
+## Related Projects
+
+Illuminate sits in a small but growing layer of local-first observability for AI coding agents. Two adjacent projects are worth calling out by name, both for credit and to be explicit about how they relate.
+
+**[codeburn](https://github.com/getagentseal/codeburn)** (TypeScript, MIT) — cost observability across 18 AI coding tools. Reads session data directly from disk for Claude Code, Cursor, Codex, Gemini CLI, Kiro, Copilot, and others; prices each call via LiteLLM; renders a TUI dashboard. The reverse-engineering work in `src/providers/*.ts` (Cursor's `cursorDiskKV` SQLite schema, Codex's `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` layout, Gemini's `~/.gemini/tmp/<project>/chats/session-*.json` format, etc.) represents hundreds of hours of grunt work that no AI vendor documents officially. Illuminate's `illuminate-trail` crate ports format knowledge from codeburn's parsers when implementing Cursor (`cursor.rs`) and Codex (`codex.rs`) capture. The implementations are reimplemented in Rust — not copied — but the format understanding is informed by codeburn's reverse engineering.
+
+**[code-review-graph](https://github.com/tirth8205/code-review-graph)** (Python, MIT) — persistent structural code graph for AI agents. Tree-sitter parses 25+ languages into nodes (functions, classes, imports) and edges (calls, inheritance, references) stored in SQLite, exposed via MCP tools (`get_impact_radius`, `get_review_context`, `get_affected_flows`, `detect_changes`). Their schema (`nodes(qualified_name UNIQUE)` + `edges(source_qualified, target_qualified, kind)`) and recursive-CTE impact-radius query informed `illuminate-index`'s edge model and `impact_radius()` query. Illuminate's index is deliberately narrower — just structural enough to serve the audit join, not a general code-review tool.
+
+**Why we didn't take dependencies on either.** Both are excellent at what they do, and both occupy slots adjacent to Illuminate's wedge. But:
+
+- **Language mismatch.** codeburn is Node/TypeScript; code-review-graph is Python. Taking either as a dependency forces a non-Rust runtime into Illuminate, breaking the single-binary deployment story.
+- **Scope mismatch.** codeburn answers "how much did this cost?" Illuminate answers "what did the team decide?" code-review-graph answers "what code is structurally affected?" Illuminate composes that with "what does the team think about this kind of change?"
+- **Substrate ownership.** Illuminate's portfolio strategy is to own the substrate (ctxgraph for the graph layer, illuminate-index for code structure, illuminate-trail for session capture). Wrapping someone else's project as a layer of the stack creates a dependency we can't refactor.
+
+**How they compose.** A team using AI coding agents at scale will install several local-first observability tools. codeburn for cost, illuminate for context/drift, perhaps a third for security scanning. These are complementary layers, not competitors. We expect to recommend codeburn for cost questions in our docs once Illuminate ships, and to keep `illuminate-index` narrow enough that someone running both code-review-graph and Illuminate gets full structural coverage from one and decision coverage from the other.
 
 ---
 
