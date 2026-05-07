@@ -38,7 +38,10 @@ fn schema_creates_edge_indexes() {
             |r| r.get(0),
         )
         .unwrap();
-    assert!(count >= 3, "should have indexes on source, target, and kind");
+    assert!(
+        count >= 3,
+        "should have indexes on source, target, and kind"
+    );
 }
 
 // ── EdgeKind ──
@@ -181,8 +184,7 @@ fn impact_radius_traverses_incoming_edges() {
     let edges = vec![make_edge("x::caller", "shared::target", EdgeKind::Calls)];
     storage::upsert_edges(&conn, "src/lib.rs", &edges).unwrap();
 
-    let result =
-        storage::impact_radius(&conn, &["shared::target".to_string()], 3, 100).unwrap();
+    let result = storage::impact_radius(&conn, &["shared::target".to_string()], 3, 100).unwrap();
     let impacted: std::collections::HashSet<_> = result.impacted.into_iter().collect();
     assert!(
         impacted.contains("x::caller"),

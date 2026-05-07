@@ -4,6 +4,7 @@
 //! and import statements. Creates stable symbol hashes for anchoring decisions
 //! to code locations.
 
+pub mod edge_extract;
 pub mod edges;
 pub mod indexer;
 pub mod storage;
@@ -118,4 +119,46 @@ pub fn index_file(path: &Path, source: &[u8], lang: Language) -> Result<Vec<symb
     symbols::extract_symbols(tree.root_node(), source, &file_path, lang, &mut extracted);
 
     Ok(extracted)
+}
+
+/// Index a single file and return both extracted symbols and structural edges.
+///
+/// For v0.1 only Rust import edges are produced; other languages return an
+/// empty edge vector. Symbol extraction is identical to [`index_file`].
+pub fn index_file_with_edges(
+    path: &Path,
+    source: &[u8],
+    lang: Language,
+) -> Result<(Vec<symbols::Symbol>, Vec<edges::Edge>)> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&lang.tree_sitter_language())
+        .map_err(|e| IndexError::Parser {
+            language: lang.to_string(),
+            message: e.to_string(),
+        })?;
+
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| IndexError::Parser {
+            language: lang.to_string(),
+            message: "failed to parse file".to_string(),
+        })?;
+
+    let file_path = path.to_string_lossy().to_string();
+    let mut extracted_symbols = Vec::new();
+    symbols::extract_symbols(
+        tree.root_node(),
+        source,
+        &file_path,
+        lang,
+        &mut extracted_symbols,
+    );
+
+    let extracted_edges = match lang {
+        Language::Rust => edge_extract::extract_rust_edges(&tree, source, &file_path),
+        _ => Vec::new(),
+    };
+
+    Ok((extracted_symbols, extracted_edges))
 }
