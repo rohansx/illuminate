@@ -1588,6 +1588,7 @@ version = "0.8.0"
 dependencies = [
  "chrono",
  "illuminate",
+ "illuminate-trail",
  "notify",
  "rusqlite",
  "serde",

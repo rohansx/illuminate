@@ -31,6 +31,14 @@ const MAX_BUBBLES: i64 = 250_000;
 /// the trail layer is for shape and signal, not full transcript replay.
 const TEXT_PREVIEW_CHARS: usize = 500;
 
+/// Cursor's `type` discriminator for user-authored bubbles.
+const BUBBLE_TYPE_USER: i64 = 1;
+/// Cursor's `type` discriminator for assistant-authored bubbles. Other
+/// values (tool results, etc.) are conservatively classified as assistant
+/// in [`group_into_records`] — matching codeburn's behavior.
+#[allow(dead_code)]
+const BUBBLE_TYPE_ASSISTANT: i64 = 2;
+
 /// Default location of Cursor's `state.vscdb` for the running platform.
 ///
 /// Returns `None` when `$HOME` is not set or the platform is not recognized.
@@ -78,38 +86,29 @@ pub fn parse_state_db(path: &Path) -> Result<Vec<TrailRecord>> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| TrailError::Parse(format!("open cursor db: {e}")))?;
 
-    if !schema_looks_like_cursor(&conn)? {
+    if !cursor_disk_kv_table_exists(&conn)? {
         return Err(TrailError::Parse("cursor schema not detected".to_string()));
     }
 
+    // schema confirmed; an empty result is valid
     let rows = read_bubble_rows(&conn)?;
     Ok(group_into_records(rows))
 }
 
-/// True iff the open connection has a `cursorDiskKV` table containing at
-/// least one row whose key matches `bubbleId:%`.
-fn schema_looks_like_cursor(conn: &Connection) -> Result<bool> {
-    // First check the table exists at all — sqlite_master is cheap and
-    // avoids the `no such table` error path.
-    let table_exists: i64 = conn
+/// True iff the open connection has a `cursorDiskKV` table.
+///
+/// Distinct from "has bubble rows": an empty-but-correctly-shaped DB is a
+/// valid Cursor install with no captured conversations, and callers should
+/// see `Ok(vec![])` rather than a parse error.
+fn cursor_disk_kv_table_exists(conn: &Connection) -> Result<bool> {
+    let exists: bool = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='cursorDiskKV'",
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='cursorDiskKV')",
             [],
             |r| r.get(0),
         )
         .map_err(|e| TrailError::Parse(format!("schema probe: {e}")))?;
-    if table_exists == 0 {
-        return Ok(false);
-    }
-
-    let bubble_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' LIMIT 1",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|e| TrailError::Parse(format!("schema probe: {e}")))?;
-    Ok(bubble_count > 0)
+    Ok(exists)
 }
 
 /// One materialized row from `cursorDiskKV` after we've decoded the JSON
@@ -309,6 +308,7 @@ fn read_u64_field(v: &serde_json::Value, field: &str) -> Option<u64> {
 /// Marked `#[doc(hidden)]` because it is not part of the supported API —
 /// callers should consume token data from the future `TrailRecord` field
 /// once the downstream change lands.
+#[cfg(feature = "test-helpers")]
 #[doc(hidden)]
 pub fn parse_bubble_token_counts_for_test(s: &str) -> Option<(Option<u64>, Option<u64>)> {
     let parsed = parse_bubble_json(s)?;
@@ -326,10 +326,15 @@ fn truncate_chars(s: &str, max: usize) -> String {
     out
 }
 
-fn group_into_records(mut rows: Vec<BubbleRow>) -> Vec<TrailRecord> {
-    // Stable sort by ROWID — Cursor writes bubbles in arrival order so this
-    // recovers the conversation timeline.
-    rows.sort_by_key(|r| r.rowid);
+fn group_into_records(rows: Vec<BubbleRow>) -> Vec<TrailRecord> {
+    // `read_bubble_rows` issues `ORDER BY ROWID ASC`, so rows arrive
+    // pre-sorted. Re-sorting would be redundant; we keep a debug assertion
+    // so a future change to the SQL surface trips a loud failure in tests
+    // rather than silently breaking conversation timeline reconstruction.
+    debug_assert!(
+        rows.windows(2).all(|w| w[0].rowid <= w[1].rowid),
+        "rows must arrive ROWID-ordered from read_bubble_rows"
+    );
 
     let mut by_conv: std::collections::BTreeMap<String, Vec<BubbleRow>> =
         std::collections::BTreeMap::new();
@@ -363,9 +368,13 @@ fn group_into_records(mut rows: Vec<BubbleRow>) -> Vec<TrailRecord> {
             .iter()
             .filter(|b| !b.text.is_empty())
             .map(|b| Message {
-                role: if b.bubble_type == 1 {
+                role: if b.bubble_type == BUBBLE_TYPE_USER {
                     MessageRole::User
                 } else {
+                    // BUBBLE_TYPE_ASSISTANT and any other observed value
+                    // (Cursor sometimes uses other discriminators for
+                    // tool-results etc.) — assistant is the conservative
+                    // default and matches codeburn's classification.
                     MessageRole::Assistant
                 },
                 timestamp: b.created_at.unwrap_or(started_at),

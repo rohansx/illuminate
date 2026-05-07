@@ -135,6 +135,27 @@ fn unrecognized_schema_returns_parse_error() {
 }
 
 #[test]
+fn valid_schema_with_no_bubbles_returns_empty() {
+    // Regression guard: a Cursor install that has the canonical
+    // `cursorDiskKV` table but has not yet captured any conversations
+    // is a valid state. The parser must return `Ok(vec![])` rather than
+    // emitting "cursor schema not detected" or any other error — fresh
+    // installs are not parse failures.
+    let (_dir, path) = build_db("state.vscdb");
+    {
+        let conn = open_db(&path);
+        create_cursor_disk_kv(&conn);
+        // Note: no inserts. Table exists, but holds zero bubble rows.
+    }
+
+    let records = parse_state_db(&path).expect("empty cursorDiskKV must parse to Ok(vec![])");
+    assert!(
+        records.is_empty(),
+        "expected zero records from empty DB, got {records:?}"
+    );
+}
+
+#[test]
 fn truncates_text_to_500_chars() {
     let (_dir, path) = build_db("state.vscdb");
     let long_text = "A".repeat(1000);

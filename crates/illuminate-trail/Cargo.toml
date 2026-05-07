@@ -17,5 +17,9 @@ tokio = { workspace = true, features = ["full"] }
 uuid = { workspace = true }
 notify = "7"
 
+[features]
+test-helpers = []
+
 [dev-dependencies]
+illuminate-trail = { path = ".", features = ["test-helpers"] }
 tempfile = "3"
