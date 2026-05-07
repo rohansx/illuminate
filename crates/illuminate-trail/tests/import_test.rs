@@ -1,5 +1,5 @@
 use illuminate_trail::import::import_session;
-use illuminate_trail::watcher::{run_watcher, WatcherOpts};
+use illuminate_trail::watcher::{WatcherOpts, run_watcher};
 use std::fs;
 use std::io::Write;
 use std::sync::mpsc;
@@ -40,7 +40,10 @@ fn skips_session_for_non_opted_in_repo() {
     let jsonl = repo.path().join("session.jsonl");
     write_fixture_session(&jsonl, repo.path());
     let written = import_session(&jsonl).unwrap();
-    assert!(written.is_none(), "session for non-opted-in repo must be skipped");
+    assert!(
+        written.is_none(),
+        "session for non-opted-in repo must be skipped"
+    );
 }
 
 #[test]
@@ -66,7 +69,9 @@ fn watcher_imports_existing_session_on_startup() {
         };
         run_watcher(opts).unwrap();
     });
-    let received = rx.recv_timeout(Duration::from_secs(5)).expect("watcher must import session");
+    let received = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("watcher must import session");
     assert!(received.starts_with(&repo_trail_root));
     handle.join().unwrap();
 }

@@ -138,8 +138,8 @@ pub fn parse_jsonl(input: &str) -> Result<Vec<RawRecord>> {
 
         // Parse to a generic JSON value first so we can inspect the `type` field
         // without a second full parse.
-        let v: serde_json::Value = serde_json::from_str(line)
-            .map_err(|e| TrailError::Parse(format!("line {n}: {e}")))?;
+        let v: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| TrailError::Parse(format!("line {n}: {e}")))?;
 
         // Peek the `type` field.
         let type_str = v.get("type").and_then(|t| t.as_str());

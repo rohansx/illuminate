@@ -2,8 +2,8 @@
 //!
 //! Codex stores sessions under `~/.codex/sessions/`. Stubbed for v0.1.
 
-use crate::record::TrailRecord;
 use crate::Result;
+use crate::record::TrailRecord;
 use std::path::Path;
 
 pub fn parse_session(_path: &Path) -> Result<TrailRecord> {

@@ -6,7 +6,7 @@
 //! we extract the message log and any `tool_use` calls, ignore everything
 //! else.
 
-use crate::raw::{parse_jsonl, MessageBlock, RawRecord};
+use crate::raw::{MessageBlock, RawRecord, parse_jsonl};
 use crate::record::{AgentKind, Message, MessageRole, ToolInvocation, TrailRecord};
 use crate::{Result, TrailError};
 use chrono::{DateTime, Utc};
@@ -83,11 +83,7 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
                 }
                 tool_invocations.extend(calls);
             }
-            RawRecord::Attachment {
-                timestamp,
-                cwd,
-                ..
-            } => {
+            RawRecord::Attachment { timestamp, cwd, .. } => {
                 ended_at = Some(*timestamp);
                 if repo_path.is_none() {
                     repo_path = cwd.as_deref().map(PathBuf::from);
@@ -97,12 +93,10 @@ pub fn parse_session(path: &Path) -> Result<TrailRecord> {
         }
     }
 
-    let session_id = session_id.ok_or_else(|| {
-        TrailError::Normalize("no sessionId found in any record".into())
-    })?;
-    let repo_path = repo_path.ok_or_else(|| {
-        TrailError::Normalize("no cwd found in any record".into())
-    })?;
+    let session_id = session_id
+        .ok_or_else(|| TrailError::Normalize("no sessionId found in any record".into()))?;
+    let repo_path =
+        repo_path.ok_or_else(|| TrailError::Normalize("no cwd found in any record".into()))?;
     let started_at = started_at.unwrap_or_else(Utc::now);
     let ended_at = ended_at.unwrap_or(started_at);
 
@@ -143,7 +137,9 @@ fn split_assistant_content(content: &Value, ts: DateTime<Utc>) -> (String, Vec<T
     let mut tools = Vec::new();
     if let Value::Array(arr) = content {
         for item in arr {
-            let Some(obj) = item.as_object() else { continue };
+            let Some(obj) = item.as_object() else {
+                continue;
+            };
             match obj.get("type").and_then(|t| t.as_str()) {
                 Some("text") => {
                     if let Some(t) = obj.get("text").and_then(|t| t.as_str()) {
@@ -154,7 +150,11 @@ fn split_assistant_content(content: &Value, ts: DateTime<Utc>) -> (String, Vec<T
                     }
                 }
                 Some("tool_use") => {
-                    let name = obj.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    let name = obj
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let params = obj.get("input").cloned().unwrap_or(Value::Null);
                     tools.push(ToolInvocation {
                         name,

@@ -31,7 +31,11 @@ pub fn topic_slug(messages: &[Message]) -> String {
         .split_whitespace()
         .filter(|w| w.len() >= 3)
         .take(6)
-        .map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>())
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        })
         .filter(|w| !w.is_empty())
         .collect::<Vec<_>>()
         .join("-")

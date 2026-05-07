@@ -4,10 +4,10 @@
 //! `.illuminate/illuminate.toml` ancestor of its `cwd`). Returns the path to
 //! the written trail file otherwise.
 
+use crate::Result;
 use crate::claude::parse_session;
 use crate::repo::resolve_repo;
 use crate::storage::write_trail;
-use crate::Result;
 use std::path::{Path, PathBuf};
 
 pub fn import_session(jsonl_path: &Path) -> Result<Option<PathBuf>> {

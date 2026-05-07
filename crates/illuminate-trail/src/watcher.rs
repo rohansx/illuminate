@@ -4,8 +4,8 @@
 //! on every `.jsonl` file present at startup, then (unless `run_once`) watches
 //! for filesystem events and re-imports modified files.
 
-use crate::import::import_session;
 use crate::Result;
+use crate::import::import_session;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -27,7 +27,7 @@ pub fn run_watcher(opts: WatcherOpts) -> Result<()> {
         return Ok(());
     }
 
-    use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
+    use notify::{Event, EventKind, RecursiveMode, Watcher, recommended_watcher};
 
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
     let mut watcher = recommended_watcher(move |res| {
@@ -75,7 +75,8 @@ fn scan_dir(root: &Path, cb: Option<&ImportCallback>) {
         if p.is_dir() {
             scan_dir(&p, cb);
         } else if p.extension().and_then(|e| e.to_str()) == Some("jsonl")
-            && let Err(e) = handle_one(&p, cb) {
+            && let Err(e) = handle_one(&p, cb)
+        {
             eprintln!("[trail] import failed for {}: {e}", p.display());
         }
     }
