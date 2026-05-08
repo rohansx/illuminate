@@ -2,7 +2,10 @@
 //!
 //! Policies are defined in illuminate.toml under [policies.*] sections.
 //! Audit-pipeline tuning lives under the sibling `[audit]` section — see
-//! [`AuditConfig`] and [`parse_audit_config`].
+//! [`AuditConfig`] and [`parse_audit_config`]. Trail-watcher tunables live
+//! under `[trail]` ([`TrailConfig`], [`parse_trail_config`]) and decision
+//! extraction tunables under `[extraction]` ([`ExtractionConfig`],
+//! [`parse_extraction_config`]).
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -17,6 +20,18 @@ pub const DEFAULT_SEMANTIC_TOP_K: usize = 5;
 /// means "no filter" — every result `search_fused` returned passes through.
 /// Used when `[audit].semantic_threshold` is absent or malformed.
 pub const DEFAULT_SEMANTIC_THRESHOLD: f64 = 0.0;
+
+/// Default retention window (days) for trail captures when
+/// `[trail].purge_after_days` is absent or malformed.
+pub const DEFAULT_TRAIL_PURGE_AFTER_DAYS: u32 = 180;
+
+/// Default decision-signal score floor when `[extraction].signal_threshold`
+/// is absent or malformed.
+pub const DEFAULT_EXTRACTION_SIGNAL_THRESHOLD: f64 = 0.7;
+
+/// Default extracted-decision confidence floor when
+/// `[extraction].confidence_threshold` is absent or malformed.
+pub const DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD: f64 = 0.5;
 
 /// Audit-pipeline tunables loaded from `illuminate.toml`'s `[audit]` section.
 ///
@@ -36,6 +51,60 @@ impl Default for AuditConfig {
         Self {
             semantic_top_k: DEFAULT_SEMANTIC_TOP_K,
             semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD,
+        }
+    }
+}
+
+/// Trail-watcher tunables loaded from `illuminate.toml`'s `[trail]` section.
+///
+/// Defaults are returned when the section or individual fields are missing
+/// or have the wrong TOML type — a malformed config must never break the
+/// trail capture pipeline. See `docs/INGESTION.md` and `docs/PRIVACY.md`.
+///
+/// Note: this struct is parsed and exposed for callers; full wiring to the
+/// trail watcher (e.g. honoring `enabled = false`, `exclude_patterns`,
+/// `purge_after_days`) is a separate task.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrailConfig {
+    /// When `false`, the trail capture pipeline is disabled.
+    pub enabled: bool,
+    /// Retention window in days; older trail rows are eligible for purge.
+    pub purge_after_days: u32,
+    /// Glob patterns identifying paths excluded from trail capture.
+    pub exclude_patterns: Vec<String>,
+}
+
+impl Default for TrailConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            purge_after_days: DEFAULT_TRAIL_PURGE_AFTER_DAYS,
+            exclude_patterns: Vec::new(),
+        }
+    }
+}
+
+/// Decision-extraction tunables loaded from `illuminate.toml`'s
+/// `[extraction]` section.
+///
+/// Defaults are returned when the section or individual fields are missing
+/// or have the wrong TOML type. See `docs/INGESTION.md`.
+///
+/// Note: this struct is parsed and exposed for callers; full wiring to the
+/// extraction pipeline is a separate task.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtractionConfig {
+    /// Minimum signal score for a candidate to be considered a decision.
+    pub signal_threshold: f64,
+    /// Minimum confidence for an extracted decision to be persisted.
+    pub confidence_threshold: f64,
+}
+
+impl Default for ExtractionConfig {
+    fn default() -> Self {
+        Self {
+            signal_threshold: DEFAULT_EXTRACTION_SIGNAL_THRESHOLD,
+            confidence_threshold: DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD,
         }
     }
 }
@@ -297,6 +366,140 @@ pub fn parse_audit_config(toml_content: &str) -> AuditConfig {
         semantic_top_k,
         semantic_threshold,
     }
+}
+
+/// Parse the `[trail]` section from a TOML config string into a [`TrailConfig`].
+///
+/// Tolerant by design: returns [`TrailConfig::default`] when the file fails to
+/// parse, when the `[trail]` section is missing, or when individual fields are
+/// the wrong TOML type. Wrong-type fields log a `tracing::warn!` so misconfigured
+/// values are visible without breaking the trail pipeline.
+pub fn parse_trail_config(toml_content: &str) -> TrailConfig {
+    let value: toml::Value = match toml::from_str(toml_content) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                "illuminate-audit: failed to parse illuminate.toml ({e}); using trail defaults"
+            );
+            return TrailConfig::default();
+        }
+    };
+
+    let trail_table = match value.get("trail") {
+        Some(toml::Value::Table(t)) => t,
+        Some(_) => {
+            tracing::warn!(
+                "illuminate-audit: [trail] is not a table in illuminate.toml; using defaults"
+            );
+            return TrailConfig::default();
+        }
+        None => return TrailConfig::default(),
+    };
+
+    let mut config = TrailConfig::default();
+
+    match trail_table.get("enabled") {
+        None => {}
+        Some(toml::Value::Boolean(b)) => config.enabled = *b,
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [trail].enabled has wrong type ({}); using default {}",
+                other.type_str(),
+                config.enabled
+            );
+        }
+    }
+
+    match trail_table.get("purge_after_days") {
+        None => {}
+        Some(toml::Value::Integer(n)) if *n >= 0 => config.purge_after_days = *n as u32,
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [trail].purge_after_days has wrong type ({}); using default {}",
+                other.type_str(),
+                DEFAULT_TRAIL_PURGE_AFTER_DAYS
+            );
+        }
+    }
+
+    match trail_table.get("exclude_patterns") {
+        None => {}
+        Some(toml::Value::Array(arr)) => {
+            config.exclude_patterns = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+        }
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [trail].exclude_patterns has wrong type ({}); using default (empty)",
+                other.type_str()
+            );
+        }
+    }
+
+    config
+}
+
+/// Parse the `[extraction]` section from a TOML config string into an
+/// [`ExtractionConfig`].
+///
+/// Tolerant by design: returns [`ExtractionConfig::default`] when the file
+/// fails to parse, when the `[extraction]` section is missing, or when
+/// individual fields are the wrong TOML type. Wrong-type fields log a
+/// `tracing::warn!` so misconfigured values are visible without breaking
+/// the extraction pipeline.
+pub fn parse_extraction_config(toml_content: &str) -> ExtractionConfig {
+    let value: toml::Value = match toml::from_str(toml_content) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                "illuminate-audit: failed to parse illuminate.toml ({e}); using extraction defaults"
+            );
+            return ExtractionConfig::default();
+        }
+    };
+
+    let extraction_table = match value.get("extraction") {
+        Some(toml::Value::Table(t)) => t,
+        Some(_) => {
+            tracing::warn!(
+                "illuminate-audit: [extraction] is not a table in illuminate.toml; using defaults"
+            );
+            return ExtractionConfig::default();
+        }
+        None => return ExtractionConfig::default(),
+    };
+
+    let mut config = ExtractionConfig::default();
+
+    match extraction_table.get("signal_threshold") {
+        None => {}
+        Some(toml::Value::Float(f)) => config.signal_threshold = *f,
+        Some(toml::Value::Integer(n)) => config.signal_threshold = *n as f64,
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [extraction].signal_threshold has wrong type ({}); using default {}",
+                other.type_str(),
+                DEFAULT_EXTRACTION_SIGNAL_THRESHOLD
+            );
+        }
+    }
+
+    match extraction_table.get("confidence_threshold") {
+        None => {}
+        Some(toml::Value::Float(f)) => config.confidence_threshold = *f,
+        Some(toml::Value::Integer(n)) => config.confidence_threshold = *n as f64,
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [extraction].confidence_threshold has wrong type ({}); using default {}",
+                other.type_str(),
+                DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD
+            );
+        }
+    }
+
+    config
 }
 
 fn parse_severity(s: &str) -> Severity {
