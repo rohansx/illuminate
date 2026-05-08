@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod audit_diff;
+pub mod audit_pr;
 pub mod bootstrap;
 pub mod decisions;
 pub mod entities;

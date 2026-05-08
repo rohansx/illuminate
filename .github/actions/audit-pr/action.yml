@@ -1,10 +1,6 @@
 name: 'Illuminate Audit PR'
 description: 'Audit a pull request against the illuminate decision graph and policies'
 inputs:
-  plan:
-    description: 'Plan text to audit (defaults to PR title)'
-    required: false
-    default: '${{ github.event.pull_request.title }}'
   fail-on-warning:
     description: 'If true, fail the check on warnings as well as violations'
     required: false
@@ -37,46 +33,21 @@ runs:
           echo "::warning::No .illuminate/illuminate.toml in this repo; audit will only enforce policies passed via flags."
         fi
 
-    - name: Audit
-      id: audit
+    - name: Audit PR
       shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
         set +e
-        OUTPUT=$(illuminate audit "${{ inputs.plan }}" 2>&1)
+        illuminate audit-pr ${{ github.event.pull_request.number }} \
+          --repo ${{ github.repository }} \
+          --comment \
+          --format markdown
         STATUS=$?
-        echo "$OUTPUT"
-        echo "audit_output<<__END__" >> "$GITHUB_OUTPUT"
-        echo "$OUTPUT" >> "$GITHUB_OUTPUT"
-        echo "__END__" >> "$GITHUB_OUTPUT"
-        echo "exit_code=$STATUS" >> "$GITHUB_OUTPUT"
         if [ "$STATUS" -eq 2 ]; then
           exit 2
         fi
-        if [ "$STATUS" -eq 1 ] && [ "${{ inputs.fail-on-warning }}" = "true" ]; then
-          exit 1
+        if [ "$STATUS" -eq 3 ] && [ "${{ inputs.fail-on-warning }}" = "true" ]; then
+          exit 3
         fi
         exit 0
-
-    - name: Comment on PR
-      if: always() && github.event.pull_request != null
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const output = `${{ steps.audit.outputs.audit_output }}`;
-          const exitCode = `${{ steps.audit.outputs.exit_code }}`;
-          const emoji = exitCode === '2' ? '❌' : exitCode === '1' ? '⚠️' : '✅';
-          const body = [
-            `## ${emoji} Illuminate audit`,
-            '',
-            '```',
-            output.slice(0, 60000),
-            '```',
-            '',
-            `_Plan audited: \`${{ inputs.plan }}\`_`
-          ].join('\n');
-          await github.rest.issues.createComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-            body
-          });

@@ -228,6 +228,28 @@ enum Commands {
         json: bool,
     },
 
+    /// Audit a GitHub PR (used by the CI gate)
+    AuditPr {
+        /// GitHub PR number to audit
+        pr_number: u64,
+
+        /// GitHub repo as `owner/repo` (default: detect from `git remote get-url origin`)
+        #[arg(long)]
+        repo: Option<String>,
+
+        /// Env-var name to read for the GitHub auth token
+        #[arg(long, default_value = "GITHUB_TOKEN")]
+        token_env: Option<String>,
+
+        /// Post the audit result as a PR comment via `gh pr comment`
+        #[arg(long)]
+        comment: bool,
+
+        /// Output format: `json` or `markdown` (default: markdown)
+        #[arg(long)]
+        format: Option<String>,
+    },
+
     /// Inspect a file's blast-radius via the code graph (read-only).
     Impact {
         /// Files to inspect (repo-relative paths)
@@ -493,6 +515,13 @@ fn main() {
             index_db,
             json,
         } => commands::audit_diff::run(base, index_db, json),
+        Commands::AuditPr {
+            pr_number,
+            repo,
+            token_env,
+            comment,
+            format,
+        } => commands::audit_pr::run(pr_number, repo, token_env, comment, format),
         Commands::Impact {
             files,
             index_db,
