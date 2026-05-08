@@ -4,6 +4,20 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.0] — 2026-05-08
+
+### Added — MCP HTTP transport + docs realignment
+
+- **MCP Streamable HTTP transport.** New `crates/illuminate-mcp/src/http.rs` exposes the same `dispatch()` logic over HTTP via `axum 0.8`. POST `/mcp` accepts a JSON-RPC request body and returns a JSON-RPC response. Optional bearer-token auth: when `[mcp.http].bearer_token_env` is configured AND the named env var is set, requests must carry `Authorization: Bearer <token>` (returns 401 otherwise). When absent, auth is disabled with a startup `WARNING` log. Bind address from `[mcp.http].bind` (default `127.0.0.1:7800`). New `parse_mcp_http_config()` in `illuminate-audit::policy` mirrors the tolerance pattern from `parse_audit_config`. CLI `illuminate mcp serve --http [--bind <addr>]` enables HTTP; `illuminate mcp start` and the legacy `illuminate serve` continue to use stdio. Dispatch routing is shared between transports via a `build_router()` constructor used by both the live server and in-process tests (`tower::ServiceExt::oneshot`). 5 HTTP integration tests + 2 config-parser tests. (`crates/illuminate-mcp/{src/http.rs,Cargo.toml}`, `crates/illuminate-audit/src/policy.rs`, `crates/illuminate-cli/src/{commands/mcp.rs,main.rs}`)
+- **Docs realigned to actual `illuminate-route` and `illuminate-reflect` shapes.** Earlier docs described `illuminate-route` as the LLM fallback router and `illuminate-reflect` as `FailureRecord`-based failure capture. The implementations have always been the subject-to-reading-plan generator (`ReadingPlan { decisions, code_files, estimated_tokens }`) and the Reflexion-pattern episode store (`ReflexionInput`/`ReflexionEpisode`/`ReflexionStore`) respectively. `docs/CRATES.md` and `docs/ARCHITECTURE.md` now document the real APIs with naming notes explaining the historical drift. The actual LLM-fallback-with-PII-stripping logic lives in `illuminate-extract::llm_extract` behind the optional `cloakpipe` Cargo feature — also documented. Test-fixtures table updated: `illuminate-route` tests cover FTS5-only / semantic-only / fused ranking; `illuminate-reflect` tests cover Reflexion store round-trip + `find_relevant` ranking. (`docs/CRATES.md`, `docs/ARCHITECTURE.md`)
+
+### Deferred to v0.11+
+
+- MCP HTTP Server-Sent Events streaming (current transport is request/response only).
+- mTLS / OAuth for MCP HTTP (bearer token only today).
+- Bootstrap interactive interview (5th of 5 sources; needs UX design for stdin / file modes).
+- Refactor `Graph::load_extraction_pipeline_from_config` to use canonical `parse_extraction_config` (still blocked by potential dependency cycle; needs an `illuminate-config` crate or moving the parser into core).
+
 ## [0.9.0] — 2026-05-08
 
 ### Added — audit evidence + decision_ref, MCP resources + prompts protocols
