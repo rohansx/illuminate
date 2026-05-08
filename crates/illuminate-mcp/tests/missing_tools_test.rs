@@ -99,7 +99,8 @@ async fn failures_for_returns_matching_failures() {
 #[tokio::test]
 async fn get_wiki_page_returns_markdown_content() {
     // Lay out a tempdir with the wiki structure illuminate uses, then
-    // ask the handler for a known id. It should return the body.
+    // ask the handler for a known id. It should return the parsed body
+    // alongside the structured front-matter shape from docs/MCP.md.
     let dir = tempdir().unwrap();
     let repo_root = dir.path();
     let wiki_dir = repo_root.join(".illuminate").join("wiki").join("decisions");
@@ -123,15 +124,80 @@ async fn get_wiki_page_returns_markdown_content() {
         .expect("get_wiki_page must succeed for known id");
 
     assert_eq!(resp["id"].as_str(), Some("dec-no-redis"));
-    let content = resp["content"].as_str().expect("content must be string");
+    let body = resp["body"].as_str().expect("body must be string");
     assert!(
-        content.contains("No Redis"),
-        "expected page body in content, got {content:?}",
+        body.contains("No Redis"),
+        "expected page body in body, got {body:?}",
+    );
+    // Front-matter delimiters must not leak into `body`.
+    assert!(
+        !body.starts_with("---"),
+        "body must not include front-matter delimiter, got {body:?}",
     );
     let path = resp["path"].as_str().expect("path must be string");
     assert!(
         path.ends_with("dec-no-redis.md"),
         "expected path to end with file name, got {path:?}",
+    );
+}
+
+#[tokio::test]
+async fn get_wiki_page_returns_structured_shape() {
+    // The response must match the docs/MCP.md spec:
+    // { id, type, title, front_matter, body, path }
+    let dir = tempdir().unwrap();
+    let repo_root = dir.path();
+    let wiki_dir = repo_root.join(".illuminate").join("wiki").join("decisions");
+    std::fs::create_dir_all(&wiki_dir).unwrap();
+
+    let page_path = wiki_dir.join("dec-no-redis.md");
+    let now = chrono::Utc::now().to_rfc3339();
+    let page_content = format!(
+        "---\nid: dec-no-redis\ntitle: No Redis\ntype: decision\nstatus: active\ntags: [caching]\ncreated: {now}\nupdated: {now}\n---\n## Context\n\nbody markdown here.\n",
+    );
+    std::fs::write(&page_path, &page_content).unwrap();
+
+    let graph = Graph::in_memory().unwrap();
+    let ctx =
+        ToolContext::with_index_and_root(graph, None, vec![], None, Some(repo_root.to_path_buf()));
+
+    let resp = ctx
+        .illuminate_get_wiki_page(json!({"id": "dec-no-redis"}))
+        .await
+        .expect("get_wiki_page must succeed for known id");
+
+    // Top-level fields per docs/MCP.md.
+    assert_eq!(resp["id"].as_str(), Some("dec-no-redis"));
+    assert_eq!(resp["type"].as_str(), Some("decision"));
+    assert_eq!(resp["title"].as_str(), Some("No Redis"));
+    assert!(resp["body"].is_string());
+    assert!(resp["path"].is_string());
+
+    // front_matter is an object containing the parsed page front-matter.
+    let front = resp["front_matter"]
+        .as_object()
+        .expect("front_matter must be an object");
+    assert_eq!(
+        front.get("id").and_then(Value::as_str),
+        Some("dec-no-redis")
+    );
+    assert_eq!(front.get("title").and_then(Value::as_str), Some("No Redis"));
+    // PageType serializes as lowercase (decision/pattern/failure/module).
+    assert_eq!(front.get("type").and_then(Value::as_str), Some("decision"));
+    assert_eq!(front.get("status").and_then(Value::as_str), Some("active"));
+    let tags = front
+        .get("tags")
+        .and_then(Value::as_array)
+        .expect("tags must be array");
+    assert!(tags.iter().any(|t| t.as_str() == Some("caching")));
+
+    // Body holds only the markdown after the front-matter block.
+    let body = resp["body"].as_str().unwrap();
+    assert!(body.contains("## Context"));
+    assert!(body.contains("body markdown here."));
+    assert!(
+        !body.contains("dec-no-redis"),
+        "front-matter must not leak into body"
     );
 }
 

@@ -1052,13 +1052,22 @@ impl ToolContext {
     }
 
     /// Tool: illuminate_get_wiki_page
-    /// Fetch the markdown body of a wiki page by id. Walks
-    /// `<repo_root>/.illuminate/wiki/{decisions,patterns,failures,modules}/`
+    /// Fetch a wiki page by id and return the structured shape documented in
+    /// `docs/MCP.md`: `{ id, type, title, front_matter, body, path }`.
+    ///
+    /// Walks `<repo_root>/.illuminate/wiki/{decisions,patterns,failures,modules}/`
     /// via [`illuminate_wiki::walk::walk_wiki`] and matches on either the
-    /// front-matter `id` or the filename stem (`<id>.md`). Returns
-    /// `{ "error": "not found" }` when no match exists — preserves the
-    /// existing wire convention used elsewhere in this crate (errors as
-    /// fields, not JSON-RPC errors, so `tools/call` always succeeds).
+    /// front-matter `id` or the filename stem (`<id>.md`).
+    ///
+    /// `path` is included as a non-spec extension (debugging aid) — relative
+    /// to `repo_root` when possible, falling back to the absolute path.
+    /// `type` mirrors the front-matter `type` field
+    /// (lowercase: `"decision"`, `"pattern"`, `"failure"`, `"module"`).
+    ///
+    /// Errors (page not found, parse failure) are returned as
+    /// `{ "error": "..." }` rather than JSON-RPC errors so `tools/call`
+    /// always succeeds — matches the wire convention used elsewhere in this
+    /// crate.
     pub async fn illuminate_get_wiki_page(&self, args: Value) -> Result<Value, String> {
         let id = args["id"]
             .as_str()
@@ -1098,11 +1107,6 @@ impl ToolContext {
                 continue;
             }
 
-            let body = match std::fs::read_to_string(&entry.path) {
-                Ok(b) => b,
-                Err(e) => return Ok(json!({"error": format!("read failed: {e}")})),
-            };
-
             let rel_path = entry
                 .path
                 .strip_prefix(&repo_root)
@@ -1110,9 +1114,34 @@ impl ToolContext {
                 .to_string_lossy()
                 .to_string();
 
+            // The walker already attempted to parse the page. If it failed
+            // (malformed YAML, missing delimiters), surface a graceful error
+            // instead of a JSON-RPC fault — keeps the wire contract uniform.
+            let page = match entry.page {
+                Ok(p) => p,
+                Err(e) => {
+                    return Ok(json!({
+                        "error": format!("failed to parse wiki page: {e}"),
+                        "id": id,
+                        "path": rel_path,
+                    }));
+                }
+            };
+
+            // PageType derives `Serialize` with `rename_all = "lowercase"`,
+            // so `serde_json::to_value(&page.front.page_type)` yields a
+            // lowercase string literal ("decision", "pattern", ...). Pull it
+            // back out as `&str` for the top-level `type` field.
+            let type_value = serde_json::to_value(page.front.page_type)
+                .unwrap_or_else(|_| Value::String(String::new()));
+            let front_matter = serde_json::to_value(&page.front).unwrap_or_else(|_| json!({}));
+
             return Ok(json!({
-                "id": id,
-                "content": body,
+                "id": page.front.id,
+                "type": type_value,
+                "title": page.front.title,
+                "front_matter": front_matter,
+                "body": page.body,
                 "path": rel_path,
             }));
         }
