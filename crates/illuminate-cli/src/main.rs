@@ -307,6 +307,12 @@ enum Commands {
         cmd: commands::failures::FailuresCmd,
     },
 
+    /// List and show patterns recorded in the wiki
+    Patterns {
+        #[command(subcommand)]
+        cmd: commands::patterns::PatternsAction,
+    },
+
     /// Record a new failure (singular `failure log` form per docs/CLI.md)
     Failure {
         #[command(subcommand)]
@@ -549,6 +555,7 @@ fn main() {
             commands::failures::run(cmd).map_err(illuminate::IlluminateError::Io)
         }
         Commands::Failure { cmd } => commands::failure::run(cmd),
+        Commands::Patterns { cmd } => commands::patterns::run(cmd),
         Commands::Status => commands::status::run().map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,

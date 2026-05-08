@@ -15,6 +15,7 @@ pub mod init;
 pub mod log;
 pub mod mcp;
 pub mod models;
+pub mod patterns;
 pub mod query;
 pub mod reflect;
 pub mod stats;
