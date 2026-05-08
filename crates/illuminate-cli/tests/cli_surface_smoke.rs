@@ -285,6 +285,82 @@ fn wiki_redact_replaces_matches_when_not_dry_run() {
 }
 
 #[test]
+fn wiki_redact_deletes_matching_episodes() {
+    // End-to-end check that file-side replacement AND graph-side episode
+    // deletion both happen on a non-dry-run redact pass.
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    setup_repo(repo);
+    write_decision_page(
+        repo,
+        "dec-graph-leak",
+        "Page with secret",
+        "leaked secret-token-abc123 here.",
+    );
+
+    // Populate graph.db so the wiki page becomes an episode whose content
+    // contains the secret. wiki rebuild walks the wiki directory and inserts
+    // each page as an episode.
+    let rebuild = run(repo, &["wiki", "rebuild"]);
+    assert!(
+        rebuild.status.success(),
+        "wiki rebuild must succeed; stderr: {}",
+        String::from_utf8_lossy(&rebuild.stderr)
+    );
+
+    // Confirm that the secret IS searchable before redaction, so the
+    // post-condition isn't a vacuous truth.
+    let pre = run(repo, &["search", "secret-token-abc123"]);
+    assert!(
+        pre.status.success(),
+        "pre-search must succeed; stderr: {}",
+        String::from_utf8_lossy(&pre.stderr)
+    );
+    let pre_stdout = String::from_utf8_lossy(&pre.stdout);
+    assert!(
+        pre_stdout.contains("dec-graph-leak") || pre_stdout.contains("secret-token-abc123"),
+        "precondition: episode should be searchable before redaction; stdout: {pre_stdout}"
+    );
+
+    let out = run(repo, &["wiki", "redact", r"secret-token-\w+"]);
+    assert!(
+        out.status.success(),
+        "wiki redact must succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("redacted graph"),
+        "expected graph deletion line in output, stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("deferred"),
+        "v0.14-deferred note must be gone now that deletion is implemented; stdout: {stdout}"
+    );
+
+    // File-side: page rewritten with [REDACTED].
+    let after =
+        fs::read_to_string(repo.join(".illuminate/wiki/decisions/dec-graph-leak.md")).unwrap();
+    assert!(
+        !after.contains("secret-token-abc123"),
+        "wiki page should be redacted, got: {after}"
+    );
+
+    // Graph-side: search no longer surfaces the leaked token.
+    let post = run(repo, &["search", "secret-token-abc123"]);
+    assert!(
+        post.status.success(),
+        "post-search must succeed; stderr: {}",
+        String::from_utf8_lossy(&post.stderr)
+    );
+    let post_stdout = String::from_utf8_lossy(&post.stdout);
+    assert!(
+        !post_stdout.contains("dec-graph-leak"),
+        "deleted episode must not appear in search results; stdout: {post_stdout}"
+    );
+}
+
+#[test]
 fn wiki_redact_invalid_regex_errors_clearly() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();

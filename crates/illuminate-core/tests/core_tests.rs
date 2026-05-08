@@ -702,3 +702,106 @@ fn test_anchor_count_in_stats() {
     let stats = graph.stats().unwrap();
     assert_eq!(stats.anchor_count, 2);
 }
+
+// ── Episode deletion ──
+
+#[test]
+fn delete_episode_returns_true_for_existing_id() {
+    let mut graph = test_graph();
+    let episode = Episode::builder("redact me — secret-token-abc123").build();
+    let id = episode.id.clone();
+    graph.add_episode(episode).unwrap();
+
+    let deleted = graph.delete_episode(&id).unwrap();
+    assert!(deleted, "delete_episode should report true for a known id");
+    assert!(
+        graph.get_episode(&id).unwrap().is_none(),
+        "episode row should be gone after delete"
+    );
+}
+
+#[test]
+fn delete_episode_returns_false_for_unknown_id() {
+    let mut graph = test_graph();
+    let deleted = graph.delete_episode("no-such-episode-id").unwrap();
+    assert!(
+        !deleted,
+        "delete_episode should report false when nothing matched"
+    );
+}
+
+#[test]
+fn delete_episode_removes_anchors() {
+    let mut graph = test_graph();
+    let episode = Episode::builder("anchored decision").build();
+    let ep_id = episode.id.clone();
+    graph.add_episode(episode).unwrap();
+
+    graph
+        .add_anchor(Anchor::new(&ep_id, "src/secrets.rs"))
+        .unwrap();
+    graph
+        .add_anchor(Anchor::new(&ep_id, "src/secrets.rs"))
+        .unwrap();
+    assert_eq!(
+        graph.get_anchors_for_file("src/secrets.rs").unwrap().len(),
+        2,
+        "precondition: two anchors registered"
+    );
+
+    let deleted = graph.delete_episode(&ep_id).unwrap();
+    assert!(deleted);
+    assert!(
+        graph
+            .get_anchors_for_file("src/secrets.rs")
+            .unwrap()
+            .is_empty(),
+        "anchors must be cascaded when their episode is deleted"
+    );
+}
+
+#[test]
+fn delete_episode_removes_embedding_and_fts_row() {
+    let mut graph = test_graph();
+    let episode = Episode::builder("vector-bound episode for redaction").build();
+    let id = episode.id.clone();
+    graph.add_episode(episode).unwrap();
+
+    // Plant an embedding so we can verify it's gone post-delete.
+    graph.store_embedding(&id, &[0.1, 0.2, 0.3, 0.4]).unwrap();
+    let before: Vec<String> = graph
+        .get_embeddings()
+        .unwrap()
+        .into_iter()
+        .map(|(eid, _)| eid)
+        .collect();
+    assert!(
+        before.contains(&id),
+        "precondition: embedding stored for episode"
+    );
+
+    let deleted = graph.delete_episode(&id).unwrap();
+    assert!(deleted);
+
+    let after: Vec<String> = graph
+        .get_embeddings()
+        .unwrap()
+        .into_iter()
+        .map(|(eid, _)| eid)
+        .collect();
+    assert!(
+        !after.contains(&id),
+        "embedding row must be gone after delete"
+    );
+
+    // FTS5 mirror should no longer surface this episode for a token from its
+    // content. The episodes_ad trigger handles the delete.
+    let hits = graph.search("redaction", 10).unwrap();
+    assert!(
+        hits.iter().all(|(ep, _)| ep.id != id),
+        "deleted episode must not appear in FTS5 search results"
+    );
+
+    let stats = graph.stats().unwrap();
+    assert_eq!(stats.episode_count, 0);
+}

@@ -446,14 +446,20 @@ fn append_log(root: &std::path::Path, id: &str, verb: &str) -> std::io::Result<(
     Ok(())
 }
 
-/// Bulk-redact a regex pattern across all wiki markdown files.
+/// Bulk-redact a regex pattern across all wiki markdown files AND graph
+/// episodes.
 ///
 /// `--dry-run` prints `<file>: <N> matches` for each affected page and leaves
-/// the filesystem untouched. Without `--dry-run`, each match is replaced with
-/// the literal `[REDACTED]` and the file rewritten in place.
+/// the filesystem and graph untouched. Without `--dry-run`:
+/// 1. each match in a wiki page is replaced with the literal `[REDACTED]`;
+/// 2. every graph episode whose `content` matches the regex is deleted via
+///    [`illuminate::Graph::delete_episode`], cascading to anchors,
+///    episode_entities, edges, and the FTS5 mirror.
 ///
-/// v0.13 scope is file-side replacement only; deletion of matching graph
-/// episodes is deferred to v0.14 — see `docs/CLI.md` § "wiki redact".
+/// The graph pass enumerates episodes via `list_episodes` with a generous
+/// limit and matches client-side — pragmatic, O(n) in episode count, but
+/// avoids FTS5 quirks for arbitrary regex patterns. If `graph.db` does not
+/// exist yet, that's not an error: graph deletion is reported as zero.
 fn cmd_redact(pattern: &str, dry_run: bool) -> std::io::Result<()> {
     let re = regex::Regex::new(pattern).map_err(|e| {
         std::io::Error::new(
@@ -497,11 +503,46 @@ fn cmd_redact(pattern: &str, dry_run: bool) -> std::io::Result<()> {
         println!(
             "dry-run summary: {total_matches} matches across {affected_files} files (no changes written)"
         );
-    } else {
-        println!("redact summary: {total_matches} matches across {affected_files} files");
-        println!("note: graph-side episode deletion is deferred (v0.14)");
+        return Ok(());
     }
+
+    println!("redact summary: {total_matches} matches across {affected_files} files");
+
+    // Graph pass: delete every episode whose content matches the regex.
+    let graph_deleted = redact_graph_episodes(&re)?;
+    println!("redacted graph: {graph_deleted} episode(s) deleted");
     Ok(())
+}
+
+/// Enumerate graph episodes and delete those whose `content` matches `re`.
+///
+/// Returns the number of episodes successfully deleted. If no `graph.db`
+/// exists yet, returns `Ok(0)` — wiki redact runs against the wiki even when
+/// the graph hasn't been bootstrapped.
+fn redact_graph_episodes(re: &regex::Regex) -> std::io::Result<usize> {
+    let mut graph = match super::open_graph() {
+        Ok(g) => g,
+        Err(illuminate::IlluminateError::NotFound(_)) => return Ok(0),
+        Err(e) => return Err(std::io::Error::other(e.to_string())),
+    };
+
+    // Generous limit; v0.13 chooses simplicity (list-and-filter) over an FTS5
+    // round-trip that wouldn't translate arbitrary regex anyway.
+    let episodes = graph
+        .list_episodes(10_000, 0)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    let mut deleted = 0usize;
+    for ep in episodes {
+        if re.is_match(&ep.content)
+            && graph
+                .delete_episode(&ep.id)
+                .map_err(|e| std::io::Error::other(e.to_string()))?
+        {
+            deleted += 1;
+        }
+    }
+    Ok(deleted)
 }
 
 /// Recursively visit every `*.md` file under `dir`. Used by `cmd_redact` to

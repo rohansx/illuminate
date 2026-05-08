@@ -279,6 +279,20 @@ impl Graph {
         self.storage.list_episodes(limit, offset)
     }
 
+    /// Delete an episode and all of its dependent rows.
+    ///
+    /// Cascades to `anchors`, `episode_entities`, and `edges` (rows whose
+    /// `episode_id` references the deleted episode). The FTS5 mirror is
+    /// updated by the `episodes_ad` trigger; the inline `embedding` blob is
+    /// removed when the `episodes` row is dropped.
+    ///
+    /// Returns `Ok(true)` if a row was deleted, `Ok(false)` if no episode
+    /// matched the given id. Wrapped in a SQLite transaction so partial
+    /// failures roll back cleanly.
+    pub fn delete_episode(&mut self, id: &str) -> Result<bool> {
+        self.storage.delete_episode(id)
+    }
+
     /// Add an entity to the graph.
     pub fn add_entity(&self, entity: Entity) -> Result<()> {
         self.storage.insert_entity(&entity)

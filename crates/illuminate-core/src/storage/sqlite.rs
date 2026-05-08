@@ -69,6 +69,30 @@ impl Storage {
         Ok(result)
     }
 
+    /// Delete an episode and all its dependent rows transactionally.
+    ///
+    /// Removes from `anchors`, `episode_entities`, and `edges` (foreign-key
+    /// referrers) before deleting the `episodes` row itself. The FTS5 mirror
+    /// (`episodes_fts`) and the inline `embedding` column are removed by the
+    /// `episodes_ad` trigger and the row deletion respectively.
+    ///
+    /// Returns `Ok(true)` if a row was deleted, `Ok(false)` if no episode
+    /// matched the given id.
+    pub fn delete_episode(&mut self, id: &str) -> Result<bool> {
+        let tx = self.conn.transaction()?;
+        // Dependent rows first (foreign_keys = ON would otherwise reject the
+        // episodes delete since none of these have ON DELETE CASCADE).
+        tx.execute("DELETE FROM anchors WHERE episode_id = ?1", params![id])?;
+        tx.execute(
+            "DELETE FROM episode_entities WHERE episode_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM edges WHERE episode_id = ?1", params![id])?;
+        let n = tx.execute("DELETE FROM episodes WHERE id = ?1", params![id])?;
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
     pub fn list_episodes(&self, limit: usize, offset: usize) -> Result<Vec<Episode>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, source, recorded_at, metadata
