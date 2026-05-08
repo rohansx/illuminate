@@ -273,6 +273,16 @@ enum Commands {
         json: bool,
     },
 
+    /// Explain why a file matters (which decisions, patterns, failures touch it)
+    Explain {
+        /// File path to explain
+        path: PathBuf,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// PreToolUse hook - auto-audit Write/Edit calls (reads from stdin)
     AuditHook,
 
@@ -529,6 +539,7 @@ fn main() {
             max_nodes,
             json,
         } => commands::impact::run(files, index_db, depth, max_nodes, json),
+        Commands::Explain { path, json } => commands::explain::run(path, json),
         Commands::Trail { cmd } => {
             commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io)
         }

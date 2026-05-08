@@ -4,6 +4,7 @@ pub mod audit_pr;
 pub mod bootstrap;
 pub mod decisions;
 pub mod entities;
+pub mod explain;
 pub mod export;
 pub mod failure;
 pub mod failures;
