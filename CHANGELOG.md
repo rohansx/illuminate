@@ -4,6 +4,22 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.0] — 2026-05-08
+
+### Added — audit evidence + decision_ref, MCP resources + prompts protocols
+
+- **Audit evidence + policy decision_ref plumbing.** `PolicyViolation` and `Violation` both gained an `evidence: Option<String>` field carrying the snippet that triggered the match (a literal pattern phrase for `RejectedPattern`, the failed condition description for `MustUse`/`Frozen`, the first 200 chars of the conflicting episode for graph conflicts). `PolicyViolation` also gained `decision_ref: Option<String>` propagated from `RejectedPattern.decision_ref` in the policy TOML. `derive_wiki_url` now resolves with priority `policy_violations[0].decision_ref → decision_violations[0].conflicting_decision.id → relevant_decisions[0].episode_id`, closing the v0.7 limitation. (`crates/illuminate-audit/src/{lib.rs,policy.rs,response.rs}`)
+- **MCP `resources/list` and `resources/read`.** Per `docs/MCP.md`, the server now exposes wiki pages as discoverable resources with URIs of the form `illuminate://wiki/{decisions,patterns,failures,modules}/<id>`. `list` walks `<repo>/.illuminate/wiki/` and returns `{uri, name, description, mimeType}` per page. `read` parses the URI, finds the matching page (with dir/page_type cross-check to prevent serving from wrong directory), and returns the literal markdown (front-matter included) per the MCP spec contract. New module `crates/illuminate-mcp/src/resources.rs`. `initialize` capability advertises `"resources": {}`. (`crates/illuminate-mcp/src/{resources.rs,server.rs,tools.rs}`)
+- **MCP `prompts/list` and `prompts/get`.** Two named prompts per `docs/MCP.md`: `illuminate_audit_check` (reminds agent to call `illuminate_audit` before writing code, honor violations/warnings) and `illuminate_summarize_failures` (asks agent to call `illuminate_failures_for` with optional topic and produce a 2-3 paragraph lesson summary). New module `crates/illuminate-mcp/src/prompts.rs`. `initialize` capability advertises `"prompts": {}`. Unknown prompt names return `INVALID_PARAMS`. (`crates/illuminate-mcp/src/{prompts.rs,server.rs}`)
+
+### Deferred to v0.10+
+
+- MCP Streamable HTTP transport (currently stdio-only; `[mcp.http]` config still parsed-but-not-read).
+- `illuminate-route` schema realignment per docs (currently `Plan`; docs spec `ReadingPlan`).
+- `illuminate-reflect` schema realignment per docs (currently `Reflexion`; docs spec `FailureRecord`).
+- Bootstrap interactive interview (5th of 5 sources).
+- Refactor `Graph::load_extraction_pipeline_from_config` to use canonical `parse_extraction_config` (blocked by potential dependency cycle; needs `illuminate-config` crate or moving parser into core).
+
 ## [0.8.1] — 2026-05-08
 
 ### Added — config consumer wiring + watch parser fix + 4th bootstrap source
