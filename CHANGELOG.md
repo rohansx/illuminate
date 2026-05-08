@@ -4,6 +4,23 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.0] — 2026-05-08
+
+### Added — illuminate-config crate + Graph::delete_episode
+
+Both items in this release close v0.7-v0.12 deferred-items.
+
+- **New `illuminate-config` crate.** `AuditConfig`, `TrailConfig`, `ExtractionConfig`, `McpHttpConfig` and their parsers (`parse_audit_config`, `parse_trail_config`, `parse_extraction_config`, `parse_mcp_http_config`) plus all `DEFAULT_*` constants moved out of `illuminate-audit::policy` into a new workspace member at `crates/illuminate-config/`. `illuminate-audit::policy` re-exports the entire surface so existing imports (`illuminate_audit::policy::AuditConfig`, etc.) continue to work without changes — the CLI and MCP crates compile unmodified. The motivating consumer is `Graph::load_extraction_pipeline_from_config` in `illuminate-core`: it now calls `illuminate_config::parse_extraction_config` instead of an inline `toml::Value` walk, closing the dep-cycle that has been blocking this refactor since v0.7. Behavior is identical (same TOML path, same default `0.5`), with a small bonus that wrong-type values now log via `tracing::warn!` instead of falling through silently. Existing 14 config tests moved to `crates/illuminate-config/tests/config_tests.rs`; 2 new re-export sanity tests in `crates/illuminate-audit/tests/`. (`crates/illuminate-config/`, `crates/illuminate-core/src/graph.rs`, `crates/illuminate-audit/src/policy.rs`)
+- **`Graph::delete_episode(id) -> Result<bool>`.** New transactional delete API on `Graph` that cascades to dependent rows: `anchors` (foreign key `episode_id`), `episode_entities` (junction), and `edges` (extraction-spawned). The `episodes_fts` virtual table is handled automatically via the existing `episodes_ad` AFTER DELETE trigger; the embedding lives inline on the `episodes` row so it's removed with the row. `entities` is intentionally NOT cascaded — extracted entities can be referenced across unrelated episodes, so over-eager removal would lose referential integrity for the rest of the graph. Returns `Ok(false)` (not `Err`) for unknown ids. Used by the v0.12 `wiki redact` command to actually delete graph episodes matching the redacted regex (file-side replacement was already shipped; this closes the v0.14-deferred graph deletion). 4 new core tests (`delete_episode_returns_true_for_existing_id`, `_returns_false_for_unknown_id`, `_removes_anchors`, `_with_embedding`), 1 CLI smoke test (`wiki_redact_deletes_matching_episodes`). (`crates/illuminate-core/src/{graph.rs,storage/sqlite.rs}`, `crates/illuminate-cli/src/commands/wiki.rs`)
+
+### Deferred to v0.14+
+
+- AuditResult `confidence` per-finding field (overall + per-finding; design space — what makes a meaningful audit confidence is fuzzy).
+- Bootstrap interactive TTY interview (writes the same v0.11 YAML schema; needs prompt-library choice).
+- `failure log` editor mode (`$EDITOR` template).
+- MCP HTTP Server-Sent Events streaming.
+- mTLS / OAuth for MCP HTTP.
+
 ## [0.12.0] — 2026-05-08
 
 ### Added — three CLI commands closing remaining `docs/CLI.md` gaps
