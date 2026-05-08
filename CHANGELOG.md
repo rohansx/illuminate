@@ -4,6 +4,26 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] — 2026-05-08
+
+### Added — extraction-on-register, semantic top-k, MCP tool surface, audit-diff
+
+- **Trail / failures register now wires the extraction pipeline.** New shared `try_attach_extraction(&mut Graph, &db_path)` helper in `illuminate-cli::commands` resolves models via `find_models_dir` (env `ILLUMINATE_MODELS_DIR` > `~/.cache/illuminate/models` > `.illuminate/models`), pre-checks for `.onnx` files to keep first-install stderr quiet, and calls `Graph::load_extraction_pipeline_from_config` when an `illuminate.toml` is present (`load_extraction_pipeline` otherwise). Wired into both `trail::cmd_register` and `failures::cmd_register`, which previously opened the graph via `Graph::open_or_create` (yielding `pipeline: None`) and stored episodes raw — entities never reached the graph, so audits couldn't match them. Closes the highest-severity v0.5 doc-vs-code drift. (`crates/illuminate-cli/src/commands/{mod.rs,trail.rs,failures.rs}`)
+- **Audit semantic top-k via `Graph::search_fused`.** New `Auditor::with_index_root_and_embed` constructor accepts `Option<Arc<EmbedEngine>>`, `semantic_top_k: usize`, `semantic_threshold: f64`. When the embed engine is wired and `top_k > 0`, `Auditor::audit` runs a final pass that embeds the plan, calls `Graph::search_fused` (RRF-fused FTS5 + cosine), filters by threshold, and surfaces results as `AuditResult.relevant_decisions: Vec<RelevantDecision>`. Pass is purely informational — never affects `status`. All failure paths (top-k disabled, no embed, embed error, search error) yield empty vec and log at `WARN`. CLI and MCP both wire through. Defaults: `top_k=5`, `threshold=0.0`. (`crates/illuminate-audit/src/lib.rs`, `crates/illuminate-audit/src/response.rs`)
+- **`[audit]` config keys honored from `illuminate.toml`.** New `policy::parse_audit_config(toml_content) -> AuditConfig` sibling to `parse_policies`, plus `AuditConfig { semantic_top_k, semantic_threshold }` with `Default` returning `(5, 0.0)`. Tolerant by design: parse errors, missing `[audit]` section, wrong section type, missing fields, and wrong field types all yield defaults; wrong-type fields log `tracing::warn!` so misconfiguration is visible without breaking the audit run. CLI (`audit`, `audit-diff`) and MCP (`ToolContext::with_audit_config`) both load and apply. (`crates/illuminate-audit/src/policy.rs`)
+- **MCP tool surface: `illuminate_decisions_for`, `illuminate_failures_for`, `illuminate_get_wiki_page`.** Per `docs/MCP.md`. `decisions_for` and `failures_for` are FTS5-phrase-quoted thin pass-throughs over `Graph::search` (path separators no longer trigger FTS5 syntax errors); `failures_for` filters to episodes whose `source` contains `"failure"` or `"reflexion"`. `get_wiki_page` walks `<repo_root>/.illuminate/wiki/` via `illuminate_wiki::walk::walk_wiki` and matches on either front-matter `id` or filename stem; returns `{error: "not found"}` on miss to preserve the `tools/call`-always-succeeds wire convention. All three appear in `tools_list()` and have schema-validated request shapes. (`crates/illuminate-mcp/src/tools.rs`)
+- **CLI: `audit-diff [BASE]` and `decisions for <path>`.** Per `docs/CLI.md` and `docs/AUDIT.md`. `audit-diff` resolves the changed-file set via `git diff --name-only <BASE>...HEAD` (default `HEAD~1`), filters deletions, and reuses the same env-config / index resolution / embed loader as `audit::run`; `--json` and human formats parallel `audit`. `decisions for <PATH>` extends the existing `decisions` subcommand with the same FTS5-phrase-quoted query the MCP `illuminate_decisions_for` tool uses, so CLI and agent surfaces yield identical result sets. (`crates/illuminate-cli/src/commands/{audit_diff.rs,decisions.rs}`, `crates/illuminate-cli/src/main.rs`)
+
+### Deferred to v0.7+
+
+- Bootstrap source coverage: only ADRs and CLAUDE.md / AGENTS.md / `.cursorrules` are wired today; docs require git-history extraction, README parse, and the optional onboarding interview prompt.
+- CLI exit-code alignment: `audit` and `audit-diff` currently return `0/1/2`; `docs/CLI.md` specifies `0/2/3` (warn → 3). One-line change deferred so existing CI integrations don't break mid-cycle.
+- Audit response surface: `AuditResult` is missing `wiki_url`, `confidence`, `evidence`, `policies_applied`, and `trace_id` per `docs/AUDIT.md`. Tracker item.
+- MCP transports beyond stdio: Streamable HTTP, resources (`wiki/decisions/*` etc.), and prompts (`illuminate_audit_check`, `illuminate_summarize_failures`) remain unimplemented.
+- `illuminate-route` and `illuminate-reflect` schema alignment: docs spec `ReadingPlan` and `FailureRecord` shapes; current crates expose `Plan` and `Reflexion`.
+- `[trail]`, `[mcp.http]`, `[extraction]` config sections still parsed-but-ignored.
+- MCP `illuminate_get_wiki_page` response shape: returns `{id, content, path}` rather than the documented `{id, type, title, front_matter, body}`. Functional but drifted.
+
 ## [0.5.0] — 2026-05-07
 
 ### Added — function-call edges across 4 languages, path normalization, cache-bucket tokens
