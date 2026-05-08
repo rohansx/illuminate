@@ -4,6 +4,26 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.1] — 2026-05-08
+
+### Added — config consumer wiring + watch parser fix + 4th bootstrap source
+
+> Note: the `v0.8.0` git tag predates this branch (older release-ci commit). This release uses `v0.8.1` as the next available patch tag.
+
+- **`illuminate-watch` git parser fix.** The previous `parse_git_log` mis-attributed file lists across commit boundaries when `--name-only` was set with multiple commits. New format `--format=%x1e%H%x00%an%x00%aI%x00%n%B%x1f` puts the record separator at the START of each chunk (so split chunks own their own data), uses NUL between fields, RS between commits, US (`%x1f`) as a body/file-list boundary inside the chunk. Bonus: also fixes a latent terminal-width truncation bug where git was silently truncating long subjects to ~80 chars (the leading `%n` defeats this). The bootstrap workaround in `git_history.rs` from v0.7 was updated to use the same format. (`crates/illuminate-watch/src/git.rs`, `crates/illuminate-bootstrap/src/git_history.rs`)
+- **Trail watcher honors `[trail]` config.** `WatcherOpts` gained `enabled: bool` and `exclude_patterns: Vec<String>` fields. When `enabled = false`, `run_watcher` returns immediately with a `tracing::info!` line. When `exclude_patterns` is non-empty, sessions whose resolved `repo_path` matches any glob are skipped post-parse (so the agent-reported cwd is honored). Manual `illuminate trail import <path>` bypasses exclusions (explicit user action). CLI `cmd_watch` loads `TrailConfig` via a new `load_trail_config_from_cwd` ancestor walker mirroring `load_audit_config`. (`crates/illuminate-trail/src/{watcher.rs,import.rs}`, `crates/illuminate-cli/src/commands/trail.rs`)
+- **`illuminate watch` reads `[extraction].signal_threshold` from `illuminate.toml`.** CLI flag changed from `signal_threshold: f64` (default 0.7) to `signal_threshold: Option<f64>`. New `resolve_signal_threshold` in `commands/watch.rs` resolves with priority: CLI flag > `parse_extraction_config(toml).signal_threshold` > `DEFAULT_EXTRACTION_SIGNAL_THRESHOLD` (0.7). All five `run_*` entry points (`run_git`, `run_git_since`, `run_github`, `run_webhook`, `run_daemon`) consume it as their first line and surface the resolved value in the existing "processing N commits (signal threshold: X)" log so the source is visible. The `confidence_threshold` was already consumed by `Graph::load_extraction_pipeline_from_config`. (`crates/illuminate-cli/src/commands/watch.rs`, `crates/illuminate-cli/src/main.rs`)
+- **Bootstrap: README + CONTRIBUTING source.** 4th of 5 documented bootstrap sources. `readme::collect` walks `<repo>/{README,CONTRIBUTING}.md` (case-insensitive filename match), splits on `## ` headings, and emits architecture-style sections (`## Architecture`, `## Tech Stack`, `## Stack`, `## Tools`, `## Decisions`, `## Design`, `## Rationale`) as candidates unconditionally. Other sections only match when their body contains signal phrases (`instead of`, `we chose`, `rather than`, etc.). Boilerplate sections (`## Installation`, `## Usage`, `## License`, etc.) are skipped via exact match. Confidence 0.5 → routes to `wiki/_review/` for curation. SIGNAL_PHRASES extracted to a new `crates/illuminate-bootstrap/src/signals.rs` shared by `git_history` and `readme`. (`crates/illuminate-bootstrap/src/{readme.rs,signals.rs,orchestrate.rs}`)
+
+### Deferred to v0.9+
+
+- Bootstrap interactive interview source (5th of 5).
+- AuditResult `confidence` and `evidence` per-finding fields.
+- Policy-derived `wiki_url` (needs `RejectedPattern.decision_ref` plumbed through `PolicyViolation`).
+- MCP HTTP transport, resources (`wiki/decisions/*` etc.), prompts.
+- `illuminate-route` `ReadingPlan` and `illuminate-reflect` `FailureRecord` schema alignment per docs.
+- Refactor `Graph::load_extraction_pipeline_from_config` to use `parse_extraction_config` from `illuminate-audit::policy` (currently blocked by potential dependency cycle; `illuminate-audit` already depends on `illuminate-core`).
+
 ## [0.7.0] — 2026-05-08
 
 ### Added — doc-alignment batch: bootstrap git-history, audit response surface, MCP page shape, config sections
