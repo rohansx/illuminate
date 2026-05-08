@@ -4,6 +4,25 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] — 2026-05-08
+
+### Added — per-finding `confidence` score on audit results
+
+- **`confidence: f64` on `PolicyViolation`, `Violation`, and `RelevantDecision`.** Per `docs/AUDIT.md`. Single shared `default_confidence()` helper in `response.rs` returns `1.0` so back-compat deserialization treats older payloads as fully confident. Population matrix:
+  - `RejectedPattern` policy match → `1.0` (deterministic string match)
+  - `MustUse` / `Frozen` policy match → `0.9` (rule-based, slightly less specific)
+  - Decision conflict via NER entity match → `0.8`
+  - `RelevantDecision` (semantic top-k) → `(rrf_score * 2.0).min(1.0)` — RRF scores are typically 0.0–0.5, so doubling brings them into a 0.0–1.0 range comparable to the policy/conflict tiers.
+  CI gates can now branch on `confidence >= 0.8` to fail only on high-confidence findings; agent UIs can render confidence visually. CLI `print_human` appends `(confidence: X.XX)` to each finding line. JSON output includes `"confidence"` automatically via `#[derive(Serialize)]`. **MCP wire layer updated**: `policy_violation_to_json`, `violation_to_json`, and the inline `relevant_decisions` mapper in `crates/illuminate-mcp/src/tools.rs` now emit the field too — they hand-build JSON rather than `serde_json::to_value`, so new struct fields don't surface automatically. 6 new tests pin the score matrix and the MCP wire layer. (`crates/illuminate-audit/src/{policy.rs,response.rs,lib.rs}`, `crates/illuminate-cli/src/commands/audit.rs`, `crates/illuminate-mcp/src/tools.rs`)
+
+### Deferred to v0.15+
+
+- `evidence` field shape change from `Option<String>` to `Vec<String>` for full `docs/AUDIT.md` parity (current single-string form still satisfies the field, just narrower).
+- Bootstrap interactive TTY interview.
+- `failure log` editor mode.
+- MCP HTTP Server-Sent Events streaming.
+- mTLS / OAuth for MCP HTTP.
+
 ## [0.13.0] — 2026-05-08
 
 ### Added — illuminate-config crate + Graph::delete_episode
