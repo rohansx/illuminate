@@ -142,9 +142,11 @@ enum Commands {
         #[arg(long, default_value = "8421")]
         port: u16,
 
-        /// Minimum decision signal score (0.0-1.0)
-        #[arg(long, default_value = "0.3")]
-        threshold: f64,
+        /// Minimum decision signal score (0.0-1.0). When omitted, falls back
+        /// to `[extraction].signal_threshold` from `illuminate.toml`, then to
+        /// the built-in default.
+        #[arg(long)]
+        threshold: Option<f64>,
     },
 
     /// Build or rebuild the code symbol index
