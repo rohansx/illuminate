@@ -4,6 +4,7 @@ pub mod bootstrap;
 pub mod decisions;
 pub mod entities;
 pub mod export;
+pub mod failure;
 pub mod failures;
 pub mod hook;
 pub mod impact;

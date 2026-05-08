@@ -275,6 +275,12 @@ enum Commands {
         cmd: commands::failures::FailuresCmd,
     },
 
+    /// Record a new failure (singular `failure log` form per docs/CLI.md)
+    Failure {
+        #[command(subcommand)]
+        cmd: commands::failure::FailureCmd,
+    },
+
     /// Show local installation state
     Status,
 
@@ -502,6 +508,7 @@ fn main() {
         Commands::Failures { cmd } => {
             commands::failures::run(cmd).map_err(illuminate::IlluminateError::Io)
         }
+        Commands::Failure { cmd } => commands::failure::run(cmd),
         Commands::Status => commands::status::run().map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,
