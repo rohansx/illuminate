@@ -7,6 +7,7 @@ use illuminate_embed::EmbedEngine;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+use crate::prompts::{get_prompt, list_prompts};
 use crate::protocol::{Request, Response, codes};
 use crate::resources::{list_wiki_resources, read_wiki_resource};
 use crate::tools::{ToolContext, tool_result, tools_list};
@@ -141,7 +142,7 @@ impl McpServer {
             "initialize" => {
                 let result = json!({
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}, "resources": {}},
+                    "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
                     "serverInfo": {"name": "illuminate", "version": "0.3.0"}
                 });
                 Response::ok(id, result)
@@ -173,6 +174,23 @@ impl McpServer {
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
                 match read_wiki_resource(&uri, &repo_root) {
+                    Ok(result) => Response::ok(id, result),
+                    Err(e) => Response::error(id, codes::INVALID_PARAMS, &e),
+                }
+            }
+
+            "prompts/list" => Response::ok(id, json!({ "prompts": list_prompts() })),
+
+            "prompts/get" => {
+                let params = request.params.clone().unwrap_or(Value::Null);
+                let name = match params["name"].as_str() {
+                    Some(n) => n.to_string(),
+                    None => {
+                        return Response::error(id, codes::INVALID_PARAMS, "missing prompt name");
+                    }
+                };
+                let arguments = params.get("arguments");
+                match get_prompt(&name, arguments) {
                     Ok(result) => Response::ok(id, result),
                     Err(e) => Response::error(id, codes::INVALID_PARAMS, &e),
                 }
