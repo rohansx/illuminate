@@ -102,6 +102,17 @@ enum Commands {
         /// Path to the graph database
         #[arg(long)]
         db: Option<String>,
+
+        /// Use the streamable HTTP transport instead of stdio.
+        /// Bind address and bearer-token policy come from `[mcp.http]` in
+        /// `illuminate.toml`.
+        #[arg(long)]
+        http: bool,
+
+        /// Bind address for HTTP transport (overrides `[mcp.http].bind`).
+        /// Implies `--http`.
+        #[arg(long)]
+        bind: Option<String>,
     },
 
     /// Watch dev workflow and auto-ingest decisions
@@ -298,6 +309,19 @@ enum McpAction {
         #[arg(long)]
         db: Option<String>,
     },
+
+    /// Start the MCP server on the streamable HTTP transport.
+    /// Reads bind address and bearer-token policy from `[mcp.http]` in
+    /// `illuminate.toml`. See `docs/MCP.md`.
+    ServeHttp {
+        /// Path to the graph database (overrides ILLUMINATE_DB env var)
+        #[arg(long)]
+        db: Option<String>,
+
+        /// Bind address (overrides `[mcp.http].bind`; default `127.0.0.1:7800`)
+        #[arg(long)]
+        bind: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -400,8 +424,15 @@ fn main() {
         },
         Commands::Mcp { action } => match action {
             McpAction::Start { db } => commands::mcp::start(db),
+            McpAction::ServeHttp { db, bind } => commands::mcp::start_http(db, bind),
         },
-        Commands::Serve { db } => commands::mcp::start(db),
+        Commands::Serve { db, http, bind } => {
+            if http || bind.is_some() {
+                commands::mcp::start_http(db, bind)
+            } else {
+                commands::mcp::start(db)
+            }
+        }
         Commands::Watch {
             git,
             github,

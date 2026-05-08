@@ -7,7 +7,9 @@
 //! types are tolerated and treated as defaults so a malformed config never
 //! breaks the audit pipeline.
 
-use illuminate_audit::policy::{parse_audit_config, parse_extraction_config, parse_trail_config};
+use illuminate_audit::policy::{
+    parse_audit_config, parse_extraction_config, parse_mcp_http_config, parse_trail_config,
+};
 
 #[test]
 fn parse_audit_config_reads_top_k_from_toml() {
@@ -139,4 +141,27 @@ confidence_threshold = "medium"
     let cfg = parse_extraction_config(toml);
     assert!((cfg.signal_threshold - 0.7).abs() < f64::EPSILON);
     assert!((cfg.confidence_threshold - 0.5).abs() < f64::EPSILON);
+}
+
+#[test]
+fn parse_mcp_http_config_reads_bind_and_token_env() {
+    let toml = r#"
+[mcp.http]
+bind = "0.0.0.0:9000"
+bearer_token_env = "MCP_TOKEN"
+"#;
+    let cfg = parse_mcp_http_config(toml);
+    assert_eq!(cfg.bind, "0.0.0.0:9000");
+    assert_eq!(cfg.bearer_token_env.as_deref(), Some("MCP_TOKEN"));
+}
+
+#[test]
+fn parse_mcp_http_config_returns_defaults() {
+    let toml = r#"
+[project]
+name = "demo"
+"#;
+    let cfg = parse_mcp_http_config(toml);
+    assert_eq!(cfg.bind, "127.0.0.1:7800");
+    assert!(cfg.bearer_token_env.is_none());
 }

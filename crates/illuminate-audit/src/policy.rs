@@ -33,6 +33,10 @@ pub const DEFAULT_EXTRACTION_SIGNAL_THRESHOLD: f64 = 0.7;
 /// `[extraction].confidence_threshold` is absent or malformed.
 pub const DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD: f64 = 0.5;
 
+/// Default bind address for the streamable MCP HTTP transport when
+/// `[mcp.http].bind` is absent or malformed.
+pub const DEFAULT_MCP_HTTP_BIND: &str = "127.0.0.1:7800";
+
 /// Audit-pipeline tunables loaded from `illuminate.toml`'s `[audit]` section.
 ///
 /// Defaults are returned when the section or individual fields are missing,
@@ -105,6 +109,37 @@ impl Default for ExtractionConfig {
         Self {
             signal_threshold: DEFAULT_EXTRACTION_SIGNAL_THRESHOLD,
             confidence_threshold: DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD,
+        }
+    }
+}
+
+/// Streamable HTTP transport tunables loaded from `illuminate.toml`'s
+/// `[mcp.http]` section.
+///
+/// The MCP server can run on either stdio (default) or HTTP. When `[mcp.http]`
+/// is absent, defaults are used (`bind = 127.0.0.1:7800`, no auth). When
+/// `bearer_token_env` names an environment variable, the HTTP transport
+/// requires a matching `Authorization: Bearer <token>` header on every
+/// request. If the env var is unset at startup, auth is disabled with a
+/// warning so a misconfigured deploy is visible but not broken.
+///
+/// Tolerant by design: returns [`McpHttpConfig::default`] when the file fails
+/// to parse, when the `[mcp.http]` section is missing, or when individual
+/// fields are the wrong TOML type. Wrong-type fields log a `tracing::warn!`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpHttpConfig {
+    /// Bind address (e.g. `127.0.0.1:7800`).
+    pub bind: String,
+    /// Name of the environment variable that holds the bearer token.
+    /// `None` disables auth entirely.
+    pub bearer_token_env: Option<String>,
+}
+
+impl Default for McpHttpConfig {
+    fn default() -> Self {
+        Self {
+            bind: DEFAULT_MCP_HTTP_BIND.to_string(),
+            bearer_token_env: None,
         }
     }
 }
@@ -512,6 +547,64 @@ pub fn parse_extraction_config(toml_content: &str) -> ExtractionConfig {
                 "illuminate-audit: [extraction].confidence_threshold has wrong type ({}); using default {}",
                 other.type_str(),
                 DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD
+            );
+        }
+    }
+
+    config
+}
+
+/// Parse the `[mcp.http]` section from a TOML config string into an
+/// [`McpHttpConfig`].
+///
+/// Tolerant by design: returns [`McpHttpConfig::default`] when the file fails
+/// to parse, when the `[mcp.http]` section is missing, or when individual
+/// fields are the wrong TOML type. Wrong-type fields log a `tracing::warn!`
+/// so misconfigured values are visible without breaking the HTTP transport
+/// startup.
+pub fn parse_mcp_http_config(toml_content: &str) -> McpHttpConfig {
+    let value: toml::Value = match toml::from_str(toml_content) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                "illuminate-audit: failed to parse illuminate.toml ({e}); using mcp.http defaults"
+            );
+            return McpHttpConfig::default();
+        }
+    };
+
+    let http_table = match value.get("mcp").and_then(|v| v.get("http")) {
+        Some(toml::Value::Table(t)) => t,
+        Some(_) => {
+            tracing::warn!(
+                "illuminate-audit: [mcp.http] is not a table in illuminate.toml; using defaults"
+            );
+            return McpHttpConfig::default();
+        }
+        None => return McpHttpConfig::default(),
+    };
+
+    let mut config = McpHttpConfig::default();
+
+    match http_table.get("bind") {
+        None => {}
+        Some(toml::Value::String(s)) => config.bind = s.clone(),
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [mcp.http].bind has wrong type ({}); using default {}",
+                other.type_str(),
+                DEFAULT_MCP_HTTP_BIND
+            );
+        }
+    }
+
+    match http_table.get("bearer_token_env") {
+        None => {}
+        Some(toml::Value::String(s)) => config.bearer_token_env = Some(s.clone()),
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [mcp.http].bearer_token_env has wrong type ({}); auth disabled",
+                other.type_str()
             );
         }
     }

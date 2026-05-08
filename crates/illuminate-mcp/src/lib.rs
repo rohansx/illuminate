@@ -1,3 +1,4 @@
+pub mod http;
 pub mod prompts;
 pub mod protocol;
 pub mod resources;

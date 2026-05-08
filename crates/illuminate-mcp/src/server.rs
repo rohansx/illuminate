@@ -137,7 +137,10 @@ impl McpServer {
         }
     }
 
-    async fn dispatch(&self, id: Value, request: &Request) -> Response {
+    /// Dispatch a JSON-RPC request to the appropriate handler. Public so that
+    /// alternate transports (e.g. the streamable HTTP server in [`crate::http`])
+    /// can reuse the same routing pipeline as stdio.
+    pub async fn dispatch(&self, id: Value, request: &Request) -> Response {
         match request.method.as_str() {
             "initialize" => {
                 let result = json!({
