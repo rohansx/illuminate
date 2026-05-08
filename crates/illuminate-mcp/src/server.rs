@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::protocol::{Request, Response, codes};
+use crate::resources::{list_wiki_resources, read_wiki_resource};
 use crate::tools::{ToolContext, tool_result, tools_list};
 
 pub struct McpServer {
@@ -140,13 +141,42 @@ impl McpServer {
             "initialize" => {
                 let result = json!({
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
+                    "capabilities": {"tools": {}, "resources": {}},
                     "serverInfo": {"name": "illuminate", "version": "0.3.0"}
                 });
                 Response::ok(id, result)
             }
 
             "tools/list" => Response::ok(id, tools_list()),
+
+            "resources/list" => {
+                let repo_root = self
+                    .ctx
+                    .repo_root()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                let resources = list_wiki_resources(&repo_root);
+                Response::ok(id, json!({ "resources": resources }))
+            }
+
+            "resources/read" => {
+                let params = request.params.clone().unwrap_or(Value::Null);
+                let uri = match params["uri"].as_str() {
+                    Some(u) => u.to_string(),
+                    None => {
+                        return Response::error(id, codes::INVALID_PARAMS, "missing uri");
+                    }
+                };
+                let repo_root = self
+                    .ctx
+                    .repo_root()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                match read_wiki_resource(&uri, &repo_root) {
+                    Ok(result) => Response::ok(id, result),
+                    Err(e) => Response::error(id, codes::INVALID_PARAMS, &e),
+                }
+            }
 
             "tools/call" => {
                 let params = request.params.clone().unwrap_or(Value::Null);

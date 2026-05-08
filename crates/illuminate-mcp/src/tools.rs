@@ -126,6 +126,13 @@ impl ToolContext {
         self
     }
 
+    /// Repo root configured at server startup (used to resolve
+    /// `<repo_root>/.illuminate/wiki/` for the resources protocol).
+    /// `None` when no root was wired in — callers fall back to `cwd`.
+    pub fn repo_root(&self) -> Option<&Path> {
+        self.repo_root.as_deref()
+    }
+
     /// Lazily open the long-lived `index.db` connection. Returns `None` if
     /// no path is configured or if the file failed to open.
     fn index_connection(&self) -> Option<&Mutex<Connection>> {
