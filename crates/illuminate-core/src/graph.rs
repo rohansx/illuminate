@@ -160,11 +160,12 @@ impl Graph {
                 Default::default()
             };
 
-        let confidence = toml_value
-            .get("extraction")
-            .and_then(|e| e.get("confidence_threshold"))
-            .and_then(|v| v.as_float())
-            .unwrap_or(0.5);
+        // Use the canonical parser from illuminate-config so the extraction
+        // confidence threshold is sourced from a single place across the
+        // workspace (closes the deferred loader refactor noted in the
+        // v0.7-v0.10 changelogs).
+        let extraction_config = illuminate_config::parse_extraction_config(&config_content);
+        let confidence = extraction_config.confidence_threshold;
 
         let pipeline =
             ExtractionPipeline::with_llm_config(schema, models_dir, confidence, &llm_config)

@@ -1473,6 +1473,7 @@ name = "illuminate"
 version = "0.8.0"
 dependencies = [
  "chrono",
+ "illuminate-config",
  "illuminate-extract",
  "rusqlite",
  "serde",
@@ -1490,6 +1491,7 @@ version = "0.8.0"
 dependencies = [
  "chrono",
  "illuminate",
+ "illuminate-config",
  "illuminate-embed",
  "illuminate-index",
  "illuminate-reflect",
@@ -1546,6 +1548,15 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "illuminate-config"
+version = "0.8.0"
+dependencies = [
+ "serde",
+ "toml",
+ "tracing",
 ]
 
 [[package]]

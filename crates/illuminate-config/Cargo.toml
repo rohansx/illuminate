@@ -1,0 +1,12 @@
+[package]
+name = "illuminate-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared configuration parsers for illuminate (illuminate.toml sections)"
+
+[dependencies]
+serde = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }

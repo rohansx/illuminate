@@ -7,7 +7,7 @@
 //! types are tolerated and treated as defaults so a malformed config never
 //! breaks the audit pipeline.
 
-use illuminate_audit::policy::{
+use illuminate_config::{
     parse_audit_config, parse_extraction_config, parse_mcp_http_config, parse_trail_config,
 };
 
