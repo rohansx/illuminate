@@ -200,6 +200,21 @@ enum Commands {
         json: bool,
     },
 
+    /// Audit changes since a git base ref
+    AuditDiff {
+        /// Base ref (default: HEAD~1)
+        #[arg(default_value = "HEAD~1")]
+        base: String,
+
+        /// Path to index.db (default: <repo>/.illuminate/index.db)
+        #[arg(long)]
+        index_db: Option<PathBuf>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Inspect a file's blast-radius via the code graph (read-only).
     Impact {
         /// Files to inspect (repo-relative paths)
@@ -331,6 +346,16 @@ enum DecisionsAction {
         /// Decision/episode ID
         id: String,
     },
+
+    /// List decisions referencing a file or module path
+    For {
+        /// Path or module identifier (e.g. `src/payments`)
+        path: PathBuf,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() {
@@ -365,6 +390,7 @@ fn main() {
                 limit,
             } => commands::decisions::list(after, source, limit),
             DecisionsAction::Show { id } => commands::decisions::show(id),
+            DecisionsAction::For { path, json } => commands::decisions::for_path(path, json),
         },
         Commands::Stats => commands::stats::run(),
         Commands::Models { action } => match action {
@@ -423,6 +449,11 @@ fn main() {
             index_db,
             json,
         } => commands::audit::run(plan, files, index_db, json),
+        Commands::AuditDiff {
+            base,
+            index_db,
+            json,
+        } => commands::audit_diff::run(base, index_db, json),
         Commands::Impact {
             files,
             index_db,

@@ -124,6 +124,13 @@ fn try_load_embed() -> Option<Arc<EmbedEngine>> {
     EmbedEngine::new().ok().map(Arc::new)
 }
 
+/// Sibling-module accessor for [`try_load_embed`] — `audit_diff` needs the
+/// same env-gate logic but the helper is otherwise private. Kept thin so
+/// the env-handling stays in one place.
+pub(super) fn try_load_embed_pub() -> Option<Arc<EmbedEngine>> {
+    try_load_embed()
+}
+
 fn print_human(result: &AuditResult, plan_text: &str) -> illuminate::Result<()> {
     // Human-readable output
     match result.status {
@@ -295,7 +302,7 @@ const STOPWORDS: &[&str] = &[
     "into", "than",
 ];
 
-fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
+pub(super) fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
     match find_config_file()? {
         Some(path) => parse_file(&path),
         None => Ok(Vec::new()),
@@ -304,7 +311,7 @@ fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPol
 
 /// Load the `[audit]` section from illuminate.toml using the same ancestor-walk
 /// as [`load_policies`]. Missing file or section yields [`AuditConfig::default`].
-fn load_audit_config() -> illuminate::Result<AuditConfig> {
+pub(super) fn load_audit_config() -> illuminate::Result<AuditConfig> {
     match find_config_file()? {
         Some(path) => {
             let content =
