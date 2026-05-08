@@ -1,6 +1,7 @@
 //! `illuminate trail` — capture and inspect Claude Code prompt-trails.
 
 use clap::Subcommand;
+use illuminate_audit::policy::{TrailConfig, parse_trail_config};
 use illuminate_trail::claude::default_sessions_dir;
 use illuminate_trail::import::import_session;
 use illuminate_trail::record::TrailRecord;
@@ -186,16 +187,57 @@ fn cmd_watch(sessions_root: Option<PathBuf>) -> std::io::Result<()> {
             "could not determine ~/.claude/projects/ — pass --sessions-root",
         )
     })?;
+    let trail_config = load_trail_config_from_cwd();
+    if !trail_config.enabled {
+        println!("trail watcher disabled by [trail].enabled = false in illuminate.toml");
+        return Ok(());
+    }
     println!("watching {}", root.display());
+    if !trail_config.exclude_patterns.is_empty() {
+        println!(
+            "exclude_patterns: {}",
+            trail_config.exclude_patterns.join(", ")
+        );
+    }
     let opts = WatcherOpts {
         sessions_root: root,
         on_imported: Some(Box::new(|p| {
             println!("captured: {}", p.display());
         })),
         run_once: false,
+        enabled: trail_config.enabled,
+        exclude_patterns: trail_config.exclude_patterns,
     };
     run_watcher(opts).map_err(|e| std::io::Error::other(e.to_string()))?;
     Ok(())
+}
+
+/// Locate `illuminate.toml` via the same ancestor walk used by audit/policy
+/// loading, then return the parsed [`TrailConfig`]. Missing file or section
+/// yields [`TrailConfig::default`] — same tolerance contract as
+/// `parse_trail_config` itself.
+fn load_trail_config_from_cwd() -> TrailConfig {
+    let cwd = match std::env::current_dir() {
+        Ok(p) => p,
+        Err(_) => return TrailConfig::default(),
+    };
+    let mut cur = Some(cwd.as_path());
+    while let Some(d) = cur {
+        let candidate = d.join(".illuminate").join("illuminate.toml");
+        if candidate.is_file() {
+            return std::fs::read_to_string(&candidate)
+                .map(|c| parse_trail_config(&c))
+                .unwrap_or_default();
+        }
+        cur = d.parent();
+    }
+    let legacy = cwd.join("illuminate.toml");
+    if legacy.is_file() {
+        return std::fs::read_to_string(&legacy)
+            .map(|c| parse_trail_config(&c))
+            .unwrap_or_default();
+    }
+    TrailConfig::default()
 }
 
 fn cmd_register(ident: Option<&str>) -> std::io::Result<()> {

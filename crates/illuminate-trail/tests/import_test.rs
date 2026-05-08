@@ -66,6 +66,8 @@ fn watcher_imports_existing_session_on_startup() {
                 let _ = tx.send(path);
             })),
             run_once: true,
+            enabled: true,
+            exclude_patterns: Vec::new(),
         };
         run_watcher(opts).unwrap();
     });
