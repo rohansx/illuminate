@@ -175,6 +175,9 @@ impl McpServer {
                     "illuminate_impact" => ctx.illuminate_impact(args).await,
                     "illuminate_explain" => ctx.illuminate_explain(args).await,
                     "illuminate_symbols" => ctx.illuminate_symbols(args).await,
+                    "illuminate_decisions_for" => ctx.illuminate_decisions_for(args).await,
+                    "illuminate_failures_for" => ctx.illuminate_failures_for(args).await,
+                    "illuminate_get_wiki_page" => ctx.illuminate_get_wiki_page(args).await,
                     other => Err(format!("unknown tool: {other}")),
                 };
 

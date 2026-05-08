@@ -981,6 +981,153 @@ impl ToolContext {
             "results": results,
         }))
     }
+
+    /// Tool: illuminate_decisions_for
+    /// List decisions affecting a given file or module path. Implementation
+    /// is a thin pass-through over `Graph::search` (FTS5 substring match) —
+    /// any episode whose content or source mentions the path surfaces. The
+    /// caller is expected to filter further if needed; v0.6 returns all
+    /// matches up to the FTS5 limit.
+    pub async fn illuminate_decisions_for(&self, args: Value) -> Result<Value, String> {
+        let path = args["path"]
+            .as_str()
+            .ok_or("missing required field: path")?
+            .to_string();
+
+        let query = fts5_phrase_query(&path);
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        let results = graph.search(&query, 10).map_err(|e| e.to_string())?;
+
+        let decisions: Vec<Value> = results
+            .into_iter()
+            .map(|(episode, score)| {
+                json!({
+                    "id": episode.id,
+                    "content": episode.content,
+                    "source": episode.source,
+                    "recorded_at": episode.recorded_at.to_rfc3339(),
+                    "score": score,
+                })
+            })
+            .collect();
+
+        Ok(json!({"decisions": decisions}))
+    }
+
+    /// Tool: illuminate_failures_for
+    /// List failure episodes (reflexions) referencing a given path or module.
+    /// Filters `Graph::search` results to episodes whose `source` contains
+    /// `"failure"` or `"reflexion"` — the two markers `illuminate_reflect`
+    /// and the wiki-failures importer use today.
+    pub async fn illuminate_failures_for(&self, args: Value) -> Result<Value, String> {
+        let path = args["path"]
+            .as_str()
+            .ok_or("missing required field: path")?
+            .to_string();
+
+        let query = fts5_phrase_query(&path);
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        let results = graph.search(&query, 10).map_err(|e| e.to_string())?;
+
+        let failures: Vec<Value> = results
+            .into_iter()
+            .filter(|(episode, _)| {
+                episode
+                    .source
+                    .as_deref()
+                    .map(|s| s.contains("failure") || s.contains("reflexion"))
+                    .unwrap_or(false)
+            })
+            .map(|(episode, _)| {
+                json!({
+                    "id": episode.id,
+                    "content": episode.content,
+                    "source": episode.source,
+                    "recorded_at": episode.recorded_at.to_rfc3339(),
+                })
+            })
+            .collect();
+
+        Ok(json!({"failures": failures}))
+    }
+
+    /// Tool: illuminate_get_wiki_page
+    /// Fetch the markdown body of a wiki page by id. Walks
+    /// `<repo_root>/.illuminate/wiki/{decisions,patterns,failures,modules}/`
+    /// via [`illuminate_wiki::walk::walk_wiki`] and matches on either the
+    /// front-matter `id` or the filename stem (`<id>.md`). Returns
+    /// `{ "error": "not found" }` when no match exists — preserves the
+    /// existing wire convention used elsewhere in this crate (errors as
+    /// fields, not JSON-RPC errors, so `tools/call` always succeeds).
+    pub async fn illuminate_get_wiki_page(&self, args: Value) -> Result<Value, String> {
+        let id = args["id"]
+            .as_str()
+            .ok_or("missing required field: id")?
+            .to_string();
+
+        // Resolve the wiki dir from the configured repo_root. Without one,
+        // fall back to the current working directory — matches the CLI's
+        // implicit-cwd convention.
+        let repo_root = match self.repo_root.clone() {
+            Some(r) => r,
+            None => std::env::current_dir().map_err(|e| e.to_string())?,
+        };
+        let wiki_root = repo_root.join(".illuminate").join("wiki");
+
+        let walked = match illuminate_wiki::walk::walk_wiki(&wiki_root) {
+            Ok(v) => v,
+            Err(e) => return Ok(json!({"error": format!("wiki walk failed: {e}")})),
+        };
+
+        for entry in walked {
+            // Match by front-matter id (preferred) or by filename stem.
+            let stem_matches = entry
+                .path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s == id)
+                .unwrap_or(false);
+
+            let id_matches = entry
+                .page
+                .as_ref()
+                .map(|p| p.front.id == id)
+                .unwrap_or(false);
+
+            if !stem_matches && !id_matches {
+                continue;
+            }
+
+            let body = match std::fs::read_to_string(&entry.path) {
+                Ok(b) => b,
+                Err(e) => return Ok(json!({"error": format!("read failed: {e}")})),
+            };
+
+            let rel_path = entry
+                .path
+                .strip_prefix(&repo_root)
+                .unwrap_or(&entry.path)
+                .to_string_lossy()
+                .to_string();
+
+            return Ok(json!({
+                "id": id,
+                "content": body,
+                "path": rel_path,
+            }));
+        }
+
+        Ok(json!({"error": "not found"}))
+    }
+}
+
+/// Wrap a free-text query as an FTS5 phrase so punctuation (path separators,
+/// dashes, dots) is treated as literal content rather than parsed as FTS5
+/// syntax. Without this, queries like `src/payments` raise "syntax error
+/// near '/'". Doubled internal quotes follow the FTS5 escape rule.
+fn fts5_phrase_query(input: &str) -> String {
+    let escaped = input.replace('"', "\"\"");
+    format!("\"{escaped}\"")
 }
 
 /// Normalize a single file path against an optional repo root. Mirrors the
@@ -1242,6 +1389,39 @@ pub fn tools_list() -> Value {
                         "name": {"type": "string", "description": "Symbol name to search for"}
                     },
                     "required": ["name"]
+                }
+            },
+            {
+                "name": "illuminate_decisions_for",
+                "description": "List decisions affecting a given file or module path. Returns FTS5-matched episodes from the graph.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File or module path"}
+                    },
+                    "required": ["path"]
+                }
+            },
+            {
+                "name": "illuminate_failures_for",
+                "description": "List failure episodes (reflexions) referencing a given path or module.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File or module path"}
+                    },
+                    "required": ["path"]
+                }
+            },
+            {
+                "name": "illuminate_get_wiki_page",
+                "description": "Fetch the markdown content of a wiki page by its id (e.g., 'dec-no-redis').",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "Wiki page id (front-matter id or filename stem)"}
+                    },
+                    "required": ["id"]
                 }
             }
         ]
