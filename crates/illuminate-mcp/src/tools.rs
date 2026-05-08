@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use illuminate::{Episode, Graph};
 use illuminate_audit::Auditor;
-use illuminate_audit::policy::IntentPolicy;
+use illuminate_audit::policy::{AuditConfig, IntentPolicy};
 use illuminate_audit::response::AuditStatus;
 use illuminate_embed::EmbedEngine;
 use illuminate_reflect::Severity;
@@ -19,13 +19,6 @@ const IMPACT_DEPTH: u32 = 2;
 /// Default node cap for impact-radius traversal in MCP audits.
 const IMPACT_NODES: usize = 50;
 
-/// Default top-k for the auditor's semantic relevant-decisions pass.
-/// Hardcoded for v0.6; Task BC will lift this into `illuminate.toml`.
-const SEMANTIC_TOP_K: usize = 5;
-
-/// Default RRF-fused score threshold (`0.0` = no filter). Tunable later.
-const SEMANTIC_THRESHOLD: f64 = 0.0;
-
 pub struct ToolContext {
     pub graph: Arc<Mutex<Graph>>,
     pub embed: Option<Arc<EmbedEngine>>,
@@ -33,6 +26,9 @@ pub struct ToolContext {
     embedding_cache: Mutex<Option<HashMap<String, Vec<f32>>>>,
     /// Intent policies loaded from illuminate.toml.
     policies: Vec<IntentPolicy>,
+    /// Audit-pipeline tunables loaded from `[audit]` in illuminate.toml.
+    /// Defaults are used when the section is absent or malformed.
+    audit_config: AuditConfig,
     /// Optional path to the code-graph `index.db` for blast-radius reporting.
     /// Resolved at server startup via `illuminate_audit::resolve_index_db`.
     index_db_path: Option<PathBuf>,
@@ -54,6 +50,7 @@ impl ToolContext {
             embed: embed.map(Arc::new),
             embedding_cache: Mutex::new(None),
             policies: Vec::new(),
+            audit_config: AuditConfig::default(),
             index_db_path: None,
             repo_root: None,
             index_conn: OnceLock::new(),
@@ -70,6 +67,7 @@ impl ToolContext {
             embed: embed.map(Arc::new),
             embedding_cache: Mutex::new(None),
             policies,
+            audit_config: AuditConfig::default(),
             index_db_path: None,
             repo_root: None,
             index_conn: OnceLock::new(),
@@ -95,6 +93,10 @@ impl ToolContext {
     /// so ABSOLUTE paths agents pass in `illuminate_audit`'s `files` array
     /// get normalized to the repo-relative form the indexer stored. Without
     /// this, lookups silently miss when agents supply absolute paths.
+    ///
+    /// Audit-pipeline tunables (`semantic_top_k`, `semantic_threshold`)
+    /// default to [`AuditConfig::default`]. Use [`Self::with_audit_config`]
+    /// to override them with values loaded from `[audit]` in illuminate.toml.
     pub fn with_index_and_root(
         graph: Graph,
         embed: Option<EmbedEngine>,
@@ -107,10 +109,21 @@ impl ToolContext {
             embed: embed.map(Arc::new),
             embedding_cache: Mutex::new(None),
             policies,
+            audit_config: AuditConfig::default(),
             index_db_path,
             repo_root,
             index_conn: OnceLock::new(),
         }
+    }
+
+    /// Override the audit-pipeline tunables on an existing `ToolContext`.
+    ///
+    /// Builder-style: returns `self` so callers can chain after one of the
+    /// constructors above. Used by [`crate::McpServer::with_index_root_and_audit_config`]
+    /// to pass values loaded from `[audit]` in illuminate.toml.
+    pub fn with_audit_config(mut self, audit_config: AuditConfig) -> Self {
+        self.audit_config = audit_config;
+        self
     }
 
     /// Lazily open the long-lived `index.db` connection. Returns `None` if
@@ -185,6 +198,9 @@ impl ToolContext {
         let policies = self.policies.clone();
         let repo_root = self.repo_root.clone();
 
+        let top_k = self.audit_config.semantic_top_k;
+        let threshold = self.audit_config.semantic_threshold;
+
         Ok(match (self.index_db_path.clone(), embed) {
             (Some(idx), Some(embed)) => Auditor::with_index_root_and_embed(
                 audit_graph,
@@ -192,8 +208,8 @@ impl ToolContext {
                 idx,
                 repo_root,
                 Some(embed),
-                SEMANTIC_TOP_K,
-                SEMANTIC_THRESHOLD,
+                top_k,
+                threshold,
             ),
             (Some(idx), None) => {
                 Auditor::with_index_and_root(audit_graph, policies, idx, repo_root)
@@ -204,8 +220,8 @@ impl ToolContext {
                 PathBuf::from("/nonexistent/illuminate-mcp-no-index.db"),
                 None::<PathBuf>,
                 Some(embed),
-                SEMANTIC_TOP_K,
-                SEMANTIC_THRESHOLD,
+                top_k,
+                threshold,
             ),
             (None, None) => Auditor::new(audit_graph, policies),
         })

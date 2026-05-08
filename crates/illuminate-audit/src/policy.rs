@@ -1,11 +1,44 @@
 //! Intent policy parsing and types.
 //!
 //! Policies are defined in illuminate.toml under [policies.*] sections.
+//! Audit-pipeline tuning lives under the sibling `[audit]` section — see
+//! [`AuditConfig`] and [`parse_audit_config`].
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::response::Severity;
+
+/// Default top-k for the semantic relevant-decisions pass when
+/// `[audit].semantic_top_k` is absent or malformed in illuminate.toml.
+pub const DEFAULT_SEMANTIC_TOP_K: usize = 5;
+
+/// Default similarity threshold (RRF-fused score, not raw cosine). `0.0`
+/// means "no filter" — every result `search_fused` returned passes through.
+/// Used when `[audit].semantic_threshold` is absent or malformed.
+pub const DEFAULT_SEMANTIC_THRESHOLD: f64 = 0.0;
+
+/// Audit-pipeline tunables loaded from `illuminate.toml`'s `[audit]` section.
+///
+/// Defaults are returned when the section or individual fields are missing,
+/// or when values are the wrong TOML type — a malformed config must never
+/// break the audit pipeline.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuditConfig {
+    /// Top-k for the semantic relevant-decisions pass. See `docs/AUDIT.md`.
+    pub semantic_top_k: usize,
+    /// RRF-fused score threshold; results below this are filtered out.
+    pub semantic_threshold: f64,
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            semantic_top_k: DEFAULT_SEMANTIC_TOP_K,
+            semantic_threshold: DEFAULT_SEMANTIC_THRESHOLD,
+        }
+    }
+}
 
 /// An intent policy — a machine-enforceable architectural rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +220,67 @@ pub fn parse_policies(toml_content: &str) -> Result<Vec<IntentPolicy>, String> {
     }
 
     Ok(policies)
+}
+
+/// Parse the `[audit]` section from a TOML config string into an [`AuditConfig`].
+///
+/// Tolerant by design: returns [`AuditConfig::default`] when the file fails to
+/// parse, when the `[audit]` section is missing, or when individual fields are
+/// the wrong TOML type. Wrong-type fields log a `tracing::warn!` so misconfigured
+/// values are visible without breaking the audit run.
+pub fn parse_audit_config(toml_content: &str) -> AuditConfig {
+    let value: toml::Value = match toml::from_str(toml_content) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                "illuminate-audit: failed to parse illuminate.toml ({e}); using audit defaults"
+            );
+            return AuditConfig::default();
+        }
+    };
+
+    let audit_table = match value.get("audit") {
+        Some(toml::Value::Table(t)) => t,
+        Some(_) => {
+            tracing::warn!(
+                "illuminate-audit: [audit] is not a table in illuminate.toml; using defaults"
+            );
+            return AuditConfig::default();
+        }
+        None => return AuditConfig::default(),
+    };
+
+    let semantic_top_k = match audit_table.get("semantic_top_k") {
+        None => DEFAULT_SEMANTIC_TOP_K,
+        Some(toml::Value::Integer(n)) if *n >= 0 => *n as usize,
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [audit].semantic_top_k has wrong type ({}); using default {}",
+                other.type_str(),
+                DEFAULT_SEMANTIC_TOP_K
+            );
+            DEFAULT_SEMANTIC_TOP_K
+        }
+    };
+
+    let semantic_threshold = match audit_table.get("semantic_threshold") {
+        None => DEFAULT_SEMANTIC_THRESHOLD,
+        Some(toml::Value::Float(f)) => *f,
+        Some(toml::Value::Integer(n)) => *n as f64,
+        Some(other) => {
+            tracing::warn!(
+                "illuminate-audit: [audit].semantic_threshold has wrong type ({}); using default {}",
+                other.type_str(),
+                DEFAULT_SEMANTIC_THRESHOLD
+            );
+            DEFAULT_SEMANTIC_THRESHOLD
+        }
+    };
+
+    AuditConfig {
+        semantic_top_k,
+        semantic_threshold,
+    }
 }
 
 fn parse_severity(s: &str) -> Severity {

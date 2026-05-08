@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::open_graph;
 use illuminate::Episode;
 use illuminate_audit::Auditor;
-use illuminate_audit::policy::parse_policies;
+use illuminate_audit::policy::{AuditConfig, parse_audit_config, parse_policies};
 use illuminate_audit::resolve_index_db_from_cwd;
 use illuminate_audit::resolve_repo_root_from_cwd;
 use illuminate_audit::response::AuditResult;
@@ -18,15 +18,6 @@ const HUMAN_IMPACT_LIMIT: usize = 10;
 /// than `HUMAN_IMPACT_LIMIT` because each entry is a full preview line.
 const HUMAN_RELEVANT_LIMIT: usize = 5;
 
-/// Default top-k for the semantic relevant-decisions pass. Hardcoded for
-/// v0.6; Task BC will lift this into `illuminate.toml`.
-const SEMANTIC_TOP_K: usize = 5;
-
-/// Default similarity threshold (RRF-fused score, not raw cosine). `0.0`
-/// means "no filter" — every result `search_fused` returned passes through.
-/// Tunable later; calibration depends on graph size and pool depth.
-const SEMANTIC_THRESHOLD: f64 = 0.0;
-
 /// Run the audit command.
 pub fn run(
     plan_text: String,
@@ -36,8 +27,9 @@ pub fn run(
 ) -> illuminate::Result<()> {
     let graph = open_graph()?;
 
-    // Load policies from illuminate.toml if present
+    // Load policies and audit-pipeline config from illuminate.toml if present.
     let policies = load_policies()?;
+    let audit_config = load_audit_config()?;
 
     let resolved_index = resolve_index_db_from_cwd(index_db.as_deref());
     let resolved_root = resolve_repo_root_from_cwd();
@@ -56,8 +48,8 @@ pub fn run(
                 path,
                 resolved_root,
                 embed,
-                SEMANTIC_TOP_K,
-                SEMANTIC_THRESHOLD,
+                audit_config.semantic_top_k,
+                audit_config.semantic_threshold,
             );
             auditor
                 .audit_with_files(&plan_text, &files)
@@ -70,8 +62,8 @@ pub fn run(
                 path,
                 resolved_root,
                 embed,
-                SEMANTIC_TOP_K,
-                SEMANTIC_THRESHOLD,
+                audit_config.semantic_top_k,
+                audit_config.semantic_threshold,
             );
             auditor
                 .audit(&plan_text)
@@ -90,8 +82,8 @@ pub fn run(
                     PathBuf::from("/nonexistent/illuminate-audit-no-index.db"),
                     None::<PathBuf>,
                     Some(e),
-                    SEMANTIC_TOP_K,
-                    SEMANTIC_THRESHOLD,
+                    audit_config.semantic_top_k,
+                    audit_config.semantic_threshold,
                 ),
                 None => Auditor::new(graph, policies),
             };
@@ -304,23 +296,46 @@ const STOPWORDS: &[&str] = &[
 ];
 
 fn load_policies() -> illuminate::Result<Vec<illuminate_audit::policy::IntentPolicy>> {
+    match find_config_file()? {
+        Some(path) => parse_file(&path),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Load the `[audit]` section from illuminate.toml using the same ancestor-walk
+/// as [`load_policies`]. Missing file or section yields [`AuditConfig::default`].
+fn load_audit_config() -> illuminate::Result<AuditConfig> {
+    match find_config_file()? {
+        Some(path) => {
+            let content =
+                std::fs::read_to_string(&path).map_err(illuminate::IlluminateError::Io)?;
+            Ok(parse_audit_config(&content))
+        }
+        None => Ok(AuditConfig::default()),
+    }
+}
+
+/// Locate the project's illuminate.toml. Walks upward from cwd looking for
+/// `.illuminate/illuminate.toml`, then falls back to `./illuminate.toml`.
+/// Shared by [`load_policies`] and [`load_audit_config`] so the same file is
+/// the source of truth for both `[policies.*]` and `[audit]`.
+fn find_config_file() -> illuminate::Result<Option<PathBuf>> {
     let cwd = env::current_dir().map_err(illuminate::IlluminateError::Io)?;
     let mut cur = Some(cwd.as_path());
     while let Some(d) = cur {
         let candidate = d.join(".illuminate").join("illuminate.toml");
         if candidate.is_file() {
-            return parse_file(&candidate);
+            return Ok(Some(candidate));
         }
         cur = d.parent();
     }
 
-    // Legacy fallback: cwd/illuminate.toml
     let legacy = cwd.join("illuminate.toml");
     if legacy.is_file() {
-        return parse_file(&legacy);
+        return Ok(Some(legacy));
     }
 
-    Ok(Vec::new())
+    Ok(None)
 }
 
 fn parse_file(

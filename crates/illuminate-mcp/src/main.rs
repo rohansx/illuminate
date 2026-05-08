@@ -115,8 +115,9 @@ async fn main() {
         }
     };
 
-    // Load intent policies from illuminate.toml if present
-    let policies = load_policies(&db_path);
+    // Load intent policies and audit-pipeline config from illuminate.toml.
+    // Both share a single read of the file via `load_config`.
+    let (policies, audit_config) = load_config(&db_path);
 
     // Resolve the code-graph index.db using the same ancestor-walk used by
     // the CLI (see `illuminate_audit::resolve_index_db`). Found here means
@@ -140,25 +141,48 @@ async fn main() {
         eprintln!("illuminate-mcp: loaded {} intent policies", policies.len());
     }
 
-    let server = McpServer::with_index_and_root(graph, embed, policies, index_db_path, repo_root);
+    let server = McpServer::with_index_root_and_audit_config(
+        graph,
+        embed,
+        policies,
+        index_db_path,
+        repo_root,
+        audit_config,
+    );
     server.run().await;
 }
 
-/// Load intent policies from illuminate.toml next to the .illuminate/ directory.
-fn load_policies(db_path: &std::path::Path) -> Vec<illuminate_audit::policy::IntentPolicy> {
+/// Load intent policies and audit-pipeline config from illuminate.toml next to
+/// the .illuminate/ directory. Returns defaults for both halves when the file
+/// is absent, unreadable, or the relevant sections are missing.
+fn load_config(
+    db_path: &std::path::Path,
+) -> (
+    Vec<illuminate_audit::policy::IntentPolicy>,
+    illuminate_audit::policy::AuditConfig,
+) {
     let config_path = db_path
         .parent() // .illuminate/
         .and_then(|p| p.parent()) // project root
         .map(|p| p.join("illuminate.toml"));
 
-    if let Some(path) = config_path
-        && path.exists()
-        && let Ok(content) = std::fs::read_to_string(&path)
-    {
-        match illuminate_audit::policy::parse_policies(&content) {
-            Ok(policies) => return policies,
-            Err(e) => eprintln!("illuminate-mcp: policy parse error: {e}"),
-        }
+    let Some(path) = config_path else {
+        return (Vec::new(), illuminate_audit::policy::AuditConfig::default());
+    };
+    if !path.exists() {
+        return (Vec::new(), illuminate_audit::policy::AuditConfig::default());
     }
-    Vec::new()
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return (Vec::new(), illuminate_audit::policy::AuditConfig::default());
+    };
+
+    let policies = match illuminate_audit::policy::parse_policies(&content) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("illuminate-mcp: policy parse error: {e}");
+            Vec::new()
+        }
+    };
+    let audit_config = illuminate_audit::policy::parse_audit_config(&content);
+    (policies, audit_config)
 }

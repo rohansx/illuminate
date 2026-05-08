@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use illuminate::Graph;
-use illuminate_audit::policy::IntentPolicy;
+use illuminate_audit::policy::{AuditConfig, IntentPolicy};
 use illuminate_embed::EmbedEngine;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -54,15 +54,34 @@ impl McpServer {
         index_db_path: Option<PathBuf>,
         repo_root: Option<PathBuf>,
     ) -> Self {
-        Self {
-            ctx: Arc::new(ToolContext::with_index_and_root(
-                graph,
-                embed,
-                policies,
-                index_db_path,
-                repo_root,
-            )),
-        }
+        Self::with_index_root_and_audit_config(
+            graph,
+            embed,
+            policies,
+            index_db_path,
+            repo_root,
+            AuditConfig::default(),
+        )
+    }
+
+    /// Build an `McpServer` plus the audit-pipeline config loaded from
+    /// `[audit]` in illuminate.toml.
+    ///
+    /// Mirrors [`Self::with_index_and_root`] but threads `audit_config` into
+    /// the `ToolContext` so `semantic_top_k` and `semantic_threshold` flow
+    /// from config rather than from hardcoded constants in `tools.rs`.
+    pub fn with_index_root_and_audit_config(
+        graph: Graph,
+        embed: Option<EmbedEngine>,
+        policies: Vec<IntentPolicy>,
+        index_db_path: Option<PathBuf>,
+        repo_root: Option<PathBuf>,
+        audit_config: AuditConfig,
+    ) -> Self {
+        let ctx =
+            ToolContext::with_index_and_root(graph, embed, policies, index_db_path, repo_root)
+                .with_audit_config(audit_config);
+        Self { ctx: Arc::new(ctx) }
     }
 
     /// Run the MCP server: read JSON-RPC lines from stdin, write responses to stdout.
