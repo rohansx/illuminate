@@ -62,6 +62,20 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
         }
     }
 
+    // 5. Onboarding interview (.illuminate/interview.yaml). Highest-confidence
+    // source — explicit team statements rather than inferences from text.
+    match crate::interview::collect(repo_root) {
+        Ok(interview_candidates) => {
+            if !interview_candidates.is_empty() {
+                report.sources_run.push("interview".into());
+            }
+            candidates.extend(interview_candidates);
+        }
+        Err(e) => {
+            tracing::warn!("illuminate-bootstrap: interview collection failed: {e}");
+        }
+    }
+
     report.candidates_found = candidates.len();
 
     // 3a. Content-hash dedup: drop later candidates that share the same body
