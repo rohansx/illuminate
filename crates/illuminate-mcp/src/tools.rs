@@ -19,6 +19,13 @@ const IMPACT_DEPTH: u32 = 2;
 /// Default node cap for impact-radius traversal in MCP audits.
 const IMPACT_NODES: usize = 50;
 
+/// Default top-k for the auditor's semantic relevant-decisions pass.
+/// Hardcoded for v0.6; Task BC will lift this into `illuminate.toml`.
+const SEMANTIC_TOP_K: usize = 5;
+
+/// Default RRF-fused score threshold (`0.0` = no filter). Tunable later.
+const SEMANTIC_THRESHOLD: f64 = 0.0;
+
 pub struct ToolContext {
     pub graph: Arc<Mutex<Graph>>,
     pub embed: Option<Arc<EmbedEngine>>,
@@ -169,14 +176,38 @@ impl ToolContext {
             Graph::open(&path).map_err(|e| e.to_string())?
         };
 
-        Ok(match self.index_db_path.clone() {
-            Some(idx) => Auditor::with_index_and_root(
+        // When an embed engine is wired into the context, route through the
+        // semantic-aware constructor so `relevant_decisions` flows back into
+        // the audit response. The auditor handles missing-index gracefully,
+        // so we always supply the index path slot — falling back to a
+        // sentinel that won't open when none is configured.
+        let embed = self.embed.clone();
+        let policies = self.policies.clone();
+        let repo_root = self.repo_root.clone();
+
+        Ok(match (self.index_db_path.clone(), embed) {
+            (Some(idx), Some(embed)) => Auditor::with_index_root_and_embed(
                 audit_graph,
-                self.policies.clone(),
+                policies,
                 idx,
-                self.repo_root.clone(),
+                repo_root,
+                Some(embed),
+                SEMANTIC_TOP_K,
+                SEMANTIC_THRESHOLD,
             ),
-            None => Auditor::new(audit_graph, self.policies.clone()),
+            (Some(idx), None) => {
+                Auditor::with_index_and_root(audit_graph, policies, idx, repo_root)
+            }
+            (None, Some(embed)) => Auditor::with_index_root_and_embed(
+                audit_graph,
+                policies,
+                PathBuf::from("/nonexistent/illuminate-mcp-no-index.db"),
+                None::<PathBuf>,
+                Some(embed),
+                SEMANTIC_TOP_K,
+                SEMANTIC_THRESHOLD,
+            ),
+            (None, None) => Auditor::new(audit_graph, policies),
         })
     }
 
@@ -642,6 +673,23 @@ impl ToolContext {
         let decision_conflicts: Vec<Value> =
             result.violations.iter().map(violation_to_json).collect();
 
+        // Semantic top-k: the auditor populates `relevant_decisions` when an
+        // embed engine is wired into the context. Surface it directly on the
+        // wire — informational only, never affects status.
+        let relevant_decisions: Vec<Value> = result
+            .relevant_decisions
+            .iter()
+            .map(|d| {
+                json!({
+                    "episode_id": d.episode_id,
+                    "content_preview": d.content_preview,
+                    "source": d.source,
+                    "recorded_at": d.recorded_at.to_rfc3339(),
+                    "similarity": d.similarity,
+                })
+            })
+            .collect();
+
         // MCP wire status: `result.status` already reflects policy +
         // decision-conflict severity. Reflexions are graph-derived here, so
         // upgrade `pass` → `warning` when they exist (matches prior behaviour).
@@ -658,6 +706,7 @@ impl ToolContext {
             "decision_conflicts": decision_conflicts,
             "reflexions": reflexions,
             "impact": impact_json,
+            "relevant_decisions": relevant_decisions,
         }))
     }
 

@@ -8,6 +8,7 @@ description = "Contextual linter for illuminate — cross-reference agent plans 
 
 [dependencies]
 illuminate = { version = "0.8.0", path = "../illuminate-core" }
+illuminate-embed = { version = "0.8.0", path = "../illuminate-embed" }
 illuminate-index = { version = "0.8.0", path = "../illuminate-index" }
 illuminate-reflect = { version = "0.8.0", path = "../illuminate-reflect" }
 rusqlite = { workspace = true }

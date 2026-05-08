@@ -7,15 +7,16 @@ pub mod policy;
 pub mod response;
 
 use illuminate::Graph;
+use illuminate_embed::EmbedEngine;
 use illuminate_reflect::ReflexionStore;
 use regex::Regex;
 use rusqlite::Connection;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 use policy::{IntentPolicy, PolicyViolation};
-use response::{AuditResult, AuditStatus, ImpactInfo, Violation, ViolationType};
+use response::{AuditResult, AuditStatus, ImpactInfo, RelevantDecision, Violation, ViolationType};
 
 /// Default depth cap for impact-radius traversal.
 const DEFAULT_IMPACT_DEPTH: u32 = 2;
@@ -42,11 +43,25 @@ pub struct Auditor {
     /// payload means initialization was attempted but failed (missing file,
     /// open error) — we won't retry, just return an empty `ImpactInfo`.
     index_conn: OnceLock<Option<Mutex<Connection>>>,
+    /// Optional embed engine used to compute query embeddings for the
+    /// semantic top-k pass via [`Graph::search_fused`]. `Arc` because MCP
+    /// already holds the engine as `Arc` and the CLI wraps once at startup.
+    /// `None` disables semantic search; `relevant_decisions` will be empty.
+    embed: Option<Arc<EmbedEngine>>,
+    /// Number of relevant-decision results to surface. `0` disables the
+    /// semantic pass entirely (cheap short-circuit before any inference).
+    semantic_top_k: usize,
+    /// Minimum RRF-fused score to include in `relevant_decisions`. `0.0`
+    /// disables filtering (every result `search_fused` returned is kept).
+    /// Note: RRF scores are rank-aggregation values, not raw cosines; tune
+    /// empirically if filtering is desired.
+    semantic_threshold: f64,
 }
 
 impl Auditor {
     /// Construct an auditor without a code-graph index. `audit_with_files`
-    /// will return an empty `ImpactInfo`.
+    /// will return an empty `ImpactInfo`. Semantic top-k is disabled —
+    /// `relevant_decisions` will always be empty.
     pub fn new(graph: Graph, policies: Vec<IntentPolicy>) -> Self {
         Self {
             graph,
@@ -54,6 +69,9 @@ impl Auditor {
             index_db_path: None,
             repo_root: None,
             index_conn: OnceLock::new(),
+            embed: None,
+            semantic_top_k: 0,
+            semantic_threshold: 0.0,
         }
     }
 
@@ -64,6 +82,9 @@ impl Auditor {
     /// callers may keep one `Auditor` for the lifetime of the process.
     /// A missing or unreadable `index.db` is silently swallowed: audits still
     /// succeed, they just report an empty `ImpactInfo`.
+    ///
+    /// Semantic top-k is disabled: `relevant_decisions` will always be empty.
+    /// Use [`Self::with_index_root_and_embed`] to wire in an embed engine.
     ///
     /// Path-format note: callers must pass repo-relative paths to
     /// `audit_with_files` for index lookups to hit. Use
@@ -88,11 +109,42 @@ impl Auditor {
     ///
     /// When `repo_root` is `None`, paths pass through verbatim — the
     /// pre-Task-R behaviour preserved by [`Self::with_index`].
+    ///
+    /// Semantic top-k is disabled: `relevant_decisions` will always be empty.
+    /// Use [`Self::with_index_root_and_embed`] to wire in an embed engine.
     pub fn with_index_and_root(
         graph: Graph,
         policies: Vec<IntentPolicy>,
         index_db_path: impl Into<PathBuf>,
         repo_root: Option<impl Into<PathBuf>>,
+    ) -> Self {
+        Self::with_index_root_and_embed(graph, policies, index_db_path, repo_root, None, 0, 0.0)
+    }
+
+    /// Construct an auditor with a code-graph index, repo root, and an
+    /// optional [`EmbedEngine`] for semantic top-k via [`Graph::search_fused`].
+    ///
+    /// When `embed` is `Some` and `semantic_top_k > 0`, [`Self::audit`] runs
+    /// a final pass that embeds the plan, calls `search_fused`, filters by
+    /// `semantic_threshold`, and surfaces results as
+    /// [`AuditResult::relevant_decisions`]. The pass is purely informational —
+    /// it never affects `status`. Failure paths (embed error, search error)
+    /// log at WARN and yield an empty `relevant_decisions` so the audit
+    /// always succeeds.
+    ///
+    /// `semantic_top_k = 0` disables the pass entirely (cheap short-circuit
+    /// before any inference). `semantic_threshold = 0.0` disables filtering;
+    /// note that RRF scores from `search_fused` are rank-aggregation values
+    /// in roughly `[0.0, 0.05]` for typical pool sizes, not raw cosines, so
+    /// tune empirically.
+    pub fn with_index_root_and_embed(
+        graph: Graph,
+        policies: Vec<IntentPolicy>,
+        index_db_path: impl Into<PathBuf>,
+        repo_root: Option<impl Into<PathBuf>>,
+        embed: Option<Arc<EmbedEngine>>,
+        semantic_top_k: usize,
+        semantic_threshold: f64,
     ) -> Self {
         Self {
             graph,
@@ -100,6 +152,9 @@ impl Auditor {
             index_db_path: Some(index_db_path.into()),
             repo_root: repo_root.map(Into::into),
             index_conn: OnceLock::new(),
+            embed,
+            semantic_top_k,
+            semantic_threshold,
         }
     }
 
@@ -136,13 +191,63 @@ impl Auditor {
             AuditStatus::Pass
         };
 
+        let relevant_decisions = self.compute_relevant_decisions(plan_text);
+
         Ok(AuditResult {
             status,
             violations: decision_violations,
             policy_violations,
             reflexions: Vec::new(), // filled in by caller with ReflexionStore
             impact: ImpactInfo::default(),
+            relevant_decisions,
         })
+    }
+
+    /// Run the semantic top-k pass: embed the plan, fuse FTS5 + cosine via
+    /// [`Graph::search_fused`], filter by `semantic_threshold`, and return
+    /// the results as [`RelevantDecision`]s.
+    ///
+    /// Always returns a value — every failure path (top-k disabled, no embed
+    /// engine, embed error, search error) yields an empty vec so the calling
+    /// audit succeeds. Errors log at WARN; the disabled paths are silent.
+    fn compute_relevant_decisions(&self, plan: &str) -> Vec<RelevantDecision> {
+        if self.semantic_top_k == 0 {
+            return Vec::new();
+        }
+        let Some(embed) = self.embed.as_ref() else {
+            return Vec::new();
+        };
+        let embedding = match embed.embed(plan) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("illuminate-audit: embed failed ({e}); skipping semantic top-k");
+                return Vec::new();
+            }
+        };
+        let results = match self
+            .graph
+            .search_fused(plan, &embedding, self.semantic_top_k)
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(
+                    "illuminate-audit: search_fused failed ({e}); skipping semantic top-k"
+                );
+                return Vec::new();
+            }
+        };
+
+        results
+            .into_iter()
+            .filter(|r| r.score >= self.semantic_threshold)
+            .map(|r| RelevantDecision {
+                episode_id: r.episode.id.clone(),
+                content_preview: r.episode.content.chars().take(200).collect(),
+                source: r.episode.source.clone(),
+                recorded_at: r.episode.recorded_at,
+                similarity: r.score,
+            })
+            .collect()
     }
 
     /// Audit a plan and additionally surface blast-radius information for the

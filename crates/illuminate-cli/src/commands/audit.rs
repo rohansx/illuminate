@@ -1,5 +1,6 @@
 use std::env;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use super::open_graph;
 use illuminate::Episode;
@@ -8,9 +9,23 @@ use illuminate_audit::policy::parse_policies;
 use illuminate_audit::resolve_index_db_from_cwd;
 use illuminate_audit::resolve_repo_root_from_cwd;
 use illuminate_audit::response::AuditResult;
+use illuminate_embed::EmbedEngine;
 
 /// Cap on impacted-symbol entries shown in human-readable output.
 const HUMAN_IMPACT_LIMIT: usize = 10;
+
+/// Cap on relevant-decision entries shown in human-readable output. Lower
+/// than `HUMAN_IMPACT_LIMIT` because each entry is a full preview line.
+const HUMAN_RELEVANT_LIMIT: usize = 5;
+
+/// Default top-k for the semantic relevant-decisions pass. Hardcoded for
+/// v0.6; Task BC will lift this into `illuminate.toml`.
+const SEMANTIC_TOP_K: usize = 5;
+
+/// Default similarity threshold (RRF-fused score, not raw cosine). `0.0`
+/// means "no filter" — every result `search_fused` returned passes through.
+/// Tunable later; calibration depends on graph size and pool depth.
+const SEMANTIC_THRESHOLD: f64 = 0.0;
 
 /// Run the audit command.
 pub fn run(
@@ -27,15 +42,59 @@ pub fn run(
     let resolved_index = resolve_index_db_from_cwd(index_db.as_deref());
     let resolved_root = resolve_repo_root_from_cwd();
 
+    // Try to load an embed engine for semantic top-k. Failure is non-fatal:
+    // when `ILLUMINATE_NO_EMBED=1` is set, or when fastembed model files are
+    // unavailable, we silently skip — `relevant_decisions` will be empty
+    // but the audit still runs (policies, decision conflicts, blast radius).
+    let embed = try_load_embed();
+
     let result = match (resolved_index, files.is_empty()) {
         (Some(path), false) => {
-            let auditor = Auditor::with_index_and_root(graph, policies, path, resolved_root);
+            let auditor = Auditor::with_index_root_and_embed(
+                graph,
+                policies,
+                path,
+                resolved_root,
+                embed,
+                SEMANTIC_TOP_K,
+                SEMANTIC_THRESHOLD,
+            );
             auditor
                 .audit_with_files(&plan_text, &files)
                 .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?
         }
-        _ => {
-            let auditor = Auditor::new(graph, policies);
+        (Some(path), true) => {
+            let auditor = Auditor::with_index_root_and_embed(
+                graph,
+                policies,
+                path,
+                resolved_root,
+                embed,
+                SEMANTIC_TOP_K,
+                SEMANTIC_THRESHOLD,
+            );
+            auditor
+                .audit(&plan_text)
+                .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?
+        }
+        (None, _) => {
+            // No index.db — fall back to the no-index path. We still want the
+            // semantic pass when an embed engine is available, so plumb it
+            // through a dummy index path: the auditor's compute_impact short-
+            // circuits when `files` is empty and tolerates a missing file
+            // otherwise. Use a sentinel temp path that won't open.
+            let auditor = match embed {
+                Some(e) => Auditor::with_index_root_and_embed(
+                    graph,
+                    policies,
+                    PathBuf::from("/nonexistent/illuminate-audit-no-index.db"),
+                    None::<PathBuf>,
+                    Some(e),
+                    SEMANTIC_TOP_K,
+                    SEMANTIC_THRESHOLD,
+                ),
+                None => Auditor::new(graph, policies),
+            };
             auditor
                 .audit(&plan_text)
                 .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?
@@ -58,6 +117,19 @@ pub fn run(
     }
 
     Ok(())
+}
+
+/// Attempt to load an [`EmbedEngine`] for the semantic top-k pass. Returns
+/// `None` when `ILLUMINATE_NO_EMBED=1` is set or model init fails — both
+/// are non-fatal: the audit still runs, just without `relevant_decisions`.
+///
+/// Mirrors the env-gate the MCP server uses (`crates/illuminate-mcp/src/main.rs`)
+/// so a single env var disables embedding across both entry points.
+fn try_load_embed() -> Option<Arc<EmbedEngine>> {
+    if env::var("ILLUMINATE_NO_EMBED").as_deref() == Ok("1") {
+        return None;
+    }
+    EmbedEngine::new().ok().map(Arc::new)
 }
 
 fn print_human(result: &AuditResult, plan_text: &str) -> illuminate::Result<()> {
@@ -141,10 +213,28 @@ fn print_human(result: &AuditResult, plan_text: &str) -> illuminate::Result<()> 
         }
     }
 
+    // Semantic top-k: when the auditor wired in an embed engine, surface the
+    // RRF-fused related decisions. Always shown when non-empty — informational
+    // only, never blocking.
+    if !result.relevant_decisions.is_empty() {
+        println!();
+        println!("Related decisions (semantic similarity):");
+        for d in result.relevant_decisions.iter().take(HUMAN_RELEVANT_LIMIT) {
+            let preview = d.content_preview.replace('\n', " ");
+            let label = d.source.as_deref().unwrap_or(&d.episode_id);
+            println!("  - [{label}] ({:.3}) {preview}", d.similarity);
+        }
+        println!();
+        println!("  These are not blocking. Review whether your plan conflicts with any.");
+    }
+
     // FTS5 fallback: surface graph episodes that look related to the plan,
     // even if no entity match was found. Helps when the graph contains
-    // bootstrapped wiki pages but no NER-extracted entities.
-    if matches!(result.status, illuminate_audit::response::AuditStatus::Pass) {
+    // bootstrapped wiki pages but no NER-extracted entities. Only fires when
+    // the semantic block is empty — avoid double-reporting.
+    if matches!(result.status, illuminate_audit::response::AuditStatus::Pass)
+        && result.relevant_decisions.is_empty()
+    {
         let graph2 = open_graph()?;
         if let Ok(matches) = fts5_related(&graph2, plan_text, 5)
             && !matches.is_empty()

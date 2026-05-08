@@ -17,6 +17,32 @@ pub struct AuditResult {
     /// `index.db` is configured or when no files were supplied.
     #[serde(default)]
     pub impact: ImpactInfo,
+    /// Top-k semantically-relevant decisions surfaced via [`illuminate::Graph::search_fused`].
+    /// Always informational — never affects `status`. Empty when no embed
+    /// engine is configured or `semantic_top_k` is `0`.
+    #[serde(default)]
+    pub relevant_decisions: Vec<RelevantDecision>,
+}
+
+/// A decision episode surfaced by the auditor's semantic top-k pass.
+///
+/// Built from a [`illuminate::Graph::search_fused`] result. The `similarity`
+/// field is the RRF-fused score returned by `search_fused` — note this is a
+/// rank-aggregation score, not a raw cosine similarity. For v0.6 the default
+/// threshold is `0.0` (no filtering); higher thresholds are tunable but
+/// require empirical calibration since RRF scores depend on pool size.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RelevantDecision {
+    pub episode_id: String,
+    /// First 200 characters of the episode's content. Truncated to keep the
+    /// audit response compact; callers needing the full content can fetch
+    /// the episode by id.
+    pub content_preview: String,
+    #[serde(default)]
+    pub source: Option<String>,
+    pub recorded_at: chrono::DateTime<chrono::Utc>,
+    /// RRF-fused score from `search_fused`. Higher is more relevant.
+    pub similarity: f64,
 }
 
 /// Blast-radius information for the files an agent proposes to touch.

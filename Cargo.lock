@@ -1431,6 +1431,7 @@ version = "0.8.0"
 dependencies = [
  "chrono",
  "illuminate",
+ "illuminate-embed",
  "illuminate-index",
  "illuminate-reflect",
  "regex",
