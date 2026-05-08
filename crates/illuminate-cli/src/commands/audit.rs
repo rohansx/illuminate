@@ -158,7 +158,10 @@ fn print_human(result: &AuditResult, plan_text: &str) -> illuminate::Result<()> 
             println!("  Found: {found}");
         }
         println!("  Reason: {}", v.reason);
-        println!("  Severity: {:?}", v.severity);
+        println!(
+            "  Severity: {:?} (confidence: {:.2})",
+            v.severity, v.confidence
+        );
     }
 
     for v in &result.violations {
@@ -169,7 +172,10 @@ fn print_human(result: &AuditResult, plan_text: &str) -> illuminate::Result<()> 
                 println!("  Source: {source}");
             }
         }
-        println!("  Severity: {:?}", v.severity);
+        println!(
+            "  Severity: {:?} (confidence: {:.2})",
+            v.severity, v.confidence
+        );
     }
 
     // Defined-symbols section: per-file symbols looked up from index.db.
@@ -225,7 +231,10 @@ fn print_human(result: &AuditResult, plan_text: &str) -> illuminate::Result<()> 
         for d in result.relevant_decisions.iter().take(HUMAN_RELEVANT_LIMIT) {
             let preview = d.content_preview.replace('\n', " ");
             let label = d.source.as_deref().unwrap_or(&d.episode_id);
-            println!("  - [{label}] ({:.3}) {preview}", d.similarity);
+            println!(
+                "  - [{label}] ({:.3}, confidence: {:.2}) {preview}",
+                d.similarity, d.confidence
+            );
         }
         println!();
         println!("  These are not blocking. Review whether your plan conflicts with any.");

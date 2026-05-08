@@ -24,7 +24,7 @@ pub use illuminate_config::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::response::Severity;
+use crate::response::{Severity, default_confidence};
 
 /// An intent policy — a machine-enforceable architectural rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +111,18 @@ pub struct PolicyViolation {
     /// `#[serde(default)]` for back-compat with v0.7 payloads.
     #[serde(default)]
     pub evidence: Option<String>,
+    /// Confidence that this finding is real and actionable (0.0–1.0).
+    ///
+    /// Per-rule scoring matrix:
+    ///   - `RejectedPattern` matches → `1.0` (deterministic substring match)
+    ///   - `MustUse` / `Frozen` matches → `0.9` (rule-based but slightly
+    ///     less specific — entity dictionary or path-prefix lookup)
+    ///
+    /// `#[serde(default = "default_confidence")]` keeps pre-Task-HC payloads
+    /// deserializing cleanly; see
+    /// [`crate::response::default_confidence`] for the rationale.
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
 }
 
 /// Parse intent policies from a TOML config string.

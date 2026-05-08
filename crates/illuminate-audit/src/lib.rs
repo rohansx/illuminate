@@ -262,6 +262,10 @@ impl Auditor {
                 source: r.episode.source.clone(),
                 recorded_at: r.episode.recorded_at,
                 similarity: r.score,
+                // RRF scores typically sit in 0.0–0.5; doubling lifts them
+                // into the 0.0–1.0 audit-confidence band shared with the
+                // policy/violation findings. Capped at 1.0 for safety.
+                confidence: (r.score * 2.0).min(1.0),
             })
             .collect()
     }
@@ -441,6 +445,10 @@ impl Auditor {
                                 evidence: Some(format!(
                                     "plan mentions rejected entity '{rejected}' (must use '{entity}')"
                                 )),
+                                // Rule-based dictionary match — slightly less
+                                // specific than a pure substring hit. See
+                                // docs/AUDIT.md for the scoring matrix.
+                                confidence: 0.9,
                             });
                         }
                     }
@@ -474,6 +482,9 @@ impl Auditor {
                                 evidence: Some(format!(
                                     "plan touches frozen path pattern '{path_pattern}'"
                                 )),
+                                // Path-prefix match — rule-based, same tier
+                                // as MustUse. See docs/AUDIT.md.
+                                confidence: 0.9,
                             });
                         }
                     }
@@ -496,6 +507,9 @@ impl Auditor {
                             // `derive_wiki_url` can surface it in the response.
                             decision_ref: decision_ref.clone(),
                             evidence: Some(format!("plan contains '{pattern}'")),
+                            // Deterministic substring match — top of the
+                            // confidence ladder. See docs/AUDIT.md.
+                            confidence: 1.0,
                         });
                     }
                 }
@@ -546,6 +560,10 @@ impl Auditor {
                         code_anchors: Vec::new(),
                         severity: response::Severity::Error,
                         evidence: Some(evidence),
+                        // NER-extracted entity match against a rejection
+                        // indicator in graph content. A future FTS5-only
+                        // fallback would set 0.6; v0.14 always uses 0.8.
+                        confidence: 0.8,
                     });
                 }
             }

@@ -709,6 +709,8 @@ impl ToolContext {
                     "source": d.source,
                     "recorded_at": d.recorded_at.to_rfc3339(),
                     "similarity": d.similarity,
+                    // Per-finding confidence (Task HC) — RRF-derived.
+                    "confidence": d.confidence,
                 })
             })
             .collect();
@@ -1211,6 +1213,9 @@ fn policy_violation_to_json(v: &illuminate_audit::policy::PolicyViolation) -> Va
         "found": v.found,
         "reason": v.reason,
         "severity": serde_json::to_value(&v.severity).unwrap_or(Value::Null),
+        // Per-finding confidence (Task HC) — surfaced to MCP clients so they
+        // can rank or filter findings without re-deriving the score.
+        "confidence": v.confidence,
     })
 }
 
@@ -1227,6 +1232,8 @@ fn violation_to_json(v: &illuminate_audit::response::Violation) -> Value {
         "recorded_at": ep.map(|e| e.recorded_at.to_rfc3339()),
         "plan_entity": v.plan_entity,
         "severity": serde_json::to_value(&v.severity).unwrap_or(Value::Null),
+        // Per-finding confidence (Task HC) — see `policy_violation_to_json`.
+        "confidence": v.confidence,
     })
 }
 

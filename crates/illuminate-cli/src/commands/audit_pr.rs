@@ -463,6 +463,7 @@ mod tests {
             severity: Severity::Error,
             decision_ref: None,
             evidence: None,
+            confidence: 1.0,
         });
         let md = format_markdown(7, "add redis cache", "https://x", &result, &[]);
         assert!(md.contains("❌"), "expected violation emoji");

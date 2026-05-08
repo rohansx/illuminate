@@ -5,6 +5,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::policy::PolicyViolation;
 
+/// Default confidence value used by `#[serde(default = "default_confidence")]`
+/// on every per-finding `confidence` field across [`PolicyViolation`],
+/// [`Violation`], and [`RelevantDecision`].
+///
+/// Returns `1.0` so older serialized payloads (pre-Task-HC) deserialize as
+/// "fully confident" rather than "unknown / zero". This matches the Task EA
+/// back-compat pattern used for `evidence` and `decision_ref`.
+///
+/// Centralized here so the three structs share a single source of truth —
+/// changing the back-compat default touches one place, not three.
+pub fn default_confidence() -> f64 {
+    1.0
+}
+
 /// Result of an audit operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditResult {
@@ -70,6 +84,17 @@ pub struct RelevantDecision {
     pub recorded_at: chrono::DateTime<chrono::Utc>,
     /// RRF-fused score from `search_fused`. Higher is more relevant.
     pub similarity: f64,
+    /// Confidence that this decision is relevant to the plan (0.0–1.0).
+    ///
+    /// Derived from [`Self::similarity`] as `min(similarity * 2.0, 1.0)` —
+    /// RRF scores are typically in the 0.0–0.5 range, so doubling brings
+    /// them into the 0.0–1.0 audit-confidence range used uniformly by
+    /// PolicyViolation and Violation.
+    ///
+    /// `#[serde(default = "default_confidence")]` keeps pre-Task-HC payloads
+    /// deserializing cleanly; see [`default_confidence`] for the rationale.
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
 }
 
 /// Blast-radius information for the files an agent proposes to touch.
@@ -117,6 +142,16 @@ pub struct Violation {
     /// `#[serde(default)]` for back-compat with v0.7 payloads.
     #[serde(default)]
     pub evidence: Option<String>,
+    /// Confidence that this finding is real and actionable (0.0–1.0).
+    ///
+    /// For decision conflicts surfaced via NER entity matching this is
+    /// `0.8` — a future FTS5-only fallback would set `0.6`. v0.14 always
+    /// sets `0.8` since `check_graph_conflicts` is NER-based.
+    ///
+    /// `#[serde(default = "default_confidence")]` keeps pre-Task-HC payloads
+    /// deserializing cleanly; see [`default_confidence`] for the rationale.
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
 }
 
 /// Type of violation.
