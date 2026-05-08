@@ -18,6 +18,10 @@ use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use policy::{IntentPolicy, PolicyViolation};
 use response::{AuditResult, AuditStatus, ImpactInfo, RelevantDecision, Violation, ViolationType};
 
+/// Directory the wiki page derivation rooted at, expressed as a repo-relative
+/// path. Centralised so future moves of `.illuminate/wiki/` only touch one line.
+const WIKI_DECISIONS_DIR: &str = ".illuminate/wiki/decisions";
+
 /// Default depth cap for impact-radius traversal.
 const DEFAULT_IMPACT_DEPTH: u32 = 2;
 
@@ -162,6 +166,10 @@ impl Auditor {
     ///
     /// Returns structured violations with severity levels.
     pub fn audit(&self, plan_text: &str) -> illuminate::Result<AuditResult> {
+        let trace_id = uuid::Uuid::new_v4().to_string();
+        let policies_applied: Vec<String> =
+            self.policies.iter().map(|p| p.name().to_string()).collect();
+
         let plan_entities = extract_plan_entities(plan_text, &self.graph);
 
         // 1. Check intent policies
@@ -192,6 +200,7 @@ impl Auditor {
         };
 
         let relevant_decisions = self.compute_relevant_decisions(plan_text);
+        let wiki_url = derive_wiki_url(&decision_violations, &relevant_decisions);
 
         Ok(AuditResult {
             status,
@@ -200,6 +209,9 @@ impl Auditor {
             reflexions: Vec::new(), // filled in by caller with ReflexionStore
             impact: ImpactInfo::default(),
             relevant_decisions,
+            trace_id,
+            policies_applied,
+            wiki_url,
         })
     }
 
@@ -675,6 +687,33 @@ fn normalize_path<P: AsRef<Path>>(path: P, repo_root: &Option<PathBuf>) -> Strin
         return rel.to_string_lossy().to_string();
     }
     path.to_string_lossy().to_string()
+}
+
+/// Derive a wiki page reference for the audit response.
+///
+/// Priority order:
+/// 1. Conflicting decision attached to the first decision violation — that
+///    episode is the canonical "this plan conflicts with X" pointer.
+/// 2. Top entry of `relevant_decisions` from the semantic top-k pass.
+///
+/// Returns `None` when neither source is populated (empty graph, no semantic
+/// match, no decision conflicts). Policy violations are intentionally not a
+/// source for v0.7: the policy types do not yet carry a wiki id. A future
+/// task will plumb `RejectedPattern.decision_ref` through `PolicyViolation`
+/// so policy hits can populate this too.
+fn derive_wiki_url(
+    decision_violations: &[Violation],
+    relevant_decisions: &[RelevantDecision],
+) -> Option<String> {
+    if let Some(dv) = decision_violations.first()
+        && let Some(decision) = &dv.conflicting_decision
+    {
+        return Some(format!("{WIKI_DECISIONS_DIR}/{}.md", decision.id));
+    }
+    if let Some(rd) = relevant_decisions.first() {
+        return Some(format!("{WIKI_DECISIONS_DIR}/{}.md", rd.episode_id));
+    }
+    None
 }
 
 static REJECTION_INDICATORS: &[&str] = &[

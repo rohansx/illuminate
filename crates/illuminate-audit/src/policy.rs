@@ -84,6 +84,22 @@ pub enum IntentPolicy {
     },
 }
 
+impl IntentPolicy {
+    /// Stable, user-facing identifier for this policy.
+    ///
+    /// The name is the TOML table key under `[policies.*]` — used for
+    /// `AuditResult::policies_applied`, audit log lines, and any other
+    /// surface that needs to identify which rule fired.
+    pub fn name(&self) -> &str {
+        match self {
+            IntentPolicy::MustUse { name, .. }
+            | IntentPolicy::Frozen { name, .. }
+            | IntentPolicy::Convention { name, .. }
+            | IntentPolicy::RejectedPattern { name, .. } => name,
+        }
+    }
+}
+
 /// A violation of an intent policy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyViolation {

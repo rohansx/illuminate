@@ -22,6 +22,31 @@ pub struct AuditResult {
     /// engine is configured or `semantic_top_k` is `0`.
     #[serde(default)]
     pub relevant_decisions: Vec<RelevantDecision>,
+    /// Unique identifier for correlating this audit with logs / CI / MCP
+    /// traces. Generated per `audit()` call as a fresh UUID v4 — see
+    /// `docs/AUDIT.md` for the canonical response shape.
+    #[serde(default)]
+    pub trace_id: String,
+    /// Names of every policy the auditor checked, regardless of whether the
+    /// policy fired. Useful for debugging "why didn't my policy match?" —
+    /// callers can confirm the policy was loaded before chasing other issues.
+    #[serde(default)]
+    pub policies_applied: Vec<String>,
+    /// Path or URL of the most-relevant wiki decision (when one matched).
+    ///
+    /// For v0.7 this is a relative file path of the form
+    /// `.illuminate/wiki/decisions/<episode_id>.md`, derived from the top
+    /// entry of `relevant_decisions`. Future versions may surface an HTTP
+    /// URL when the wiki server is running. `None` when no decision is
+    /// available (no semantic match, no graph index, no policy violations
+    /// carrying a wiki reference).
+    ///
+    /// **v0.7 limitation.** `PolicyViolation` and `Violation` do not yet
+    /// carry a wiki page id, so we only fall back to the top relevant
+    /// decision. A future task will plumb decision references through
+    /// `RejectedPattern.decision_ref` so policy hits can populate this too.
+    #[serde(default)]
+    pub wiki_url: Option<String>,
 }
 
 /// A decision episode surfaced by the auditor's semantic top-k pass.

@@ -1442,6 +1442,7 @@ dependencies = [
  "thiserror",
  "toml",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
