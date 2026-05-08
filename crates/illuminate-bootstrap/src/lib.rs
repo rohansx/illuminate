@@ -8,6 +8,8 @@ pub mod agent_files;
 pub mod candidate;
 pub mod git_history;
 pub mod orchestrate;
+pub mod readme;
+pub mod signals;
 
 use thiserror::Error;
 

@@ -22,6 +22,7 @@
 
 use crate::Result;
 use crate::candidate::BootstrapCandidate;
+use crate::signals::SIGNAL_PHRASES;
 use chrono::{DateTime, Utc};
 use illuminate_wiki::page::PageType;
 use std::path::Path;
@@ -39,16 +40,6 @@ const SUBJECT_KEYWORDS: &[&str] = &[
     "deprecate",
     "chose",
     "we use",
-];
-
-const SIGNAL_PHRASES: &[&str] = &[
-    "instead of",
-    "rather than",
-    "we decided",
-    "after debate",
-    "chose",
-    "in favor of",
-    "switching from",
 ];
 
 const SKIP_PREFIXES: &[&str] = &["chore:", "docs:", "style:", "test:", "ci:", "build:"];

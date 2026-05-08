@@ -49,6 +49,19 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
         }
     }
 
+    // 4. README.md / CONTRIBUTING.md (architecture and decisions sections).
+    match crate::readme::collect(repo_root) {
+        Ok(readme_candidates) => {
+            if !readme_candidates.is_empty() {
+                report.sources_run.push("readme".into());
+            }
+            candidates.extend(readme_candidates);
+        }
+        Err(e) => {
+            tracing::warn!("illuminate-bootstrap: readme collection failed: {e}");
+        }
+    }
+
     report.candidates_found = candidates.len();
 
     // 3a. Content-hash dedup: drop later candidates that share the same body
