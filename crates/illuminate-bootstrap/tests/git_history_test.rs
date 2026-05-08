@@ -139,6 +139,27 @@ fn respects_history_window() {
 }
 
 #[test]
+fn long_subject_is_not_truncated_by_terminal_width() {
+    // Regression guard: git pre-truncates long subjects to terminal width
+    // when %B in --format is not preceded by a real newline. The format used
+    // by `read_commits_since` puts %n before %B specifically to avoid this.
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    init_repo(repo);
+
+    let long = "Decision: switch to PostgreSQL because we need ACID compliance for billing and reporting workloads in the new platform";
+    commit(repo, long, "a.txt", "1");
+
+    let candidates = git_history::collect(repo, 6).unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        candidates[0].title, long,
+        "long subject must survive without '...' truncation",
+    );
+    assert!(!candidates[0].title.contains("..."));
+}
+
+#[test]
 fn git_history_candidates_default_to_low_confidence() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();

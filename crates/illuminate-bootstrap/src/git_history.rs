@@ -13,11 +13,12 @@
 //!
 //! ## Why a local git invocation?
 //!
-//! `illuminate_watch::git::get_commits_since` exists, but it requests
-//! `--name-only` and a parser shape that mis-attributes file lists across
-//! commit boundaries when more than one commit is returned. Bootstrap does
-//! not need file lists per commit; we shell out directly with a simpler
-//! format here. Unifying with watch's parser is tracked separately.
+//! Bootstrap does not need per-commit file lists, only the message, author,
+//! and date. We shell out with a tighter format here to keep the parser tiny
+//! and avoid a dependency on `illuminate-watch` for this code path. The watch
+//! crate's `get_commits_since` is now safe to use (its multi-commit
+//! `--name-only` interleave bug was fixed in v0.8); we keep this minimal
+//! parser to skip the extra file-list work.
 
 use crate::Result;
 use crate::candidate::BootstrapCandidate;
@@ -133,8 +134,11 @@ pub fn collect(repo_root: &Path, months: u32) -> Result<Vec<BootstrapCandidate>>
 /// well-delimited record so we don't have to deal with file-list interleaving.
 fn read_commits_since(repo_root: &Path, since: &str) -> Result<Vec<HistoryCommit>> {
     // %H hash, %an author, %aI ISO-8601 strict date, %B raw body.
-    // %x00 (NUL) between fields, %x1e (record separator) between commits.
-    let format = "--format=%H%x00%an%x00%aI%x00%B%x1e";
+    // %x00 (NUL) between fields. The leading %x1e (RS) before each commit
+    // makes splitting unambiguous (chunk-per-commit). The %n before %B is
+    // load-bearing — without it git pre-truncates long subjects to terminal
+    // width and inserts a literal "..." marker.
+    let format = "--format=%x1e%H%x00%an%x00%aI%x00%n%B";
     let output = Command::new("git")
         .args(["log", "--no-merges", &format!("--since={since}"), format])
         .current_dir(repo_root)

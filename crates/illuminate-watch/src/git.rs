@@ -18,17 +18,38 @@ pub struct GitCommit {
     pub files_changed: Vec<String>,
 }
 
+// Git format string for `parse_git_log`.
+//
+// Layout (one record per commit):
+//   `\x1e<hash>\0<author>\0<date>\0\n<body>\n\x1f` followed by `--name-only`
+//   files appended after the format output by git itself.
+//
+// Why this exact shape:
+// * `%x1e` (RS) at the START of the format makes splitting unambiguous: every
+//   chunk after a split contains exactly one commit's data including its
+//   `--name-only` file list. Putting `%x1e` at the END caused git to emit the
+//   next commit's file list inside the previous chunk (the original interleave
+//   bug).
+// * `%n` immediately before `%B` is a real newline. Without it git pre-truncates
+//   long subject lines to terminal width and inserts a literal "..." marker —
+//   that's why this is not just a bootstrap-style format port.
+// * `%x1f` (US) immediately after `%B` is an explicit body/file-list boundary.
+//   The body itself can contain blank lines (subject + body paragraphs) so a
+//   `\n\n` heuristic is unsafe; `%x1f` is never present in commit messages.
+// * `%x00` (NUL) field separator avoids any collision with characters that
+//   appear in author names, dates, or commit bodies.
+const GIT_LOG_FORMAT: &str = "--format=%x1e%H%x00%an%x00%aI%x00%n%B%x1f";
+
+const RS: char = '\x1e';
+const US: char = '\x1f';
+const NUL: char = '\0';
+
 /// Parse git log output into structured commits.
 ///
 /// Runs `git log` with a custom format and parses the output.
 pub fn get_commits(repo_path: &Path, count: usize) -> Result<Vec<GitCommit>> {
     let output = Command::new("git")
-        .args([
-            "log",
-            &format!("-{count}"),
-            "--format=%H%n%an%n%aI%n%B%n---END---",
-            "--name-only",
-        ])
+        .args(["log", &format!("-{count}"), GIT_LOG_FORMAT, "--name-only"])
         .current_dir(repo_path)
         .output()
         .map_err(|e| WatchError::Git(format!("failed to run git log: {e}")))?;
@@ -48,7 +69,7 @@ pub fn get_commits_since(repo_path: &Path, since: &str) -> Result<Vec<GitCommit>
         .args([
             "log",
             &format!("--since={since}"),
-            "--format=%H%n%an%n%aI%n%B%n---END---",
+            GIT_LOG_FORMAT,
             "--name-only",
         ])
         .current_dir(repo_path)
@@ -74,7 +95,7 @@ pub fn get_commits_for_path(
         .args([
             "log",
             &format!("-{count}"),
-            "--format=%H%n%an%n%aI%n%B%n---END---",
+            GIT_LOG_FORMAT,
             "--name-only",
             "--",
             file_path,
@@ -92,61 +113,70 @@ pub fn get_commits_for_path(
     parse_git_log(&stdout)
 }
 
+/// Parse `git log` output produced with `GIT_LOG_FORMAT` (and optionally
+/// `--name-only`) into structured commits.
+///
+/// Each record is delimited by `\x1e` (RS) at the start of the formatted
+/// output, so splitting on `\x1e` yields one chunk per commit whose
+/// `--name-only` file list is contained entirely within that chunk. This
+/// fixes the previous parser, which used a multi-character sentinel and
+/// mis-attributed file lists across commit boundaries when more than one
+/// commit was returned.
 fn parse_git_log(output: &str) -> Result<Vec<GitCommit>> {
     let mut commits = Vec::new();
-    let entries: Vec<&str> = output.split("---END---").collect();
 
-    for entry in entries {
-        let entry = entry.trim();
-        if entry.is_empty() {
+    for chunk in output.split(RS) {
+        // Drop leading/trailing whitespace produced by git between records.
+        let chunk = chunk.trim_matches(|c: char| c == '\n' || c == '\r');
+        if chunk.is_empty() {
             continue;
         }
 
-        let lines: Vec<&str> = entry.lines().collect();
-        if lines.len() < 4 {
-            continue;
-        }
-
-        let hash = lines[0].trim().to_string();
-        let author = lines[1].trim().to_string();
-        let date_str = lines[2].trim();
+        // Split into 4 fields: hash, author, date, body+files.
+        let mut fields = chunk.splitn(4, NUL);
+        let hash = match fields.next() {
+            Some(h) if !h.is_empty() => h.trim().to_string(),
+            _ => continue,
+        };
+        let author = fields.next().unwrap_or("").trim().to_string();
+        let date_str = fields.next().unwrap_or("").trim();
+        let body_and_files = fields.next().unwrap_or("");
 
         let date = DateTime::parse_from_rfc3339(date_str)
             .map(|d| d.with_timezone(&Utc))
             .map_err(|e| WatchError::Parse(format!("invalid date '{date_str}': {e}")))?;
 
-        // Message is everything between date and file list
-        // Files come after a blank line at the end
-        let mut message_lines = Vec::new();
-        let mut files = Vec::new();
-        let mut in_files = false;
+        // The body+files block starts with the literal newline emitted by `%n`
+        // (which shields `%B` from terminal-width truncation), followed by the
+        // commit body, then `\x1f` (US), then any `--name-only` files. Splitting
+        // on `\x1f` is unambiguous because that byte is reserved as the
+        // body/file-list boundary by `GIT_LOG_FORMAT`.
+        let (message_part, files_text) = match body_and_files.split_once(US) {
+            Some((m, f)) => (m, f),
+            // No US marker: this can only happen if the format string was
+            // inconsistent with the parser (defensive — treat the whole thing
+            // as the message and emit no files).
+            None => (body_and_files, ""),
+        };
 
-        for line in &lines[3..] {
-            let line = line.trim();
-            if line.is_empty() && !in_files {
-                in_files = true;
-                continue;
-            }
-            if in_files {
-                if !line.is_empty() {
-                    files.push(line.to_string());
-                }
-            } else {
-                message_lines.push(line);
-            }
-        }
-
-        let message = message_lines.join("\n").trim().to_string();
+        let message = message_part.trim().to_string();
         if message.is_empty() {
             continue;
         }
+
+        let files_changed: Vec<String> = files_text
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect();
 
         commits.push(GitCommit {
             hash,
             author,
             date,
             message,
-            files_changed: files,
+            files_changed,
         });
     }
 
