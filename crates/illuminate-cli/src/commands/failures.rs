@@ -62,8 +62,11 @@ fn cmd_register() -> std::io::Result<()> {
     let walked = walk_wiki(&root.join(".illuminate").join("wiki"))
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     let db_path = root.join(".illuminate").join("graph.db");
-    let graph = illuminate::Graph::open_or_create(&db_path)
+    let mut graph = illuminate::Graph::open_or_create(&db_path)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
+    // Best-effort: load extraction pipeline so add_episode extracts entities.
+    // If models are absent, this logs a hint and we proceed with raw storage.
+    super::try_attach_extraction(&mut graph, &db_path);
     let mut count = 0;
     for w in walked {
         if let Ok(page) = w.page {

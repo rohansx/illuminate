@@ -210,8 +210,11 @@ fn cmd_register(ident: Option<&str>) -> std::io::Result<()> {
         })?
         .to_path_buf();
     let db_path = repo_root.join(".illuminate").join("graph.db");
-    let graph = illuminate::Graph::open_or_create(&db_path)
+    let mut graph = illuminate::Graph::open_or_create(&db_path)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
+    // Best-effort: load extraction pipeline so add_episode extracts entities.
+    // If models are absent, this logs a hint and we proceed with raw storage.
+    super::try_attach_extraction(&mut graph, &db_path);
 
     let entries: Vec<_> = std::fs::read_dir(&trail_dir)?
         .flatten()
