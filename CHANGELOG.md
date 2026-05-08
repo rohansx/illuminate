@@ -4,6 +4,24 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12.0] — 2026-05-08
+
+### Added — three CLI commands closing remaining `docs/CLI.md` gaps
+
+- **`illuminate audit-pr <pr-number>`** per `docs/CLI.md:125-136`. Uses `gh` CLI to fetch PR metadata (title, base, head, url) and changed-file list, runs `Auditor::audit_with_files` with full impact + relevant-decisions surface, and formats the result as either PR-comment-friendly Markdown (default) or JSON. `--repo OWNER/REPO` flag with auto-detection from `git remote get-url origin` (handles ssh + https github URLs). `--comment` posts the result via `gh pr comment --body-file`. `--token-env` forwards a token env var to gh. Exit codes match `audit` (0/2/3). The `.github/actions/audit-pr/action.yml` composite action was upgraded to call `illuminate audit-pr ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --comment`, replacing the previous "audit only the PR title" behavior with real per-file analysis. (`crates/illuminate-cli/src/commands/audit_pr.rs`, `.github/actions/audit-pr/action.yml`)
+- **`illuminate explain <path> [--json]`** per `docs/CLI.md:138-143`. Reads `Graph::get_anchors_for_file` for the path, fetches each linked episode, classifies by source heuristic (`wiki:dec/`, `wiki:pat/`, `wiki:fail/`, `reflexion:`) into Decisions / Patterns / Failures / Other, and prints a human-readable per-section breakdown with anchor line ranges and symbol names. JSON mode emits a structured envelope. No plan required — pure orientation aid. Mirrors the `illuminate_explain` MCP tool. (`crates/illuminate-cli/src/commands/explain.rs`)
+- **`illuminate patterns list/show`** per `docs/CLI.md:164-169`. `list [--module SLUG] [--tag TAG]` walks `<repo>/.illuminate/wiki/patterns/*.md`, filters by either the dedicated `modules:` front-matter field OR a `module:<slug>` tag (best-effort union), and by tag substring match. `show <id>` finds the page with matching front-matter `id` and prints the raw markdown. Mirrors the existing `decisions` / `failures` subcommand structure. Empty wiki and unknown ids handled gracefully (clear messages, non-zero exit only on `show`-not-found). (`crates/illuminate-cli/src/commands/patterns.rs`)
+
+### Deferred to v0.13+
+
+- `illuminate wiki redact` (per `docs/CLI.md:241-253`).
+- `illuminate rebuild` (top-level — current `wiki rebuild` is a subcommand).
+- `illuminate search` (top-level — currently only `wiki search` and `query`).
+- Bootstrap interactive TTY interview (writes the same v0.11 YAML schema).
+- `failure log` editor mode (`$EDITOR` template prompt).
+- MCP HTTP Server-Sent Events streaming.
+- Refactor `Graph::load_extraction_pipeline_from_config` via shared `parse_extraction_config` (still blocked by potential dep cycle).
+
 ## [0.11.0] — 2026-05-08
 
 ### Added — bootstrap interview source (5/5) + `failure log` CLI per docs
