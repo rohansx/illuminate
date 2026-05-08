@@ -6,7 +6,7 @@
 //! paths (deletions are skipped for v0.6 — there's no file content to
 //! audit), and reuses the same env-config + embed loading the regular
 //! `audit` command does. Mirrors `audit::print_human` for the human path
-//! and exits 0/1/2 to match `audit`.
+//! and exits 0/2/3 to match `audit` (Pass=0, Violation=2, Warning=3).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -106,9 +106,13 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
         print_human(&base, &changed, &result);
     }
 
+    // Exit with appropriate code (per docs/CLI.md):
+    //   Pass      = 0
+    //   Violation = 2 (blocking)
+    //   Warning   = 3 (non-blocking, distinct from violation)
     match result.status {
         AuditStatus::Pass => {}
-        AuditStatus::Warning => std::process::exit(1),
+        AuditStatus::Warning => std::process::exit(3),
         AuditStatus::Violation => std::process::exit(2),
     }
 

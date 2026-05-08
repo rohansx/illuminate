@@ -101,10 +101,14 @@ pub fn run(
         print_human(&result, &plan_text)?;
     }
 
-    // Exit with appropriate code
+    // Exit with appropriate code (per docs/CLI.md):
+    //   Pass      = 0
+    //   Violation = 2 (blocking, conventional Unix error)
+    //   Warning   = 3 (non-blocking, distinct from violation so CI wrappers
+    //                  can branch on warn-vs-block without parsing stdout)
     match result.status {
         illuminate_audit::response::AuditStatus::Pass => {}
-        illuminate_audit::response::AuditStatus::Warning => std::process::exit(1),
+        illuminate_audit::response::AuditStatus::Warning => std::process::exit(3),
         illuminate_audit::response::AuditStatus::Violation => std::process::exit(2),
     }
 
