@@ -6,7 +6,7 @@ ESLint for intent — the linter, the wiki, and the memory your agents are missi
 
 [illuminate.sh](https://illuminate.sh) · single Rust binary · local-first · MIT
 
-> **Status:** v0.1 closed loop shipped May 2026. See [`CHANGELOG.md`](CHANGELOG.md).
+> **Status:** v0.12.0 shipped May 2026. The closed loop (capture → extract → audit) is real: prompt-trails feed an NER pipeline that populates the graph; the audit semantically searches that graph and returns blast-radius from a code graph alongside policy verdicts. Five bootstrap sources (agent files, ADRs, git history, README/CONTRIBUTING, interview YAML), function-call edges across six languages (Rust, Go, TypeScript, Python, Java, C), MCP server (stdio + Streamable HTTP), and a full CLI surface aligned with `docs/CLI.md`. See [`CHANGELOG.md`](CHANGELOG.md) for the full per-version log.
 
 ---
 
@@ -172,7 +172,7 @@ illuminate stats                 graph statistics
 
 For PR-time audit, copy [`.github/workflows/example-audit-pr.yml.example`](.github/workflows/example-audit-pr.yml.example) into your repo. See [`docs/CI.md`](docs/CI.md).
 
-For Cursor / Codex: capture stubs are present but session-format support is v0.2.
+Cursor and Codex sessions are captured directly: Cursor via the `state.vscdb` SQLite database (`cursorDiskKV` table polled), Codex via `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. Format knowledge ported from [codeburn](https://github.com/getagentseal/codeburn) (MIT) and credited in `docs/ARCHITECTURE.md`'s Related Projects section.
 
 ---
 
@@ -232,7 +232,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and [docs/CRATES.m
 - **[MCP](docs/MCP.md)** — agent-facing tool contract
 - **[Crates](docs/CRATES.md)** — per-crate API
 - **[Privacy](docs/PRIVACY.md)** — data residency, threat model
-- **[Roadmap](docs/ROADMAP.md)** — v0.1 → v0.4 milestones
+- **[Roadmap](docs/ROADMAP.md)** — milestones (latest: v0.12.0)
 
 Older docs live in [docs/old/](docs/old/) for historical reference.
 
@@ -272,7 +272,14 @@ Set `[extraction.llm] provider = "none"` to run fully offline at $0.
 
 ## Status
 
-v0.1 in active development. See [docs/ROADMAP.md](docs/ROADMAP.md).
+v0.12.0 shipped. The closed loop is real:
+- **Capture**: Claude Code, Cursor, Codex sessions all parsed.
+- **Extract**: trail register / failures register run the GLiNER + GLiREL ONNX pipeline; entities and relations land in the graph.
+- **Audit**: policies, decision conflicts, semantic top-k via `Graph::search_fused`, code-graph blast-radius via recursive-CTE BFS over function-call edges (Rust + Go + TS + Python + Java + C).
+- **Surfaces**: CLI (`audit`, `audit-diff`, `audit-pr`, `impact`, `explain`, `decisions`, `patterns`, `failures`, `failure log`, `search`, `rebuild`, `bootstrap`, `wiki ...`), MCP server (stdio + Streamable HTTP), GitHub Action.
+- **Bootstrap**: 5 sources wired (agent files, ADRs, git history, README/CONTRIBUTING, interview YAML).
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the per-version log and [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's still deferred.
 
 ---
 
