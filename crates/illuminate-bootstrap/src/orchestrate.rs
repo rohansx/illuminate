@@ -34,6 +34,21 @@ pub fn run_bootstrap(repo_root: &Path) -> Result<BootstrapReport> {
     }
     candidates.extend(adrs);
 
+    // 3. Git history (decision-shaped commits over the last N months).
+    // A failure here (no git binary, not a git repo, etc.) must not crash
+    // bootstrap — the other sources should still produce wiki pages.
+    match crate::git_history::collect(repo_root, crate::git_history::DEFAULT_HISTORY_MONTHS) {
+        Ok(git_candidates) => {
+            if !git_candidates.is_empty() {
+                report.sources_run.push("git_history".into());
+            }
+            candidates.extend(git_candidates);
+        }
+        Err(e) => {
+            tracing::warn!("illuminate-bootstrap: git_history collection failed: {e}");
+        }
+    }
+
     report.candidates_found = candidates.len();
 
     // 3a. Content-hash dedup: drop later candidates that share the same body
