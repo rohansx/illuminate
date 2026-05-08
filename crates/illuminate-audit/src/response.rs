@@ -34,17 +34,19 @@ pub struct AuditResult {
     pub policies_applied: Vec<String>,
     /// Path or URL of the most-relevant wiki decision (when one matched).
     ///
-    /// For v0.7 this is a relative file path of the form
-    /// `.illuminate/wiki/decisions/<episode_id>.md`, derived from the top
-    /// entry of `relevant_decisions`. Future versions may surface an HTTP
-    /// URL when the wiki server is running. `None` when no decision is
-    /// available (no semantic match, no graph index, no policy violations
-    /// carrying a wiki reference).
+    /// Currently a relative file path of the form
+    /// `.illuminate/wiki/decisions/<episode_id>.md`. Resolution priority
+    /// (highest first):
     ///
-    /// **v0.7 limitation.** `PolicyViolation` and `Violation` do not yet
-    /// carry a wiki page id, so we only fall back to the top relevant
-    /// decision. A future task will plumb decision references through
-    /// `RejectedPattern.decision_ref` so policy hits can populate this too.
+    /// 1. `decision_ref` of the first [`PolicyViolation`] (sourced from
+    ///    [`crate::policy::IntentPolicy::RejectedPattern`]'s TOML field).
+    /// 2. `id` of the conflicting decision attached to the first
+    ///    [`Violation`] (decision-graph conflict).
+    /// 3. `episode_id` of the top entry in `relevant_decisions` from the
+    ///    semantic top-k pass.
+    ///
+    /// `None` when none of the three signals are available. Future versions
+    /// may surface an HTTP URL when the wiki server is running.
     #[serde(default)]
     pub wiki_url: Option<String>,
 }
@@ -107,6 +109,14 @@ pub struct Violation {
     pub conflicting_decision: Option<illuminate::Episode>,
     pub code_anchors: Vec<CodeAnchorRef>,
     pub severity: Severity,
+    /// Excerpt that triggered this violation — for decision conflicts this is
+    /// the leading characters of the conflicting episode's content. Lets the
+    /// audit response explain *why* the violation fired without forcing
+    /// callers to re-fetch the full episode.
+    ///
+    /// `#[serde(default)]` for back-compat with v0.7 payloads.
+    #[serde(default)]
+    pub evidence: Option<String>,
 }
 
 /// Type of violation.

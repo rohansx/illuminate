@@ -200,7 +200,11 @@ impl Auditor {
         };
 
         let relevant_decisions = self.compute_relevant_decisions(plan_text);
-        let wiki_url = derive_wiki_url(&decision_violations, &relevant_decisions);
+        let wiki_url = derive_wiki_url(
+            &policy_violations,
+            &decision_violations,
+            &relevant_decisions,
+        );
 
         Ok(AuditResult {
             status,
@@ -431,6 +435,12 @@ impl Auditor {
                                 found: Some(rejected.clone()),
                                 reason: reason.clone(),
                                 severity: severity.clone(),
+                                // MustUse policies don't carry a decision_ref
+                                // (only RejectedPattern does in the schema).
+                                decision_ref: None,
+                                evidence: Some(format!(
+                                    "plan mentions rejected entity '{rejected}' (must use '{entity}')"
+                                )),
                             });
                         }
                     }
@@ -459,6 +469,11 @@ impl Auditor {
                                 found: Some(path_pattern.clone()),
                                 reason: reason.clone(),
                                 severity: severity.clone(),
+                                // Frozen policies don't carry a decision_ref.
+                                decision_ref: None,
+                                evidence: Some(format!(
+                                    "plan touches frozen path pattern '{path_pattern}'"
+                                )),
                             });
                         }
                     }
@@ -468,7 +483,7 @@ impl Auditor {
                     pattern,
                     reason,
                     severity,
-                    ..
+                    decision_ref,
                 } => {
                     if plan_text.to_lowercase().contains(&pattern.to_lowercase()) {
                         violations.push(PolicyViolation {
@@ -477,6 +492,10 @@ impl Auditor {
                             found: Some(pattern.clone()),
                             reason: reason.clone(),
                             severity: severity.clone(),
+                            // Thread the policy's decision_ref through so
+                            // `derive_wiki_url` can surface it in the response.
+                            decision_ref: decision_ref.clone(),
+                            evidence: Some(format!("plan contains '{pattern}'")),
                         });
                     }
                 }
@@ -510,6 +529,10 @@ impl Auditor {
                 });
 
                 if is_rejected {
+                    // First 200 chars of the conflicting decision content —
+                    // enough context to explain the conflict in audit output
+                    // without bloating the response payload.
+                    let evidence: String = episode.content.chars().take(200).collect();
                     violations.push(Violation {
                         violation_type: ViolationType::DecisionConflict,
                         plan_entity: entity.name.clone(),
@@ -522,6 +545,7 @@ impl Auditor {
                         }),
                         code_anchors: Vec::new(),
                         severity: response::Severity::Error,
+                        evidence: Some(evidence),
                     });
                 }
             }
@@ -691,20 +715,27 @@ fn normalize_path<P: AsRef<Path>>(path: P, repo_root: &Option<PathBuf>) -> Strin
 
 /// Derive a wiki page reference for the audit response.
 ///
-/// Priority order:
-/// 1. Conflicting decision attached to the first decision violation — that
+/// Priority order (highest first):
+/// 1. `decision_ref` of the first [`PolicyViolation`] — sourced from
+///    [`IntentPolicy::RejectedPattern`]'s TOML field. Policy hits are the
+///    most specific signal: the user explicitly tagged a wiki page when
+///    declaring the rule.
+/// 2. Conflicting decision attached to the first decision violation — that
 ///    episode is the canonical "this plan conflicts with X" pointer.
-/// 2. Top entry of `relevant_decisions` from the semantic top-k pass.
+/// 3. Top entry of `relevant_decisions` from the semantic top-k pass.
 ///
-/// Returns `None` when neither source is populated (empty graph, no semantic
-/// match, no decision conflicts). Policy violations are intentionally not a
-/// source for v0.7: the policy types do not yet carry a wiki id. A future
-/// task will plumb `RejectedPattern.decision_ref` through `PolicyViolation`
-/// so policy hits can populate this too.
+/// Returns `None` when none of the three signals are populated (empty graph,
+/// no semantic match, no decision conflicts, no policies carrying refs).
 fn derive_wiki_url(
+    policy_violations: &[PolicyViolation],
     decision_violations: &[Violation],
     relevant_decisions: &[RelevantDecision],
 ) -> Option<String> {
+    if let Some(pv) = policy_violations.first()
+        && let Some(id) = pv.decision_ref.as_ref()
+    {
+        return Some(format!("{WIKI_DECISIONS_DIR}/{id}.md"));
+    }
     if let Some(dv) = decision_violations.first()
         && let Some(decision) = &dv.conflicting_decision
     {

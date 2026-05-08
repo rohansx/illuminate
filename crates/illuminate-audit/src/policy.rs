@@ -177,6 +177,23 @@ pub struct PolicyViolation {
     pub found: Option<String>,
     pub reason: String,
     pub severity: Severity,
+    /// Wiki page id this policy references (sourced from
+    /// [`IntentPolicy::RejectedPattern`]'s `decision_ref` TOML field).
+    /// Populates [`crate::response::AuditResult::wiki_url`] when set —
+    /// policy-level decision references take priority over decision-conflict
+    /// episodes and semantic top-k results.
+    ///
+    /// `#[serde(default)]` for back-compat with v0.7 callers that may
+    /// deserialize older `AuditResult` payloads.
+    #[serde(default)]
+    pub decision_ref: Option<String>,
+    /// Excerpt of the plan text or matched substring that triggered this
+    /// violation. Lets callers explain *why* the policy fired without
+    /// re-running the matcher.
+    ///
+    /// `#[serde(default)]` for back-compat with v0.7 payloads.
+    #[serde(default)]
+    pub evidence: Option<String>,
 }
 
 /// Parse intent policies from a TOML config string.
