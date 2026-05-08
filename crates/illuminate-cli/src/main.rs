@@ -70,6 +70,35 @@ enum Commands {
         source: Option<String>,
     },
 
+    /// Top-level fused FTS5 + semantic search over the graph
+    Search {
+        /// The search query
+        query: String,
+
+        /// Max results
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+
+        /// Filter results by type
+        #[arg(long, value_parser = ["entity", "decision", "pattern", "failure"])]
+        r#type: Option<String>,
+
+        /// Output format
+        #[arg(long, value_parser = ["json", "text"], default_value = "text")]
+        format: String,
+    },
+
+    /// Rebuild graph.db from wiki/ and trail/
+    Rebuild {
+        /// Source to rebuild from
+        #[arg(long, value_parser = ["wiki", "trail", "both"], default_value = "both")]
+        from: String,
+
+        /// Delete existing graph.db before rebuild
+        #[arg(long)]
+        clean: bool,
+    },
+
     /// List and show entities
     Entities {
         #[command(subcommand)]
@@ -447,6 +476,15 @@ fn main() {
             after,
             source,
         } => commands::query::run(text, limit, after, source),
+        Commands::Search {
+            query,
+            limit,
+            r#type,
+            format,
+        } => commands::search::run(query, limit, r#type, format),
+        Commands::Rebuild { from, clean } => {
+            commands::rebuild::run(from, clean).map_err(illuminate::IlluminateError::Io)
+        }
         Commands::Entities { action } => match action {
             EntitiesAction::List { entity_type, limit } => {
                 commands::entities::list(entity_type, limit)

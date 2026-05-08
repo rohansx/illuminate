@@ -39,6 +39,14 @@ pub enum WikiCmd {
         #[arg(long)]
         list: bool,
     },
+    /// Bulk-redact a regex pattern across wiki files
+    Redact {
+        /// Regex pattern to match (Rust `regex` crate syntax)
+        pattern: String,
+        /// Show what would change without modifying files
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
@@ -50,6 +58,7 @@ pub fn run(cmd: WikiCmd) -> std::io::Result<()> {
         WikiCmd::Serve { port } => cmd_serve(port),
         WikiCmd::Search { query, limit } => cmd_search(&query, limit),
         WikiCmd::Review { list } => cmd_review(list),
+        WikiCmd::Redact { pattern, dry_run } => cmd_redact(&pattern, dry_run),
     }
 }
 
@@ -434,6 +443,90 @@ fn append_log(root: &std::path::Path, id: &str, verb: &str) -> std::io::Result<(
     }
     existing.push_str(&entry);
     std::fs::write(&log_path, existing)?;
+    Ok(())
+}
+
+/// Bulk-redact a regex pattern across all wiki markdown files.
+///
+/// `--dry-run` prints `<file>: <N> matches` for each affected page and leaves
+/// the filesystem untouched. Without `--dry-run`, each match is replaced with
+/// the literal `[REDACTED]` and the file rewritten in place.
+///
+/// v0.13 scope is file-side replacement only; deletion of matching graph
+/// episodes is deferred to v0.14 — see `docs/CLI.md` § "wiki redact".
+fn cmd_redact(pattern: &str, dry_run: bool) -> std::io::Result<()> {
+    let re = regex::Regex::new(pattern).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("invalid regex pattern: {e}"),
+        )
+    })?;
+
+    let dir = wiki_dir()?;
+    if !dir.is_dir() {
+        println!("(no wiki/ directory)");
+        return Ok(());
+    }
+
+    let mut total_matches = 0usize;
+    let mut affected_files = 0usize;
+    visit_markdown_files(&dir, &mut |path: &std::path::Path| -> std::io::Result<()> {
+        let content = std::fs::read_to_string(path)?;
+        let count = re.find_iter(&content).count();
+        if count == 0 {
+            return Ok(());
+        }
+        affected_files += 1;
+        total_matches += count;
+        let display = path
+            .strip_prefix(&dir)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        if dry_run {
+            println!("{display}: {count} matches");
+        } else {
+            let redacted = re.replace_all(&content, "[REDACTED]").into_owned();
+            std::fs::write(path, redacted)?;
+            println!("redacted {display}: {count} matches");
+        }
+        Ok(())
+    })?;
+
+    if dry_run {
+        println!(
+            "dry-run summary: {total_matches} matches across {affected_files} files (no changes written)"
+        );
+    } else {
+        println!("redact summary: {total_matches} matches across {affected_files} files");
+        println!("note: graph-side episode deletion is deferred (v0.14)");
+    }
+    Ok(())
+}
+
+/// Recursively visit every `*.md` file under `dir`. Used by `cmd_redact` to
+/// reach pages in nested type-directories (`decisions/`, `patterns/`, etc.)
+/// while skipping hidden / non-markdown entries.
+fn visit_markdown_files(
+    dir: &std::path::Path,
+    visit: &mut dyn FnMut(&std::path::Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)?.flatten() {
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_dir() {
+            // Skip _review/ — that's a queue, not durable wiki content.
+            if path.file_name().and_then(|n| n.to_str()) == Some("_review") {
+                continue;
+            }
+            visit_markdown_files(&path, visit)?;
+        } else if file_type.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
+            visit(&path)?;
+        }
+    }
     Ok(())
 }
 

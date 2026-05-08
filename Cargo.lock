@@ -1540,6 +1540,7 @@ dependencies = [
  "illuminate-trail",
  "illuminate-watch",
  "illuminate-wiki",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
