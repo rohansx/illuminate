@@ -4,6 +4,20 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.0] — 2026-05-08
+
+### Added — bootstrap interview source (5/5) + `failure log` CLI per docs
+
+- **Bootstrap interview source.** 5th of 5 documented bootstrap sources. `crates/illuminate-bootstrap/src/interview.rs` reads `<repo>/.illuminate/interview.yaml` and emits high-confidence (`0.7`) candidates per scalar field (`language`, `database`, `architecture`, `deployment`) plus list entries (`avoid:`, `prefer:`) and structured `services:` objects. Confidence sits above the default `auto_merge_threshold` so interview answers route directly into the canonical wiki rather than `_review/` (the user explicitly stated these). YAML parse failures fall through to `Ok(vec![])` with a `tracing::warn!` so missing/malformed files never break bootstrap. Interactive TTY mode that writes the YAML from stdin prompts is deferred to v0.12 — the YAML schema is the stable contract. (`crates/illuminate-bootstrap/src/{interview.rs,orchestrate.rs}`)
+- **`illuminate failure log` CLI subcommand per `docs/CLI.md`.** New singular `Failure { cmd: FailureCmd }` clap variant alongside the existing plural `Failures::Register/List`. `illuminate failure log --title T --root-cause R --fix F --severity high [--lesson L] [--files A,B,C] [--modules X,Y] [--from-incident URL]` writes a fully-formed `<repo>/.illuminate/wiki/failures/<YYYY-MM-DD>-<slug>.md` with valid front-matter (id, title, page_type, status, tags, created, updated) and structured sections (`## Root Cause`, `## Fix`, `## Lesson for future agents`, `## Affected Files`, `## Affected Modules`, `## Severity`), then registers the page as a graph episode (source `failure:fail-<slug>`) via the shared `try_attach_extraction` helper so NER runs and entities populate. Required fields (`title`, `root_cause`, `fix`, `severity`) are validated; invalid severity values rejected with a clear error. Editor mode (open `$EDITOR` with template) is deferred to v0.12 — current behavior fails fast with a "v0.12 task" message when fields are missing, keeping CI/agent integration deterministic. (`crates/illuminate-cli/src/commands/failure.rs`, `crates/illuminate-cli/src/main.rs`)
+
+### Deferred to v0.12+
+
+- Bootstrap interactive TTY interview mode (writes the same YAML schema as the v0.11 file-driven path).
+- `illuminate failure log` editor mode (`$EDITOR` template prompt when fields absent).
+- MCP HTTP Server-Sent Events streaming for long-running tools.
+- Refactor `Graph::load_extraction_pipeline_from_config` via shared `parse_extraction_config` (still blocked by potential dep cycle; needs an `illuminate-config` crate).
+
 ## [0.10.0] — 2026-05-08
 
 ### Added — MCP HTTP transport + docs realignment
