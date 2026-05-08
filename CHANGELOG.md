@@ -4,6 +4,28 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.0] — 2026-05-08
+
+### Added — doc-alignment batch: bootstrap git-history, audit response surface, MCP page shape, config sections
+
+**Breaking change:** `illuminate audit` and `illuminate audit-diff` now exit `3` on warn (was `1`). Violation remains `2`, pass remains `0`. CI integrators that branched on exit `1` for warnings must update to `3`. The `illuminate hook` command is unchanged (`block=2`, `allow=0`).
+
+- **Bootstrap: git-history source.** `illuminate-bootstrap::git_history::collect` walks the last 6 months of `git log` (configurable `DEFAULT_HISTORY_MONTHS`) and emits decision-shaped commits as low-confidence (`0.6`) candidates routed to `wiki/_review/` for human curation. Decision-shape detection uses subject keywords (`decision`, `adopt`, `switch`, `migrate`, `chose`, ...) and signal phrases (`instead of`, `we decided`, `in favor of`, ...); conventional non-decision prefixes (`chore:`, `docs:`, `style:`, `test:`, `ci:`, `build:`) are filtered up front. Wired into `orchestrate::run_bootstrap` between ADRs and the existing dedup/write pipeline; collection failures degrade gracefully so other sources keep running. Shells out directly with `%H%x00%an%x00%aI%x00%B%x1e` to sidestep the multi-commit `--name-only` interleaving in `illuminate-watch`. (`crates/illuminate-bootstrap/src/{git_history.rs,orchestrate.rs}`)
+- **Audit response: `trace_id`, `policies_applied`, `wiki_url`.** Per `docs/AUDIT.md`. `trace_id` is a fresh UUID v4 per `Auditor::audit` call for log/CI/MCP correlation. `policies_applied` lists every loaded policy name (regardless of whether it fired) so callers can debug "why didn't my policy match?" without chasing other issues. `wiki_url` is derived via priority order: first decision-violation's conflicting episode, then top `relevant_decisions` entry, returning a relative path under `.illuminate/wiki/decisions/<id>.md`. Policy violations are intentionally excluded for v0.7 (policy types do not yet carry a wiki id; `RejectedPattern.decision_ref` plumbing tracked separately). `confidence` and `evidence` per-finding fields remain deferred. (`crates/illuminate-audit/src/{lib.rs,response.rs}`)
+- **CLI exit codes aligned with `docs/CLI.md`.** `audit` and `audit-diff` now exit `0` on pass, `2` on violation, `3` on warning. `hook` keeps `2` for block / `0` for allow per the PreToolUse contract — unchanged. **Breaking** for CI wrappers that branched on exit `1` for warnings. (`crates/illuminate-cli/src/commands/{audit.rs,audit_diff.rs}`)
+- **MCP `illuminate_get_wiki_page` returns documented shape.** Now returns `{id, type, title, front_matter, body, path}` per `docs/MCP.md` (was `{id, content, path}`). `type` mirrors the lowercase `PageType` (`"decision"`, `"pattern"`, `"failure"`, `"module"`); `front_matter` is the parsed YAML; `body` is the markdown body. `path` is retained as a non-spec debugging extension. Parse errors return `{error, id, path}` to keep `tools/call` always succeeding. (`crates/illuminate-mcp/src/tools.rs`)
+- **`[trail]` and `[extraction]` config parsers.** `parse_trail_config` yields `TrailConfig { enabled, purge_after_days, exclude_patterns }`; `parse_extraction_config` yields `ExtractionConfig { signal_threshold, confidence_threshold }`. Tolerant by design: parse errors, missing sections, wrong section types, and wrong field types all yield defaults with `tracing::warn!` so misconfiguration is visible without breaking pipelines. Consumer wiring (trail watcher honoring `enabled`/`exclude_patterns`, extractor honoring thresholds) deferred to follow-up tasks. (`crates/illuminate-audit/src/policy.rs`)
+
+### Deferred to v0.8+
+
+- `[trail]` / `[extraction]` config consumer wiring (parsed-but-not-read today).
+- `illuminate-watch::git::parse_git_log` multi-commit `--name-only` interleaving bug — bootstrap shells out directly as a workaround; unifying needs a parser fix in watch.
+- AuditResult `confidence` and `evidence` per-finding fields.
+- Policy-derived `wiki_url` (needs `RejectedPattern.decision_ref` plumbed through `PolicyViolation`).
+- Bootstrap README and interactive interview sources (still 3 of 5).
+- MCP HTTP transport, resources (`wiki/decisions/*` etc.), prompts.
+- `illuminate-route` `ReadingPlan` and `illuminate-reflect` `FailureRecord` schema alignment.
+
 ## [0.6.0] — 2026-05-08
 
 ### Added — extraction-on-register, semantic top-k, MCP tool surface, audit-diff
