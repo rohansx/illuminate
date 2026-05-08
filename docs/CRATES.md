@@ -15,8 +15,8 @@ crates/
 ├── illuminate-index     # tree-sitter code indexer
 ├── illuminate-audit     # policy engine + graph queries
 ├── illuminate-watch     # daemon harness (hosts trail watcher + workers)
-├── illuminate-reflect   # failure capture
-├── illuminate-route     # LLM fallback router (with PII strip)
+├── illuminate-reflect   # failure capture as Reflexion episodes
+├── illuminate-route     # subject-to-reading-plan generator (FTS5 + semantic RRF)
 ├── illuminate-mcp       # MCP server (JSON-RPC)
 └── illuminate-cli       # binary
 ```
@@ -306,62 +306,94 @@ impl Daemon {
 
 ## `illuminate-reflect`
 
-**Responsibility.** Failure capture. CLI form (`illuminate failure log ...`), wiki form (parse `wiki/failures/*.md`), optional CI/incident integrations.
+**Responsibility.** Failure capture as Reflexion-pattern episodes in the decision graph. Implements the Reflexion loop from agent research: when an agent fails, record the failure + root cause + corrective action so future audits surface the lesson and prevent the same mistake. Backed by the same `Graph` that decisions live in — failures are first-class graph episodes with `source = "reflexion"`.
+
+> **Naming note.** Earlier docs described this crate's public API as `FailureRecord` with `FailureSink::record`. The implementation has always exposed `ReflexionInput` / `ReflexionEpisode` / `ReflexionStore` because the design follows the Reflexion paper (Shinn et al., 2023) — store failures as searchable episodes in the same graph as decisions, surface them via the same query path. The MCP `illuminate_reflect` tool and `illuminate failures register` CLI both consume this API.
 
 **Public API.**
 
 ```rust
-pub struct FailureRecord {
-    pub id: FailureId,
-    pub title: String,
+pub struct ReflexionInput {
+    pub failure: String,
     pub root_cause: String,
-    pub fix: String,
-    pub lesson: String,
-    pub affected_files: Vec<PathBuf>,
-    pub affected_modules: Vec<ModuleId>,
+    pub corrective_action: String,
+    pub files_affected: Vec<String>,
     pub severity: Severity,
-    pub created_at: DateTime<Utc>,
 }
 
-pub trait FailureSink {
-    fn record(&mut self, fr: FailureRecord) -> Result<()>;
+pub enum Severity { Low, Medium, High, Critical }
+
+pub struct ReflexionEpisode {
+    pub episode_id: String,
+    pub failure: String,
+    pub root_cause: String,
+    pub corrective_action: String,
+    pub files_affected: Vec<String>,
+    pub severity: Severity,
+    pub recorded_at: DateTime<Utc>,
 }
 
-pub fn ingest_wiki_failure(path: &Path) -> Result<FailureRecord>;
-pub fn ingest_ci_log(log: &str) -> Result<Vec<FailureRecord>>; // v0.2
+pub struct ReflexionStore {
+    /* graph handle */
+}
+
+impl ReflexionStore {
+    pub fn new(graph: Graph) -> Self;
+    pub fn record(&mut self, input: &ReflexionInput) -> Result<String>;
+    pub fn find_relevant(&self, entity_names: &[String], file_paths: &[&str], limit: usize) -> Result<Vec<ReflexionEpisode>>;
+}
 ```
+
+`ReflexionStore::record` writes a graph episode with `source = "reflexion"` and metadata containing the structured fields. `Auditor::audit_with_reflexions` consumes `ReflexionStore::find_relevant` to surface lessons during audits.
 
 **Dependencies.** `illuminate-core`, `serde`, `chrono`.
 
-**Timeline.** v0.1: manual CLI + wiki form. v0.2: CI / Sentry integrations.
+**Timeline.** v0.1: manual CLI (`illuminate reflect ...`) + MCP tool. CI/Sentry/PagerDuty webhook receivers remain deferred.
 
 ---
 
 ## `illuminate-route`
 
-**Responsibility.** LLM fallback router. When local NER confidence is below threshold, route the episode through PII-stripping, then call a configured LLM provider, then merge the result back into the extraction pipeline.
+**Responsibility.** Subject-to-reading-plan generator. Given a natural-language subject ("how does our payment retry logic work?"), runs RRF (Reciprocal Rank Fusion) across FTS5 and semantic search over the decision graph and returns a ranked reading plan: relevant decisions, code files, and an estimated-token budget. Used by the MCP `illuminate_route` tool and the CLI's onboarding helpers.
+
+> **Naming note.** Earlier docs (pre-v0.10) described `illuminate-route` as the LLM fallback router for ingestion. That responsibility actually lives in `illuminate-extract::llm_extract` (PII stripping via the optional `cloakpipe` Cargo feature, OpenRouter/OpenAI providers). The `illuminate-route` crate has consistently been the reading-plan generator; this section now documents that.
 
 **Public API.**
 
 ```rust
-pub enum LlmProvider { None, Anthropic { model: String, api_key: SecretString }, OpenAI { ... }, Ollama { ... } }
-
-pub struct Router {
-    pub provider: LlmProvider,
-    pub pii_stripper: PiiStripper,
-    pub cache: RouteCache,
+pub struct ReadingPlan {
+    pub decisions: Vec<DecisionEntry>,
+    pub code_files: Vec<FileEntry>,
+    pub estimated_tokens: usize,
 }
 
-impl Router {
-    pub fn route(&self, ep: &Episode) -> Result<RoutedExtraction>;
+pub struct DecisionEntry {
+    pub id: String,
+    pub content: String,
+    pub source: Option<String>,
+    pub score: f64,
 }
+
+pub struct FileEntry {
+    pub path: String,
+    pub symbols: Vec<String>,
+    pub priority: u8,
+    pub estimated_tokens: usize,
+}
+
+pub fn route(
+    graph: &Graph,
+    embed: Option<&EmbedEngine>,
+    subject: &str,
+    limit: usize,
+) -> Result<ReadingPlan>;
 ```
 
-PII stripping is non-optional when `provider != None`. The router refuses to send unstripped text.
+When `embed: Some(_)` is supplied, `route` runs `Graph::search_fused` (RRF over FTS5 + semantic) and `embed: None` falls back to FTS5-only. The function never panics on missing data — empty graph yields an empty `ReadingPlan`.
 
-**Dependencies.** `reqwest` (or per-provider crate), `cloakpipe` or builtin regex, `serde`.
+**Dependencies.** `illuminate-core`, `illuminate-embed`, `serde`.
 
-**Timeline.** v0.1 ships skeleton with Anthropic + "none" providers. OpenAI + Ollama in v0.2.
+**Timeline.** v0.1 shipped FTS5+semantic. v0.7 added test coverage for the embed-disabled fallback path.
 
 ---
 
@@ -448,8 +480,8 @@ See `CLI.md` for full per-command documentation.
 A few things that *could* be crates but aren't:
 
 - **`illuminate-policy`** — policy DSL parsing. Lives inside `illuminate-audit`. If the DSL grows beyond ~500 LoC, extract.
-- **`illuminate-bootstrap`** — bootstrap pipeline. Lives inside `illuminate-cli` for v0.1 because it composes existing crates rather than introducing new logic. Extract if v0.2 adds non-trivial bootstrap sources.
-- **`illuminate-pii`** — PII stripping. Lives inside `illuminate-route` because it's tightly coupled to the LLM call path. Extract if multiple consumers need it.
+- **`illuminate-bootstrap`** — extracted in v0.4 to host agent-files / ADR / git-history / README sources cleanly. Now its own crate at `crates/illuminate-bootstrap/`.
+- **`illuminate-pii`** — PII stripping for LLM fallback. Lives inside `illuminate-extract::llm_extract` (gated on the optional `cloakpipe` Cargo feature) because it's tightly coupled to the LLM call path there, not in `illuminate-route`. Extract if multiple consumers need it.
 
 Resist the urge to over-decompose. The current 11 crates already exceeds many production Rust workspaces. Adding more crates per concern slows compile times and obscures the architecture.
 
@@ -475,8 +507,8 @@ Resist the urge to over-decompose. The current 11 crates already exceeds many pr
 | `illuminate-index` | Tree-sitter fixture tests per language. |
 | `illuminate-audit` | Property-style tests: same input → same output. Policy DSL parser tests. |
 | `illuminate-watch` | Daemon lifecycle tests with mock workers. |
-| `illuminate-reflect` | Markdown parser tests. |
-| `illuminate-route` | Mock-LLM tests; PII stripping tests with hostile input. |
+| `illuminate-reflect` | Reflexion store round-trip tests; `find_relevant` ranking tests. |
+| `illuminate-route` | Reading-plan ranking tests across FTS5-only, semantic-only, and fused paths. |
 | `illuminate-mcp` | JSON-RPC contract tests. |
 | `illuminate-cli` | End-to-end smoke tests via `assert_cmd`. |
 

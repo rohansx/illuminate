@@ -243,7 +243,7 @@ Crate responsibilities:
 | `illuminate-audit` | Policy engine. Reads `illuminate.toml` + queries the graph. Returns violations, warnings, relevant past decisions for a proposed change. |
 | `illuminate-watch` | Daemon harness. Long-running process that hosts trail-watcher and ingestion workers. Run as user systemd service or background process. |
 | `illuminate-reflect` | Failure capture. Hooks into CI logs, parses incident reports, manual `illuminate failure log` entries. Writes to graph as failure entities. |
-| `illuminate-route` | LLM fallback router. When local NER confidence is low, optionally calls a configured LLM (with PII stripped via cloakpipe). Used for ~30% of ingestion, never queries. |
+| `illuminate-route` | Subject-to-reading-plan generator. Given a natural-language subject, runs RRF (FTS5 + semantic) over the decision graph and returns a ranked plan: relevant decisions, code files, estimated tokens. Used by the `illuminate_route` MCP tool. (LLM-fallback-during-ingestion is a separate concern that lives in `illuminate-extract::llm_extract` with optional `cloakpipe` PII stripping.) |
 | `illuminate-mcp` | JSON-RPC server speaking the MCP protocol. Exposes audit/explain/search tools to Claude Code, Cursor, and any other MCP-aware agent. |
 | `illuminate-cli` | Top-level binary. Subcommands: `init`, `wiki`, `audit`, `failure`, `rebuild`, `serve`, etc. |
 
