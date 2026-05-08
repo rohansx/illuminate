@@ -1,10 +1,38 @@
 # Illuminate — Roadmap
 
-> **Status: v0.1 closed loop shipped** (May 2026)
+> **Status: v0.12.0 shipped** (May 2026). The closed loop is real and end-to-end. See `CHANGELOG.md` for the per-version log.
 
-This roadmap describes what ships in each release and what is deliberately deferred. The goal is to ship the closed loop in v0.1 and let evidence guide the rest.
+This document keeps two records:
+1. **What actually shipped** (v0.4 → v0.12, below) — the iterative path the project took after the initial v0.1 release.
+2. **Original roadmap** (v0.1 → v0.4+) — preserved verbatim from the initial planning. The numbering does not match what shipped because post-v0.1 work split into focused per-release batches rather than a single "commercial layer" milestone.
 
-For the loop itself, see `PRODUCT_OVERVIEW.md`. For component detail, see `ARCHITECTURE.md`.
+---
+
+## What actually shipped (post-v0.1)
+
+| Release | Date | Theme | Headline features |
+|---------|------|-------|-------------------|
+| v0.4.0  | 2026-05-07 | Impact pipeline + multi-language edges | Cursor + Codex parsers (codeburn-informed), edges schema with recursive-CTE BFS, per-language import edges (Rust/Go/TS/Python/Java/C), CLI `audit --index-db`, MCP `illuminate_audit` accepts `files`, `illuminate impact` CLI, `TrailRecord.input/output_tokens`, watcher → tracing |
+| v0.5.0  | 2026-05-07 | Function-call edges + symbol seeds | Per-language call edges (Rust + Go + TS + Python + Java + C), symbol-level seeds in `impact_radius`, path normalization via `with_index_and_root`, cache-bucket token fields |
+| v0.6.0  | 2026-05-08 | Make-the-loop-real | Trail/failures register run NER pipeline (was raw-only), Auditor semantic top-k via EmbedEngine, `[audit]` config keys honored, MCP `decisions_for`/`failures_for`/`get_wiki_page`, CLI `audit-diff` + `decisions for <path>` |
+| v0.7.0  | 2026-05-08 | Doc alignment + bootstrap git history | Bootstrap git-history source (3rd of 5), audit response `trace_id`/`policies_applied`/`wiki_url`, **BREAKING** CLI exit codes 0/2/3 per docs, MCP get_wiki_page shape per docs, `[trail]`+`[extraction]` config parsing |
+| v0.8.1  | 2026-05-08 | Config consumer wiring | `illuminate-watch` git parser fix, trail watcher honors `[trail].enabled`/`exclude_patterns`, `signal_threshold` from `[extraction]` config, README/CONTRIBUTING bootstrap source (4th of 5) |
+| v0.9.0  | 2026-05-08 | Audit evidence + MCP resources/prompts | Policy `decision_ref` plumbing, `evidence` field on PolicyViolation/Violation, MCP `resources/list` + `resources/read` for wiki pages, MCP `prompts/list` + `prompts/get` (audit_check + summarize_failures) |
+| v0.10.0 | 2026-05-08 | MCP HTTP transport + docs realignment | MCP Streamable HTTP via axum 0.8 with bearer auth, `[mcp.http]` config wired, docs realigned for `illuminate-route` (ReadingPlan) and `illuminate-reflect` (Reflexion) |
+| v0.11.0 | 2026-05-08 | Bootstrap completion + `failure log` | Interview YAML bootstrap source (5/5), `illuminate failure log` CLI per docs |
+| v0.12.0 | 2026-05-08 | CLI surface alignment | `audit-pr`, `explain`, `patterns`, `search`, `rebuild`, `wiki redact` — all per `docs/CLI.md` |
+
+**Workspace tests grew from 308 → 636 across this run.** `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all` clean throughout.
+
+### Still deferred (carried into v0.13+)
+
+- Bootstrap interactive TTY interview (the YAML schema is the stable contract; v0.11 ships file-driven only).
+- `failure log` editor mode (`$EDITOR` template).
+- MCP HTTP Server-Sent Events streaming.
+- mTLS / OAuth for MCP HTTP (bearer-token-only today).
+- `wiki redact` graph deletion (file-side replacement only in v0.12).
+- Refactor `Graph::load_extraction_pipeline_from_config` via shared `parse_extraction_config` (still blocked by potential dep cycle; needs an `illuminate-config` crate).
+- AuditResult `confidence` and `evidence` per-finding fields.
 
 ---
 
