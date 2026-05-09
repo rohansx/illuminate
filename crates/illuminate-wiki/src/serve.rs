@@ -14,8 +14,9 @@
 //! `crates/illuminate-cli/src/commands/wiki.rs` for the CLI wiring.
 
 use crate::dashboard::{
-    GraphHit, WikiHit, html_escape, page_layout, page_type_dir, parse_query, render_audit_form,
-    render_audit_response, render_home, render_list, render_page, render_search, snippet_around,
+    GraphHit, WikiHit, build_page_markdown, html_escape, id_prefix, page_layout, page_type_dir,
+    parse_query, render_audit_form, render_audit_response, render_home, render_list,
+    render_new_form, render_page, render_search, slugify, snippet_around,
 };
 use crate::page::{PageType, WikiPage};
 use crate::walk::walk_wiki;
@@ -75,6 +76,8 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
     match (method, path.as_str()) {
         ("POST", "/audit") => handle_audit_post(ctx, body),
         ("POST", "/api/audit") => handle_api_audit_post(ctx, body),
+        ("POST", "/new") => handle_new_post(ctx, body),
+        ("GET", "/new") => handle_new_form(ctx, &params),
         ("GET", "/") | ("GET", "") | ("GET", "/index") => handle_home(ctx),
         ("GET", "/decisions") => handle_list(ctx, PageType::Decision, &params),
         ("GET", "/patterns") => handle_list(ctx, PageType::Pattern, &params),
@@ -293,6 +296,133 @@ fn handle_api_search(
         })
         .collect();
     RouteResp::json(200, serde_json::Value::Array(arr).to_string())
+}
+
+fn handle_new_form(
+    ctx: &RouteCtx,
+    params: &std::collections::BTreeMap<String, String>,
+) -> RouteResp {
+    let kind = params
+        .get("type")
+        .map(|s| s.as_str())
+        .map(parse_page_type)
+        .unwrap_or(PageType::Decision);
+    RouteResp::html(
+        200,
+        render_new_form(kind, None, "", "", "", ctx.project_name),
+    )
+}
+
+fn handle_new_post(ctx: &RouteCtx, body: &str) -> RouteResp {
+    let params = parse_query(body);
+    let kind = params
+        .get("type")
+        .map(|s| s.as_str())
+        .map(parse_page_type)
+        .unwrap_or(PageType::Decision);
+    let title = params.get("title").map(String::as_str).unwrap_or("").trim();
+    let tags = params.get("tags").map(String::as_str).unwrap_or("");
+    let body_md = params.get("body").map(String::as_str).unwrap_or("").trim();
+
+    if title.is_empty() {
+        return RouteResp::html(
+            400,
+            render_new_form(
+                kind,
+                Some("title is required"),
+                title,
+                tags,
+                body_md,
+                ctx.project_name,
+            ),
+        );
+    }
+    if body_md.is_empty() {
+        return RouteResp::html(
+            400,
+            render_new_form(
+                kind,
+                Some("body is required"),
+                title,
+                tags,
+                body_md,
+                ctx.project_name,
+            ),
+        );
+    }
+
+    // Build id and target path. The id is `<prefix>-<slug>`.
+    let slug = slugify(title);
+    let id = format!("{}-{}", id_prefix(&kind), slug);
+    let dir_name = page_type_dir(&kind);
+    let dir = ctx.root.join(dir_name);
+    let target = dir.join(format!("{id}.md"));
+
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return RouteResp::html(
+            500,
+            render_new_form(
+                kind,
+                Some(&format!("could not create directory: {e}")),
+                title,
+                tags,
+                body_md,
+                ctx.project_name,
+            ),
+        );
+    }
+
+    if target.exists() {
+        return RouteResp::html(
+            409,
+            render_new_form(
+                kind,
+                Some(&format!(
+                    "page already exists: {dir_name}/{id}.md (edit it directly or pick a different title)"
+                )),
+                title,
+                tags,
+                body_md,
+                ctx.project_name,
+            ),
+        );
+    }
+
+    let now = chrono::Utc::now();
+    let markdown = build_page_markdown(&kind, &id, title, tags, body_md, now);
+
+    if let Err(e) = std::fs::write(&target, &markdown) {
+        return RouteResp::html(
+            500,
+            render_new_form(
+                kind,
+                Some(&format!("could not write page: {e}")),
+                title,
+                tags,
+                body_md,
+                ctx.project_name,
+            ),
+        );
+    }
+
+    // Redirect to the newly-created page view.
+    let location = format!("/page/{dir_name}/{id}");
+    let html = format!(
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0;url={location}\"></head><body><p>created. <a href=\"{location}\">view page</a></p></body></html>"
+    );
+    let mut resp = RouteResp::html(303, html);
+    resp.content_type = "text/html; charset=utf-8";
+    let _ = location; // location is embedded in the body's meta-refresh; tiny_http doesn't expose Location
+    resp
+}
+
+fn parse_page_type(s: &str) -> PageType {
+    match s {
+        "pattern" => PageType::Pattern,
+        "failure" => PageType::Failure,
+        "module" => PageType::Module,
+        _ => PageType::Decision,
+    }
 }
 
 fn not_found(ctx: &RouteCtx, path: &str) -> RouteResp {

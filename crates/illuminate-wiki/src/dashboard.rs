@@ -179,6 +179,7 @@ pub fn page_layout(title: &str, project_name: Option<&str>, body: &str) -> Strin
 <a href=\"/failures\">failures</a>\
 <a href=\"/modules\">modules</a>\
 <a href=\"/audit\">audit</a>\
+<a href=\"/new\">+ new</a>\
 <form class=\"search\" action=\"/search\" method=\"get\"><input type=\"search\" name=\"q\" placeholder=\"search wiki + graph...\"></form>\
 </div></header>\n<main class=\"container\">{body}</main></body></html>"
     )
@@ -495,6 +496,150 @@ pub struct GraphHit {
     pub id: String,
     pub source: Option<String>,
     pub snippet: String,
+}
+
+/// Render the new-page form (GET `/new`).
+///
+/// Lets non-CLI teammates add a wiki page (decision / pattern / failure /
+/// module) via the dashboard. The selected `kind` (default `decision`) is
+/// pre-checked. POST submits to `/new`; the handler writes a markdown file
+/// under `<root>/.illuminate/wiki/<dir>/<id>.md` and redirects.
+pub fn render_new_form(
+    kind: PageType,
+    error: Option<&str>,
+    title_value: &str,
+    tags_value: &str,
+    body_value: &str,
+    project_name: Option<&str>,
+) -> String {
+    let err_html = match error {
+        Some(msg) => format!("<div class=\"banner violation\">{}</div>", html_escape(msg)),
+        None => String::new(),
+    };
+    let checked = |k: PageType| -> &'static str { if kind == k { "checked" } else { "" } };
+    let body = format!(
+        "<h1>+ new wiki page</h1>\
+    <p class=\"muted\">add a decision, pattern, failure, or module page without leaving the browser. \
+    the page is written to <code>.illuminate/wiki/&lt;type&gt;/&lt;id&gt;.md</code> and registered in the graph on next <code>illuminate wiki rebuild</code>.</p>\
+    {err_html}\
+    <form class=\"audit-form\" method=\"post\" action=\"/new\" style=\"max-width:760px;\">\
+    <fieldset style=\"border:1px solid var(--border);border-radius:6px;padding:0.7rem 1rem;margin:0.5rem 0;\">\
+    <legend style=\"font-size:0.85em;color:var(--muted);\">type</legend>\
+    <label style=\"margin-right:1rem;\"><input type=\"radio\" name=\"type\" value=\"decision\" {dec}> decision</label>\
+    <label style=\"margin-right:1rem;\"><input type=\"radio\" name=\"type\" value=\"pattern\" {pat}> pattern</label>\
+    <label style=\"margin-right:1rem;\"><input type=\"radio\" name=\"type\" value=\"failure\" {fail}> failure</label>\
+    <label><input type=\"radio\" name=\"type\" value=\"module\" {mod}> module</label>\
+    </fieldset>\
+    <p><label for=\"title\" class=\"muted\" style=\"display:block;font-size:0.85em;margin-bottom:0.25rem;\">title</label>\
+    <input type=\"text\" name=\"title\" id=\"title\" required placeholder=\"e.g., No Redis for caching\" value=\"{title_esc}\" style=\"width:100%;padding:0.55rem 0.8rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;\"></p>\
+    <p><label for=\"tags\" class=\"muted\" style=\"display:block;font-size:0.85em;margin-bottom:0.25rem;\">tags (comma-separated, optional)</label>\
+    <input type=\"text\" name=\"tags\" id=\"tags\" placeholder=\"e.g., caching, infrastructure\" value=\"{tags_esc}\" style=\"width:100%;padding:0.55rem 0.8rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;\"></p>\
+    <p><label for=\"body\" class=\"muted\" style=\"display:block;font-size:0.85em;margin-bottom:0.25rem;\">body (markdown — sections like <code>## Decision</code>, <code>## Context</code>, <code>## Consequences</code> are conventional)</label>\
+    <textarea name=\"body\" id=\"body\" required rows=\"14\" placeholder=\"## Decision\n\nWe ...\n\n## Context\n\n...\n\n## Consequences\n\n...\">{body_esc}</textarea></p>\
+    <p><button class=\"primary\" type=\"submit\">create page</button> <span class=\"muted\">writes <code>.illuminate/wiki/&lt;type&gt;/&lt;id&gt;.md</code></span></p>\
+    </form>",
+        dec = checked(PageType::Decision),
+        pat = checked(PageType::Pattern),
+        fail = checked(PageType::Failure),
+        mod = checked(PageType::Module),
+        title_esc = html_escape(title_value),
+        tags_esc = html_escape(tags_value),
+        body_esc = html_escape(body_value),
+    );
+    page_layout("new page", project_name, &body)
+}
+
+/// Compute the wiki page id prefix for each page type.
+///
+/// Matches the convention used elsewhere: `dec-` for decisions, `pat-` for
+/// patterns, `fail-` for failures, `mod-` for modules. The full id slug is
+/// `<prefix>-<title-slug>` (e.g., `dec-no-redis`).
+pub fn id_prefix(kind: &PageType) -> &'static str {
+    match kind {
+        PageType::Decision => "dec",
+        PageType::Pattern => "pat",
+        PageType::Failure => "fail",
+        PageType::Module => "mod",
+    }
+}
+
+/// Slugify a string into a kebab-case identifier suitable for a wiki page id.
+///
+/// Lowercase, replace non-alphanumerics with `-`, collapse runs of `-`,
+/// trim leading/trailing `-`. Caps at 60 chars. Returns `"untitled"` if
+/// the result is empty.
+pub fn slugify(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_dash = false;
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            for lc in c.to_lowercase() {
+                out.push(lc);
+            }
+            prev_dash = false;
+        } else if !prev_dash && !out.is_empty() {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.len() > 60 {
+        out.truncate(60);
+        while out.ends_with('-') {
+            out.pop();
+        }
+    }
+    if out.is_empty() {
+        "untitled".to_string()
+    } else {
+        out
+    }
+}
+
+/// Build the front-matter + body markdown for a new wiki page.
+///
+/// `tags` is the comma-separated user input; we split on commas, trim each,
+/// drop empties. `body` is appended verbatim (it's user markdown).
+pub fn build_page_markdown(
+    kind: &PageType,
+    id: &str,
+    title: &str,
+    tags_csv: &str,
+    body: &str,
+    now: DateTime<Utc>,
+) -> String {
+    let page_type_str = match kind {
+        PageType::Decision => "decision",
+        PageType::Pattern => "pattern",
+        PageType::Failure => "failure",
+        PageType::Module => "module",
+    };
+    let tags: Vec<String> = tags_csv
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .collect();
+    let tags_yaml = if tags.is_empty() {
+        "[]".to_string()
+    } else {
+        let quoted: Vec<String> = tags
+            .into_iter()
+            .map(|t| format!("\"{}\"", t.replace('"', "\\\"")))
+            .collect();
+        format!("[{}]", quoted.join(", "))
+    };
+    let now_str = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let title_yaml = if title.contains(':') || title.contains('#') {
+        format!("\"{}\"", title.replace('"', "\\\""))
+    } else {
+        title.to_string()
+    };
+    format!(
+        "---\nid: {id}\ntitle: {title_yaml}\npage_type: {page_type_str}\nstatus: active\ntags: {tags_yaml}\ncreated: {now_str}\nupdated: {now_str}\n---\n\n{body}\n"
+    )
 }
 
 /// Produce the inline type badge HTML for a page type.

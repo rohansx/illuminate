@@ -229,3 +229,128 @@ fn unknown_route_404s() {
     let resp = route(&ctx_for(tmp.path()), "GET", "/no/such/path/here", "");
     assert_eq!(resp.status, 404);
 }
+
+// ── /new — quick-add form ──────────────────────────────────────────────
+
+#[test]
+fn new_form_get_renders_with_decision_default() {
+    let tmp = tempfile::tempdir().unwrap();
+    let resp = route(&ctx_for(tmp.path()), "GET", "/new", "");
+    assert_eq!(resp.status, 200);
+    assert!(resp.body.contains("<form"));
+    assert!(resp.body.contains("name=\"title\""));
+    assert!(resp.body.contains("name=\"body\""));
+    assert!(resp.body.contains("name=\"type\""));
+    // Decision radio is pre-checked when no ?type= is supplied.
+    assert!(
+        resp.body
+            .contains(r#"<input type="radio" name="type" value="decision" checked"#)
+    );
+}
+
+#[test]
+fn new_form_get_with_type_query_pre_selects_radio() {
+    let tmp = tempfile::tempdir().unwrap();
+    let resp = route(&ctx_for(tmp.path()), "GET", "/new?type=pattern", "");
+    assert_eq!(resp.status, 200);
+    assert!(
+        resp.body
+            .contains(r#"<input type="radio" name="type" value="pattern" checked"#)
+    );
+}
+
+#[test]
+fn new_post_writes_decision_page_and_redirects() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = "type=decision&title=No+Redis+for+caching&tags=caching%2Cinfra&body=%23%23+Decision%0Awe+do+not+use+Redis";
+    let resp = route(&ctx_for(tmp.path()), "POST", "/new", body);
+    assert_eq!(resp.status, 303);
+    let written = tmp.path().join("decisions/dec-no-redis-for-caching.md");
+    assert!(
+        written.exists(),
+        "expected new page at {}",
+        written.display()
+    );
+    let content = std::fs::read_to_string(&written).unwrap();
+    assert!(content.contains("id: dec-no-redis-for-caching"));
+    assert!(content.contains("title: No Redis for caching"));
+    assert!(content.contains("page_type: decision"));
+    assert!(content.contains("status: active"));
+    assert!(content.contains("\"caching\""));
+    assert!(content.contains("\"infra\""));
+    assert!(content.contains("## Decision"));
+    assert!(content.contains("we do not use Redis"));
+}
+
+#[test]
+fn new_post_rejects_empty_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = "type=decision&title=&tags=&body=some+content";
+    let resp = route(&ctx_for(tmp.path()), "POST", "/new", body);
+    assert_eq!(resp.status, 400);
+    assert!(resp.body.to_lowercase().contains("title is required"));
+    // Form should be re-rendered with the body content preserved.
+    assert!(resp.body.contains("some content"));
+}
+
+#[test]
+fn new_post_rejects_empty_body() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = "type=decision&title=Test&tags=&body=";
+    let resp = route(&ctx_for(tmp.path()), "POST", "/new", body);
+    assert_eq!(resp.status, 400);
+    assert!(resp.body.to_lowercase().contains("body is required"));
+}
+
+#[test]
+fn new_post_409s_when_page_already_exists() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_decision(tmp.path(), "dec-already-exists", "Already Exists", "active");
+    let body = "type=decision&title=Already+Exists&tags=&body=duplicate";
+    let resp = route(&ctx_for(tmp.path()), "POST", "/new", body);
+    assert_eq!(resp.status, 409);
+    assert!(resp.body.to_lowercase().contains("already exists"));
+}
+
+#[test]
+fn new_post_writes_pattern_page_in_correct_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = "type=pattern&title=LRU+Cache&tags=&body=%23%23+Pattern%0Ause+LRU";
+    let resp = route(&ctx_for(tmp.path()), "POST", "/new", body);
+    assert_eq!(resp.status, 303);
+    assert!(tmp.path().join("patterns/pat-lru-cache.md").exists());
+    assert!(!tmp.path().join("decisions/pat-lru-cache.md").exists());
+}
+
+#[test]
+fn new_post_writes_failure_and_module_pages() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let r1 = route(
+        &ctx_for(tmp.path()),
+        "POST",
+        "/new",
+        "type=failure&title=Cache+stampede&tags=&body=%23%23+Root+Cause%0Ano+jitter",
+    );
+    assert_eq!(r1.status, 303);
+    assert!(tmp.path().join("failures/fail-cache-stampede.md").exists());
+
+    let r2 = route(
+        &ctx_for(tmp.path()),
+        "POST",
+        "/new",
+        "type=module&title=Payments&tags=&body=%23%23+Module%0Apayments+service",
+    );
+    assert_eq!(r2.status, 303);
+    assert!(tmp.path().join("modules/mod-payments.md").exists());
+}
+
+#[test]
+fn topnav_includes_new_link() {
+    let tmp = tempfile::tempdir().unwrap();
+    let resp = route(&ctx_for(tmp.path()), "GET", "/", "");
+    assert!(
+        resp.body.contains("href=\"/new\""),
+        "expected '+ new' link in topnav"
+    );
+}
