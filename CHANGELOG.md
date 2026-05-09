@@ -4,6 +4,22 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.18.0] — 2026-05-09
+
+### Added — dashboard quick-add form
+
+- **`GET /new` and `POST /new` on the wiki dashboard.** Non-CLI teammates can now add decision / pattern / failure / module pages directly from the browser. Pick a type (decision pre-selected, or `?type=pattern` etc.), type a title, optional comma-separated tags, and a markdown body. Submission writes `<root>/.illuminate/wiki/<dir>/<id>.md` with valid YAML front-matter (`id = <prefix>-<slug>`, prefix is `dec`/`pat`/`fail`/`mod`), then 303-redirects to the new page view. The topnav gained a `+ new` link. Validation: title and body required (form re-renders with inputs preserved on error); duplicate id returns 409 with a "page already exists" banner. 10 new black-box tests on the pure `route()` function. Live-smoke against the release binary confirmed end-to-end: GET renders form with three radio options pre-checked correctly, POST writes a valid file with proper front-matter (e.g., `id: dec-smoke-test`, `page_type: decision`, `tags: ["qa"]`), returns 303 to `/page/decisions/dec-smoke-test`. (`crates/illuminate-wiki/src/{dashboard.rs,serve.rs}`)
+
+### Deferred to v0.19+
+
+- Capturing actual PNG screenshots from `scripts/capture-screenshots.sh` and committing them to `docs/screenshots/`.
+- `evidence` field shape change from `Option<String>` to `Vec<String>` for full `docs/AUDIT.md` parity.
+- Bootstrap interactive TTY interview.
+- `failure log` editor mode.
+- MCP HTTP Server-Sent Events streaming.
+- mTLS / OAuth for MCP HTTP.
+- Audit history view (`/audits`) showing recent audit runs over time.
+
 ## [0.17.0] — 2026-05-09
 
 ### Added — `wiki serve` dashboard, README polish, utkrushta dogfood
