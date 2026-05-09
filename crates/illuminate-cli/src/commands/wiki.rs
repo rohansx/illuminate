@@ -176,7 +176,121 @@ pub(crate) fn cmd_rebuild() -> std::io::Result<()> {
 
 fn cmd_serve(port: u16) -> std::io::Result<()> {
     let dir = wiki_dir()?;
-    illuminate_wiki::serve::serve(&dir, port)
+    let project_name = read_project_name();
+
+    // Build the audit closure. Each request constructs a fresh `Auditor` from
+    // a freshly-opened `Graph` because `Auditor` isn't `Send + Sync` — the
+    // graph holds an embedded extraction pipeline that is single-threaded.
+    // tiny_http hands us each request on a worker thread, so we must rebuild
+    // per call; opening SQLite + WAL on every audit is still <10ms.
+    let policies = super::audit::load_policies()
+        .map(Some)
+        .unwrap_or(None)
+        .unwrap_or_default();
+    let policies_arc = std::sync::Arc::new(policies);
+
+    let auditor: std::sync::Arc<illuminate_wiki::serve::AuditFn> = {
+        let policies = policies_arc.clone();
+        std::sync::Arc::new(move |plan: &str| -> serde_json::Value {
+            match run_one_audit(plan, policies.as_ref()) {
+                Ok(v) => v,
+                Err(e) => serde_json::json!({
+                    "status": "warning",
+                    "violations": [],
+                    "policy_violations": [],
+                    "reflexions": [],
+                    "impact": { "seed_symbols": [], "defined_symbols": [], "impacted_symbols": [], "truncated": false },
+                    "relevant_decisions": [],
+                    "trace_id": "audit-error",
+                    "policies_applied": [],
+                    "wiki_url": null,
+                    "error": e.to_string()
+                }),
+            }
+        })
+    };
+
+    // Optional graph search closure for /search. Best-effort: if graph.db
+    // doesn't open, search just shows wiki hits.
+    let graph_search: std::sync::Arc<illuminate_wiki::serve::GraphSearchFn> = {
+        let root = repo_root()?;
+        std::sync::Arc::new(move |q: &str, limit: usize| {
+            let db = root.join(".illuminate").join("graph.db");
+            if !db.is_file() {
+                return Vec::new();
+            }
+            match illuminate::Graph::open(&db) {
+                Ok(graph) => match graph.search(q, limit) {
+                    Ok(results) => results
+                        .into_iter()
+                        .map(|(ep, _score)| illuminate_wiki::dashboard::GraphHit {
+                            id: ep.id.clone(),
+                            source: ep.source.clone(),
+                            snippet: ep.content.chars().take(200).collect(),
+                        })
+                        .collect(),
+                    Err(_) => Vec::new(),
+                },
+                Err(_) => Vec::new(),
+            }
+        })
+    };
+
+    illuminate_wiki::serve::serve_with(&dir, port, project_name, Some(auditor), Some(graph_search))
+}
+
+/// Construct an `Auditor` and run a single audit. Wrapped in a function so the
+/// closure passed to the wiki server is concise and the heavy graph/embed
+/// initialization lives in one place.
+fn run_one_audit(
+    plan: &str,
+    policies: &[illuminate_audit::policy::IntentPolicy],
+) -> std::io::Result<serde_json::Value> {
+    let graph = super::open_graph().map_err(|e| std::io::Error::other(e.to_string()))?;
+    let resolved_index = illuminate_audit::resolve_index_db_from_cwd(None);
+    let resolved_root = illuminate_audit::resolve_repo_root_from_cwd();
+    let audit_config = super::audit::load_audit_config()
+        .unwrap_or_else(|_| illuminate_audit::policy::AuditConfig::default());
+    let embed = super::audit::try_load_embed_pub();
+    let auditor = match (resolved_index, embed) {
+        (Some(path), e) => illuminate_audit::Auditor::with_index_root_and_embed(
+            graph,
+            policies.to_vec(),
+            path,
+            resolved_root,
+            e,
+            audit_config.semantic_top_k,
+            audit_config.semantic_threshold,
+        ),
+        (None, Some(e)) => illuminate_audit::Auditor::with_index_root_and_embed(
+            graph,
+            policies.to_vec(),
+            std::path::PathBuf::from("/nonexistent/illuminate-wiki-serve-no-index.db"),
+            None::<std::path::PathBuf>,
+            Some(e),
+            audit_config.semantic_top_k,
+            audit_config.semantic_threshold,
+        ),
+        (None, None) => illuminate_audit::Auditor::new(graph, policies.to_vec()),
+    };
+    let result = auditor
+        .audit(plan)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    serde_json::to_value(result).map_err(|e| std::io::Error::other(e.to_string()))
+}
+
+/// Read the `[project].name` field from the project's `illuminate.toml`. Used
+/// by `cmd_serve` to brand the dashboard with the team's project name.
+fn read_project_name() -> Option<String> {
+    let root = repo_root().ok()?;
+    let cfg = root.join(".illuminate").join("illuminate.toml");
+    let text = std::fs::read_to_string(cfg).ok()?;
+    let parsed: toml::Value = text.parse().ok()?;
+    parsed
+        .get("project")?
+        .get("name")?
+        .as_str()
+        .map(|s| s.to_string())
 }
 
 fn cmd_search(query: &str, limit: usize) -> std::io::Result<()> {
