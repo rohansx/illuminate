@@ -222,6 +222,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and [docs/CRATES.m
 
 ## Documentation
 
+- **[Getting started](docs/GETTING_STARTED.md)** — step-by-step walkthrough: install → init → first audit → MCP wiring (validated end-to-end before each release)
 - **[Product overview](docs/PRODUCT_OVERVIEW.md)** — what it does, why it works, how it positions
 - **[Architecture](docs/ARCHITECTURE.md)** — components, data flow, file layout
 - **[Schema](docs/SCHEMA.md)** — markdown wiki schema

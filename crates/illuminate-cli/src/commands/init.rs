@@ -21,12 +21,21 @@ pub fn run(
             .to_string()
     });
 
-    // Create default illuminate.toml if not present
-    let toml_path = dir.join("illuminate.toml");
-    if !toml_path.exists() {
+    // Create default illuminate.toml at the canonical location.
+    // Prior to v0.16 init wrote to <root>/illuminate.toml; bootstrap and the
+    // audit policy loader's primary path both expect <root>/.illuminate/illuminate.toml.
+    // We now write to the canonical location and leave the legacy fallback in the
+    // policy loader untouched so older projects continue to work.
+    let illuminate_dir = dir.join(".illuminate");
+    fs::create_dir_all(&illuminate_dir).map_err(illuminate::IlluminateError::Io)?;
+    let toml_path = illuminate_dir.join("illuminate.toml");
+    let legacy_toml_path = dir.join("illuminate.toml");
+    if !toml_path.exists() && !legacy_toml_path.exists() {
         fs::write(&toml_path, default_config(&project_name))
             .map_err(illuminate::IlluminateError::Io)?;
-        println!("  Created: illuminate.toml");
+        println!("  Created: .illuminate/illuminate.toml");
+    } else if legacy_toml_path.exists() && !toml_path.exists() {
+        println!("  Found legacy illuminate.toml at repo root — leaving in place (v0.15- format)");
     }
 
     // Configure agent integrations
