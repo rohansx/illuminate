@@ -4,6 +4,21 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.15.0] — 2026-05-09
+
+### Added — end-to-end smoke test + bootstrap auto-rebuild
+
+- **End-to-end golden-path smoke test** (`crates/illuminate-cli/tests/golden_path_e2e.rs`). Builds a tempdir repo with `git init`, a Rust source file, `.illuminate/illuminate.toml` with a `RejectedPattern` policy, `.illuminate/interview.yaml`, and a `CLAUDE.md`. Then exercises the full pipeline: `index → bootstrap → audit (violation) → audit --json (impact) → explain`. Uses `ILLUMINATE_NO_EMBED=1` so fastembed model files aren't required, runs in ~0.16s in isolation. Documents the user's golden path AND catches integration regressions across the v0.4-v0.14 work surface. Asserts loose where extraction depends on optional ONNX models (the policy/redis path is pure string match and always works).
+- **`illuminate bootstrap` auto-rebuilds the wiki index + graph** by default. Previously bootstrap wrote wiki pages but left `graph.db` empty — users had to run `illuminate wiki rebuild` separately for the audit to see the new decisions. The smoke test surfaced this gap. Bootstrap now calls the same `cmd_rebuild` path automatically when at least one page was written. New `--no-rebuild` flag preserves the old write-pages-only behavior for users who want to inspect candidates before materializing the graph. (`crates/illuminate-cli/src/commands/{bootstrap.rs,wiki.rs}`, `crates/illuminate-cli/src/main.rs`)
+
+### Deferred to v0.16+
+
+- `evidence` field shape change from `Option<String>` to `Vec<String>` for full `docs/AUDIT.md` parity.
+- Bootstrap interactive TTY interview (the YAML schema is the stable contract; v0.11 ships file-driven only).
+- `failure log` editor mode.
+- MCP HTTP Server-Sent Events streaming.
+- mTLS / OAuth for MCP HTTP.
+
 ## [0.14.0] — 2026-05-08
 
 ### Added — per-finding `confidence` score on audit results
