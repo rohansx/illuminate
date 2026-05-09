@@ -199,7 +199,7 @@ pub fn render_home(pages: &[WikiPage], project_name: Option<&str>) -> String {
     );
 
     let mut sorted: Vec<&WikiPage> = pages.iter().collect();
-    sorted.sort_by(|a, b| b.front.updated.cmp(&a.front.updated));
+    sorted.sort_by_key(|p| std::cmp::Reverse(p.front.updated));
     let recent = sorted.iter().take(10);
     let now = Utc::now();
     let mut rows = String::new();
@@ -255,7 +255,7 @@ pub fn render_list(
         .filter(|p| tag_filter.is_none_or(|t| p.front.tags.iter().any(|x| x == t)))
         .filter(|p| severity_filter.is_none_or(|sev| p.front.severity.as_deref() == Some(sev)))
         .collect();
-    subset.sort_by(|a, b| b.front.updated.cmp(&a.front.updated));
+    subset.sort_by_key(|p| std::cmp::Reverse(p.front.updated));
 
     let now = Utc::now();
     let mut rows = String::new();
