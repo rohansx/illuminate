@@ -12,131 +12,382 @@ use std::collections::BTreeMap;
 
 /// Inline stylesheet shared by every dashboard page.
 ///
-/// Single `<style>` block: system font stack, max-width 1080px, mobile
-/// responsive (< 720px stacks columns), dark mode via `prefers-color-scheme`.
+/// Lifts the design language of the illuminate.sh landing page: cream/paper
+/// backgrounds, ink/terra accents, Fraunces serif titles, Inter body, JetBrains
+/// Mono for eyebrows and code. Sharp 2px corners (no pill-rounded chrome) and
+/// hairline ink rules in the spirit of editorial print. Dark mode via
+/// `prefers-color-scheme`. Fonts are pulled from the Google Fonts CDN by
+/// `page_layout`; the binary still ships zero local assets.
 const STYLE: &str = r#"<style>
 :root {
-  --bg: #ffffff;
-  --fg: #1a1a1a;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --card-bg: #fafafa;
-  --code-bg: #f3f4f6;
-  --link: #2563eb;
-  --decision: #2563eb;
-  --pattern: #16a34a;
-  --failure: #dc2626;
-  --module: #9333ea;
-  --pill-active: #16a34a;
-  --pill-superseded: #6b7280;
-  --pill-deprecated: #f97316;
-  --pill-error: #dc2626;
-  --pill-warning: #f97316;
-  --pill-pass: #16a34a;
+  --cream: #fbf9f4;
+  --paper: #f4efe4;
+  --ink: #161512;
+  --ink-2: #2a2622;
+  --muted: #6b6358;
+  --rule: #2a2622;
+  --terra: #b6573a;
+  --forest: #3d6a55;
+  --ochre: #c89a3a;
+  --strata-1: #efe7d4;
+  --strata-2: #e3d4b3;
+  --strata-3: #c7a777;
+  --strata-4: #8a6a3f;
+  --strata-5: #4d3a23;
+
+  --bg: var(--cream);
+  --fg: var(--ink);
+  --border: color-mix(in oklab, var(--ink) 16%, transparent);
+  --card-bg: var(--paper);
+  --code-bg: var(--paper);
+  --link: var(--terra);
+  --decision: var(--ink);
+  --pattern: var(--forest);
+  --failure: var(--terra);
+  --module: var(--ochre);
+  --pill-active: var(--forest);
+  --pill-superseded: var(--muted);
+  --pill-deprecated: var(--ochre);
+  --pill-error: var(--terra);
+  --pill-warning: var(--ochre);
+  --pill-pass: var(--forest);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f172a;
-    --fg: #e2e8f0;
-    --muted: #94a3b8;
-    --border: #1e293b;
-    --card-bg: #1e293b;
-    --code-bg: #1e293b;
-    --link: #60a5fa;
+    --cream: #11100e;
+    --paper: #1a1814;
+    --ink: #f3ecd9;
+    --ink-2: #cfc6b2;
+    --muted: #8a8170;
+    --rule: #3a342b;
+    --strata-1: #3a3024;
+    --strata-2: #5a4628;
+    --strata-3: #8a6a3f;
+    --strata-4: #b6864a;
+    --strata-5: #dba968;
+    --terra: #d8856e;
+    --forest: #9ec6a8;
+    --ochre: #e8b066;
+    --border: color-mix(in oklab, var(--ink) 22%, transparent);
   }
 }
 * { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--fg);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--cream);
+  color: var(--ink);
   line-height: 1.55;
-  margin: 0;
-  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  position: relative;
 }
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 100;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/></svg>");
+  mix-blend-mode: multiply; opacity: 0.55;
+}
+.serif { font-family: 'Fraunces', 'Times New Roman', serif; font-weight: 400; letter-spacing: -0.01em; }
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.eyebrow {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--terra);
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.eyebrow::before { content: ""; width: 28px; height: 1px; background: var(--terra); }
+
 .topnav {
-  position: sticky;
-  top: 0;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  z-index: 10;
-  padding: 0.7rem 1.25rem;
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(8px);
+  background: color-mix(in oklab, var(--cream) 86%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--ink) 12%, transparent);
 }
 .topnav-inner {
-  max-width: 1080px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+  max-width: 1280px; margin: 0 auto; padding: 14px 32px;
+  display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
 }
-.brand { font-weight: 600; font-size: 1rem; color: var(--fg); text-decoration: none; }
-.brand small { color: var(--muted); font-weight: 400; margin-left: 0.4rem; }
-.topnav a { color: var(--fg); text-decoration: none; padding: 0.25rem 0.5rem; border-radius: 4px; }
-.topnav a:hover { background: var(--card-bg); }
-.topnav .search { flex: 1; min-width: 180px; }
+.brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-weight: 600; letter-spacing: 0.02em; color: var(--ink); text-decoration: none;
+}
+.brand-mark {
+  width: 18px; height: 18px; border-radius: 2px;
+  background: var(--ink); position: relative; overflow: hidden;
+}
+.brand-mark::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+  background: var(--cream);
+  box-shadow: 0 -5px 0 var(--cream), 0 5px 0 var(--cream);
+}
+.brand small {
+  color: var(--muted); font-weight: 400; margin-left: 6px;
+  letter-spacing: 0.14em; text-transform: uppercase; font-size: 10.5px;
+}
+.topnav a { color: var(--muted); text-decoration: none; padding: 4px 0; }
+.topnav a:hover { color: var(--ink); }
+.topnav .search { flex: 1; min-width: 180px; max-width: 360px; }
 .topnav input[type=search] {
-  width: 100%;
-  padding: 0.45rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
-  font: inherit;
+  width: 100%; padding: 7px 10px;
+  border: 1px solid color-mix(in oklab, var(--ink) 22%, transparent);
+  border-radius: 2px;
+  background: transparent; color: var(--ink);
+  font: inherit; font-family: 'JetBrains Mono', monospace; font-size: 12px;
 }
-.container { max-width: 1080px; margin: 1.5rem auto; padding: 0 1.25rem; }
-h1 { font-size: 1.7rem; margin: 0 0 1rem; }
-h2 { font-size: 1.25rem; margin: 1.6rem 0 0.6rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--border); }
-h3 { font-size: 1.05rem; margin: 1.2rem 0 0.4rem; }
-a { color: var(--link); text-decoration: none; }
-a:hover { text-decoration: underline; }
+.topnav input[type=search]:focus { outline: none; border-color: var(--ink); }
+.topnav .nav-cta {
+  border: 1px solid var(--ink); padding: 6px 12px; border-radius: 2px;
+  color: var(--ink); font-weight: 500;
+}
+.topnav .nav-cta:hover { background: var(--ink); color: var(--cream); }
+
+.container { max-width: 1280px; margin: 0 auto; padding: 56px 32px 96px; position: relative; z-index: 1; }
+
+h1 {
+  font-family: 'Fraunces', serif; font-weight: 300;
+  font-size: clamp(36px, 5vw, 64px); line-height: 1.02; letter-spacing: -0.025em;
+  margin: 22px 0 0; text-wrap: pretty;
+}
+h1 em { font-style: italic; color: var(--terra); }
+h1 small {
+  display: inline-block; margin-left: 14px;
+  font-family: 'JetBrains Mono', monospace; font-weight: 400;
+  font-size: 13px; letter-spacing: 0.08em; color: var(--muted); vertical-align: middle;
+}
+h2 {
+  font-family: 'Fraunces', serif; font-weight: 300;
+  font-size: clamp(24px, 3vw, 34px); line-height: 1.1; letter-spacing: -0.02em;
+  margin: 56px 0 18px; padding: 0 0 10px;
+  border-bottom: 1px solid color-mix(in oklab, var(--ink) 14%, transparent);
+}
+h3 {
+  font-family: 'Fraunces', serif; font-weight: 400;
+  font-size: 20px; line-height: 1.2; letter-spacing: -0.01em;
+  margin: 24px 0 8px;
+}
+p { color: var(--ink-2); font-size: 16px; line-height: 1.6; margin: 0 0 14px; }
+a { color: var(--terra); text-decoration: none; border-bottom: 1px solid transparent; }
+a:hover { border-bottom-color: var(--terra); }
 .muted { color: var(--muted); font-size: 0.9em; }
-code { background: var(--code-bg); padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
-pre { background: var(--code-bg); padding: 0.9rem; border-radius: 6px; overflow-x: auto; font-size: 0.88em; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.9rem; margin: 1rem 0 1.5rem; }
-.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; }
-.card .num { font-size: 1.9rem; font-weight: 600; line-height: 1; }
-.card .label { color: var(--muted); font-size: 0.88em; margin-top: 0.35rem; text-transform: lowercase; }
-.card a { display: block; }
-.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75em; font-weight: 600; color: white; text-transform: lowercase; }
-.badge.decision { background: var(--decision); }
-.badge.pattern { background: var(--pattern); }
-.badge.failure { background: var(--failure); }
-.badge.module { background: var(--module); }
-.pill { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.72em; font-weight: 600; color: white; text-transform: lowercase; }
-.pill.active { background: var(--pill-active); }
-.pill.superseded { background: var(--pill-superseded); }
-.pill.deprecated { background: var(--pill-deprecated); }
-.pill.error { background: var(--pill-error); }
-.pill.warning { background: var(--pill-warning); }
-.pill.pass { background: var(--pill-pass); }
-table { width: 100%; border-collapse: collapse; font-size: 0.92em; }
-th, td { text-align: left; padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
-th { color: var(--muted); font-weight: 500; font-size: 0.82em; text-transform: lowercase; letter-spacing: 0.02em; }
-.front { background: var(--card-bg); border-left: 3px solid var(--decision); padding: 0.6rem 1rem; margin: 0.5rem 0 1rem; font-size: 0.85em; color: var(--muted); border-radius: 4px; }
-.searchbox { display: flex; gap: 0.5rem; margin: 1rem 0; }
-.searchbox input { flex: 1; padding: 0.55rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
-button, .btn { padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--fg); font: inherit; cursor: pointer; }
-button:hover, .btn:hover { background: var(--border); }
-button.primary { background: var(--link); border-color: var(--link); color: white; }
-.audit-form textarea { width: 100%; padding: 0.7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-family: ui-monospace, Menlo, monospace; font-size: 0.92em; resize: vertical; }
-.banner { padding: 0.85rem 1.1rem; border-radius: 8px; margin: 1rem 0; font-weight: 500; }
-.banner.pass { background: rgba(22,163,74,0.12); border: 1px solid #16a34a; color: #166534; }
-.banner.warning { background: rgba(249,115,22,0.12); border: 1px solid #f97316; color: #9a3412; }
-.banner.violation { background: rgba(220,38,38,0.12); border: 1px solid #dc2626; color: #991b1b; }
-@media (prefers-color-scheme: dark) {
-  .banner.pass { color: #86efac; }
-  .banner.warning { color: #fdba74; }
-  .banner.violation { color: #fca5a5; }
+.muted a { color: var(--muted); }
+.muted a:hover { color: var(--ink); }
+code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--paper); padding: 1px 6px; border-radius: 2px; font-size: 0.88em;
+  border: 1px solid color-mix(in oklab, var(--ink) 8%, transparent);
 }
-.results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-.finding { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.7rem 0.9rem; margin: 0.4rem 0; }
-.finding-meta { color: var(--muted); font-size: 0.82em; margin-top: 0.3rem; }
-@media (max-width: 720px) {
-  .topnav-inner { gap: 0.5rem; }
-  .cards { grid-template-columns: 1fr 1fr; }
+pre {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--ink); color: #e9e3d3;
+  padding: 16px 18px; border-radius: 0; border: 1px solid var(--ink);
+  overflow-x: auto; font-size: 12.5px; line-height: 1.6;
+}
+pre code { background: transparent; border: 0; padding: 0; color: inherit; }
+hr { border: 0; border-top: 1px solid color-mix(in oklab, var(--ink) 14%, transparent); margin: 32px 0; }
+
+.hero-eyebrow { display: block; margin-bottom: 0; }
+
+/* stat cards: paper rectangles, mono labels, big serif numerals */
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px; margin: 32px 0 8px;
+  background: color-mix(in oklab, var(--ink) 18%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink) 18%, transparent);
+}
+.card {
+  background: var(--cream); padding: 22px 22px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  text-decoration: none; border: 0;
+  transition: background .18s ease;
+}
+.card:hover { background: var(--paper); border: 0; }
+.card .num {
+  font-family: 'Fraunces', serif; font-weight: 300;
+  font-size: 44px; line-height: 1; letter-spacing: -0.025em; color: var(--ink);
+}
+.card .label {
+  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+}
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 0;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  border: 1px solid var(--ink); background: var(--cream); color: var(--ink);
+}
+.badge.decision { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+.badge.pattern  { background: var(--forest); color: var(--cream); border-color: var(--forest); }
+.badge.failure  { background: var(--terra); color: var(--cream); border-color: var(--terra); }
+.badge.module   { background: var(--ochre); color: var(--ink); border-color: var(--ochre); }
+
+.pill {
+  display: inline-block; padding: 2px 8px; border-radius: 0;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1px solid color-mix(in oklab, var(--ink) 35%, transparent);
+  background: transparent; color: var(--ink);
+}
+.pill.active { color: var(--forest); border-color: var(--forest); }
+.pill.superseded { color: var(--muted); border-color: color-mix(in oklab, var(--ink) 25%, transparent); }
+.pill.deprecated { color: var(--ochre); border-color: var(--ochre); }
+.pill.error { color: var(--terra); border-color: var(--terra); }
+.pill.warning { color: var(--ochre); border-color: var(--ochre); }
+.pill.pass { color: var(--forest); border-color: var(--forest); }
+
+table {
+  width: 100%; border-collapse: collapse; font-size: 14.5px;
+  border-top: 1px solid color-mix(in oklab, var(--ink) 14%, transparent);
+}
+th, td {
+  text-align: left; padding: 12px 12px; vertical-align: top;
+  border-bottom: 1px solid color-mix(in oklab, var(--ink) 10%, transparent);
+}
+th {
+  font-family: 'JetBrains Mono', monospace; font-weight: 500;
+  font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+}
+tbody tr:hover { background: color-mix(in oklab, var(--paper) 50%, transparent); }
+td a { color: var(--ink); border-bottom: 1px solid color-mix(in oklab, var(--ink) 25%, transparent); }
+td a:hover { color: var(--terra); border-bottom-color: var(--terra); }
+
+.front {
+  background: var(--paper); border-left: 3px solid var(--terra);
+  padding: 14px 18px; margin: 18px 0 28px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+  color: var(--ink-2); letter-spacing: 0.04em;
+  border-top: 1px solid color-mix(in oklab, var(--ink) 14%, transparent);
+  border-right: 1px solid color-mix(in oklab, var(--ink) 14%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--ink) 14%, transparent);
+}
+.front strong { color: var(--ink); font-weight: 600; }
+
+.searchbox { display: flex; gap: 10px; margin: 18px 0 28px; }
+.searchbox input {
+  flex: 1; padding: 12px 14px;
+  border: 1px solid color-mix(in oklab, var(--ink) 30%, transparent);
+  border-radius: 2px; background: transparent; color: var(--ink);
+  font: inherit; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+}
+.searchbox input:focus { outline: none; border-color: var(--ink); }
+
+button, .btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 12px 18px; border-radius: 2px;
+  border: 1px solid var(--ink); background: transparent; color: var(--ink);
+  font: inherit; font-weight: 500; font-size: 13.5px; cursor: pointer;
+  text-decoration: none;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+button:hover, .btn:hover { background: var(--ink); color: var(--cream); }
+button.primary, .btn.primary { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+button.primary:hover, .btn.primary:hover { background: var(--terra); border-color: var(--terra); color: var(--cream); }
+.btn.ghost { background: transparent; }
+.btn.ghost:hover { background: var(--ink); color: var(--cream); }
+
+input[type=text], input[type=search], textarea, select {
+  background: transparent; color: var(--ink);
+}
+.audit-form textarea, textarea {
+  width: 100%; padding: 14px 16px;
+  border: 1px solid color-mix(in oklab, var(--ink) 25%, transparent);
+  border-radius: 2px; background: var(--paper); color: var(--ink);
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;
+  line-height: 1.55; resize: vertical;
+}
+textarea:focus { outline: none; border-color: var(--ink); background: var(--cream); }
+
+.banner {
+  padding: 14px 18px; border-radius: 0; margin: 18px 0 22px;
+  font-family: 'Fraunces', serif; font-style: italic; font-size: 17px; line-height: 1.4;
+  border: 1px solid var(--ink); background: var(--paper); color: var(--ink-2);
+  display: flex; align-items: baseline; gap: 14px;
+}
+.banner::before {
+  content: attr(data-tag);
+  font-family: 'JetBrains Mono', monospace; font-style: normal; font-weight: 600;
+  font-size: 11px; letter-spacing: 0.18em; padding: 4px 8px;
+}
+.banner.pass::before      { content: "PASS";      background: var(--forest); color: var(--cream); }
+.banner.warning::before   { content: "WARNING";   background: var(--ochre);  color: var(--ink); }
+.banner.violation::before { content: "VIOLATION"; background: var(--terra);  color: var(--cream); }
+
+.results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.finding {
+  background: var(--cream);
+  border: 1px solid color-mix(in oklab, var(--ink) 18%, transparent);
+  padding: 14px 16px; margin: 10px 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.finding > div:first-child {
+  font-family: 'Fraunces', serif; font-weight: 500; font-size: 16px;
+  letter-spacing: -0.005em; color: var(--ink);
+}
+.finding-meta { color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+details {
+  background: var(--paper); border: 1px solid color-mix(in oklab, var(--ink) 16%, transparent);
+  padding: 10px 14px; margin: 14px 0;
+}
+details summary {
+  cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+}
+details[open] summary { color: var(--ink); margin-bottom: 8px; }
+
+ul { color: var(--ink-2); }
+ul li { margin: 4px 0; }
+
+fieldset {
+  border: 1px solid color-mix(in oklab, var(--ink) 18%, transparent) !important;
+  border-radius: 0 !important; padding: 14px 18px !important; margin: 12px 0;
+  background: var(--paper);
+}
+fieldset legend {
+  font-family: 'JetBrains Mono', monospace !important; font-size: 10.5px !important;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--terra) !important;
+  padding: 0 6px;
+}
+label { color: var(--ink-2); font-size: 14px; }
+
+/* form text inputs adopt the same paper-bg, sharp-corner treatment */
+input[type=text] {
+  background: var(--paper) !important; color: var(--ink) !important;
+  border: 1px solid color-mix(in oklab, var(--ink) 20%, transparent) !important;
+  border-radius: 2px !important; padding: 12px 14px !important;
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important; font-size: 13px !important;
+}
+input[type=text]:focus { outline: none; border-color: var(--ink) !important; }
+
+/* hero meta strip on the home dashboard */
+.hero-meta {
+  border-top: 1px solid var(--rule);
+  padding-top: 18px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--muted);
+  margin-top: 36px;
+}
+.hero-meta b {
+  display: block; color: var(--ink); font-weight: 600; margin-bottom: 6px;
+  letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px;
+}
+.install {
+  font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  background: transparent; border: 1px dashed color-mix(in oklab, var(--ink) 40%, transparent);
+  padding: 10px 14px; border-radius: 2px; color: var(--ink-2);
+  display: inline-flex; align-items: center; gap: 12px;
+}
+.install .prompt { color: var(--terra); }
+
+@media (max-width: 900px) {
+  .container { padding: 32px 22px 64px; }
+  .topnav-inner { padding: 12px 22px; gap: 16px; }
   .results-grid { grid-template-columns: 1fr; }
-  .container { padding: 0 0.9rem; }
+  .cards { grid-template-columns: 1fr 1fr; }
+  .hero-meta { grid-template-columns: 1fr; gap: 14px; }
+  h1 { font-size: clamp(34px, 9vw, 48px); }
+  h2 { font-size: 26px; }
 }
 </style>"#;
 
@@ -166,21 +417,23 @@ impl DashStats {
 }
 
 /// Wrap arbitrary HTML body content in the standard layout: doctype, head,
-/// sticky top nav, container.
+/// sticky top nav, container. Pulls Fraunces / Inter / JetBrains Mono from the
+/// Google Fonts CDN; if offline, system fallbacks kick in.
 pub fn page_layout(title: &str, project_name: Option<&str>, body: &str) -> String {
     let brand_name = project_name.unwrap_or("illuminate");
     let title_esc = html_escape(title);
     let brand = html_escape(brand_name);
+    let fonts = "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin><link href=\"https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap\" rel=\"stylesheet\">";
     format!(
-        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title_esc} · {brand}</title>{STYLE}</head><body>\n<header class=\"topnav\"><div class=\"topnav-inner\">\
-<a class=\"brand\" href=\"/\">{brand}<small>wiki</small></a>\
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title_esc} · {brand}</title>{fonts}{STYLE}</head><body>\n<header class=\"topnav\"><div class=\"topnav-inner\">\
+<a class=\"brand\" href=\"/\"><span class=\"brand-mark\"></span>{brand}<small>wiki</small></a>\
 <a href=\"/decisions\">decisions</a>\
 <a href=\"/patterns\">patterns</a>\
 <a href=\"/failures\">failures</a>\
 <a href=\"/modules\">modules</a>\
 <a href=\"/audit\">audit</a>\
-<a href=\"/new\">+ new</a>\
-<form class=\"search\" action=\"/search\" method=\"get\"><input type=\"search\" name=\"q\" placeholder=\"search wiki + graph...\"></form>\
+<form class=\"search\" action=\"/search\" method=\"get\"><input type=\"search\" name=\"q\" placeholder=\"search wiki + graph…\"></form>\
+<a class=\"nav-cta\" href=\"/new\">+ new</a>\
 </div></header>\n<main class=\"container\">{body}</main></body></html>"
     )
 }
@@ -223,9 +476,23 @@ pub fn render_home(pages: &[WikiPage], project_name: Option<&str>) -> String {
         )
     };
 
+    let total = pages.len();
+    let project = project_name.unwrap_or("illuminate");
+    let project_esc = html_escape(project);
     let body = format!(
-        "<h1>dashboard</h1><p class=\"muted\">{} pages across decisions, patterns, failures, modules.</p>{cards}<h2>recent activity</h2>{table}",
-        pages.len()
+        "<span class=\"eyebrow hero-eyebrow\">{project_esc} · compounding context</span>\
+<h1>Engineering<br>memory, <em>laid down</em><br>in layers.</h1>\
+<p style=\"max-width:60ch;margin-top:24px;font-size:18px;color:var(--ink-2);\">\
+The wiki, the linter, and the long memory your AI agents are missing. \
+{total} pages distilled across decisions, patterns, failures and modules — \
+queryable from any editor, browsable here.\
+</p>\
+<div class=\"hero-meta\">\
+<div><b>Decisions</b>active &amp; superseded ADRs<br>captured per repo</div>\
+<div><b>Patterns &amp; failures</b>distilled from sessions<br>linked to modules</div>\
+<div><b>Audit</b>policy + decision conflicts<br>verified against the live graph</div>\
+</div>\
+{cards}<h2>Recent activity</h2>{table}"
     );
     page_layout("dashboard", project_name, &body)
 }
@@ -352,11 +619,12 @@ pub fn render_search(
 
 /// Render the audit playground form (GET /audit).
 pub fn render_audit_form(project_name: Option<&str>) -> String {
-    let body = "<h1>audit playground</h1>\
-<p class=\"muted\">paste a plan and run it against the same auditor used by <code>illuminate audit</code>. policy violations, decision conflicts, blast radius, and relevant decisions all come from the live graph.</p>\
-<form class=\"audit-form\" method=\"post\" action=\"/audit\">\
+    let body = "<span class=\"eyebrow\">§ audit · linter for intent</span>\
+<h1>Audit a change. <em>Right here, right now.</em></h1>\
+<p style=\"max-width:60ch;margin-top:24px;\">Paste a plan and run it against the same auditor used by <code>illuminate audit</code>. Policy violations, decision conflicts, blast radius, and relevant decisions all come from the live graph — no LLM in the audit path.</p>\
+<form class=\"audit-form\" method=\"post\" action=\"/audit\" style=\"margin-top:18px;\">\
 <textarea name=\"plan\" rows=\"8\" placeholder=\"e.g. add Redis caching layer to the auth service for session storage\"></textarea>\
-<p><button class=\"primary\" type=\"submit\">Run audit</button> <span class=\"muted\">tip: also available as <code>POST /api/audit</code> with JSON body <code>{&quot;plan&quot;:&quot;...&quot;}</code></span></p>\
+<p style=\"margin-top:14px;\"><button class=\"primary\" type=\"submit\">Run audit →</button> <span class=\"muted\" style=\"margin-left:14px;\">also available as <code>POST /api/audit</code> with JSON body <code>{&quot;plan&quot;:&quot;...&quot;}</code></span></p>\
 </form>";
     page_layout("audit", project_name, body)
 }
@@ -372,10 +640,10 @@ pub fn render_audit_response(
     let (banner_class, banner_text) = match status {
         "violation" => (
             "violation",
-            "violation — proceed only with explicit approval",
+            "Proceed only with explicit approval — see the findings below.",
         ),
-        "warning" => ("warning", "warning — review the findings below"),
-        _ => ("pass", "pass — no violations detected"),
+        "warning" => ("warning", "Review the findings below before proceeding."),
+        _ => ("pass", "No violations detected — the change is consistent with prior decisions."),
     };
     let plan_esc = html_escape(plan);
 
@@ -518,25 +786,26 @@ pub fn render_new_form(
     };
     let checked = |k: PageType| -> &'static str { if kind == k { "checked" } else { "" } };
     let body = format!(
-        "<h1>+ new wiki page</h1>\
-    <p class=\"muted\">add a decision, pattern, failure, or module page without leaving the browser. \
-    the page is written to <code>.illuminate/wiki/&lt;type&gt;/&lt;id&gt;.md</code> and registered in the graph on next <code>illuminate wiki rebuild</code>.</p>\
+        "<span class=\"eyebrow\">§ new · capture in place</span>\
+    <h1>Add a wiki <em>page</em>.</h1>\
+    <p style=\"max-width:60ch;margin-top:24px;\">Add a decision, pattern, failure, or module without leaving the browser. \
+    The page is written to <code>.illuminate/wiki/&lt;type&gt;/&lt;id&gt;.md</code> and registered in the graph on next <code>illuminate wiki rebuild</code>.</p>\
     {err_html}\
-    <form class=\"audit-form\" method=\"post\" action=\"/new\" style=\"max-width:760px;\">\
-    <fieldset style=\"border:1px solid var(--border);border-radius:6px;padding:0.7rem 1rem;margin:0.5rem 0;\">\
-    <legend style=\"font-size:0.85em;color:var(--muted);\">type</legend>\
-    <label style=\"margin-right:1rem;\"><input type=\"radio\" name=\"type\" value=\"decision\" {dec}> decision</label>\
-    <label style=\"margin-right:1rem;\"><input type=\"radio\" name=\"type\" value=\"pattern\" {pat}> pattern</label>\
-    <label style=\"margin-right:1rem;\"><input type=\"radio\" name=\"type\" value=\"failure\" {fail}> failure</label>\
+    <form class=\"audit-form\" method=\"post\" action=\"/new\" style=\"max-width:760px;margin-top:18px;\">\
+    <fieldset>\
+    <legend>type</legend>\
+    <label style=\"margin-right:18px;\"><input type=\"radio\" name=\"type\" value=\"decision\" {dec}> decision</label>\
+    <label style=\"margin-right:18px;\"><input type=\"radio\" name=\"type\" value=\"pattern\" {pat}> pattern</label>\
+    <label style=\"margin-right:18px;\"><input type=\"radio\" name=\"type\" value=\"failure\" {fail}> failure</label>\
     <label><input type=\"radio\" name=\"type\" value=\"module\" {mod}> module</label>\
     </fieldset>\
-    <p><label for=\"title\" class=\"muted\" style=\"display:block;font-size:0.85em;margin-bottom:0.25rem;\">title</label>\
-    <input type=\"text\" name=\"title\" id=\"title\" required placeholder=\"e.g., No Redis for caching\" value=\"{title_esc}\" style=\"width:100%;padding:0.55rem 0.8rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;\"></p>\
-    <p><label for=\"tags\" class=\"muted\" style=\"display:block;font-size:0.85em;margin-bottom:0.25rem;\">tags (comma-separated, optional)</label>\
-    <input type=\"text\" name=\"tags\" id=\"tags\" placeholder=\"e.g., caching, infrastructure\" value=\"{tags_esc}\" style=\"width:100%;padding:0.55rem 0.8rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;\"></p>\
-    <p><label for=\"body\" class=\"muted\" style=\"display:block;font-size:0.85em;margin-bottom:0.25rem;\">body (markdown — sections like <code>## Decision</code>, <code>## Context</code>, <code>## Consequences</code> are conventional)</label>\
+    <p style=\"margin-top:14px;\"><label for=\"title\" class=\"muted\" style=\"display:block;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--terra);margin-bottom:6px;\">title</label>\
+    <input type=\"text\" name=\"title\" id=\"title\" required placeholder=\"e.g., No Redis for caching\" value=\"{title_esc}\"></p>\
+    <p><label for=\"tags\" class=\"muted\" style=\"display:block;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--terra);margin-bottom:6px;\">tags (comma-separated, optional)</label>\
+    <input type=\"text\" name=\"tags\" id=\"tags\" placeholder=\"e.g., caching, infrastructure\" value=\"{tags_esc}\"></p>\
+    <p><label for=\"body\" class=\"muted\" style=\"display:block;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--terra);margin-bottom:6px;\">body (markdown — sections like <code>## Decision</code>, <code>## Context</code>, <code>## Consequences</code> are conventional)</label>\
     <textarea name=\"body\" id=\"body\" required rows=\"14\" placeholder=\"## Decision\n\nWe ...\n\n## Context\n\n...\n\n## Consequences\n\n...\">{body_esc}</textarea></p>\
-    <p><button class=\"primary\" type=\"submit\">create page</button> <span class=\"muted\">writes <code>.illuminate/wiki/&lt;type&gt;/&lt;id&gt;.md</code></span></p>\
+    <p style=\"margin-top:18px;\"><button class=\"primary\" type=\"submit\">Create page →</button> <span class=\"muted\" style=\"margin-left:14px;\">writes <code>.illuminate/wiki/&lt;type&gt;/&lt;id&gt;.md</code></span></p>\
     </form>",
         dec = checked(PageType::Decision),
         pat = checked(PageType::Pattern),
