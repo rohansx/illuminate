@@ -4,6 +4,34 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.17.0] — 2026-05-09
+
+### Added — `wiki serve` dashboard, README polish, utkrushta dogfood
+
+This release makes illuminate look and feel like a product, not just a CLI. The headline change: `illuminate wiki serve` is now a real dashboard with stats, browseable lists, search, an **audit playground** for non-CLI users, and a JSON API for ext integrations. Alongside, a polished README (badges, hero diagram, dashboard view-table, GitHub topics) and a working dogfood deployment in a real production repo.
+
+- **`illuminate wiki serve` dashboard.** New `crates/illuminate-wiki/src/dashboard.rs` (~670 lines). Routes:
+  - `/` — home with stats cards (decisions/patterns/failures/modules/episodes) + recent activity feed.
+  - `/decisions`, `/patterns`, `/failures`, `/modules` — filterable list views (`?status=`, `?tag=`, `?severity=`).
+  - `/page/<dir>/<id>` — single-page render with front-matter card + body + related panel; back-compat alias at `/<dir>/<id>`.
+  - `/search?q=` — two-pane: wiki pages (substring) + graph episodes (FTS5 + semantic, when graph reachable).
+  - `/audit` GET (form) and POST (HTML result page) — the killer non-CLI surface. Paste a plan, see the audit response visually with status banner, policy violations cards, decision conflicts, relevant decisions, blast radius. Confidence badges per finding.
+  - `/api/{stats,pages,page/<id>,search,audit}` — JSON endpoints for ext integrations (any stack can hit these without MCP).
+  - Sticky top nav with project name, search box, link to playground. Dark mode (`@media (prefers-color-scheme: dark)`). Mobile responsive (< 720 px column-stack). Type badges color-coded.
+  - **Auditor injection via callback** (not dep-add) to keep `illuminate-wiki` dependency-light: the CLI's `wiki serve` builds an `Arc<AuditFn>` closure from the audit crate and passes it to the server. Each request constructs a fresh `Auditor` (Auditor isn't Send+Sync — extraction pipeline single-threaded; opening SQLite + WAL is < 10 ms).
+  - Pure `route()` function extracted for testability — 9 black-box tests cover home/list/page/search/audit/api endpoints. (`crates/illuminate-wiki/src/{serve.rs,dashboard.rs}`, `crates/illuminate-cli/src/commands/wiki.rs`)
+- **README visual polish.** Five badges (release, rust 2024, MCP stdio+HTTP, MIT, tests). Replaced prose flywheel with a labeled ASCII diagram. Added "Try it in 60 seconds" block right under the hero. New "What it looks like" section with a routes/views table linking to the dashboard. CLI surface aligned with `docs/CLI.md` (audit-pr, audit-diff, impact, explain, etc.). New "Built on" section credits codeburn (MIT) and code-review-graph (MIT). Suggested GitHub repository About text + topics in a `<details>` block at the bottom for one-click setup. Plus `scripts/capture-screenshots.sh` — populates a tempdir with sample data and starts the dashboard so screenshots can be captured against a known-good fixture.
+- **Utkrushta dogfood (private — not pushed).** Wired illuminate into `/home/rsx/Desktop/utkrusht-ai/Utkrushta` with a project-specific `.illuminate/interview.yaml` (language, database, architecture, deployment, avoid/prefer lists, services), `.gitignore` entries for local caches, and a teammate-onboarding doc at `docs/illuminate-setup.md`. Bootstrap ran 5 sources → 19 wiki pages written + 23 in `_review/` + 37 graph episodes registered. Both `no_raw_sql` and `no_bare_exceptions` policies validated against realistic plan text. Local commit `04cba00` on the `feat/e2b-local-dev-hack` branch — **not pushed**, awaiting team review.
+
+### Deferred to v0.18+
+
+- Capturing actual PNG screenshots from `scripts/capture-screenshots.sh` and committing them to `docs/screenshots/`.
+- `evidence` field shape change from `Option<String>` to `Vec<String>` for full `docs/AUDIT.md` parity.
+- Bootstrap interactive TTY interview (the YAML schema is the stable contract).
+- `failure log` editor mode.
+- MCP HTTP Server-Sent Events streaming.
+- mTLS / OAuth for MCP HTTP.
+
 ## [0.16.0] — 2026-05-09
 
 ### Added — getting-started walkthrough + `init` canonical location fix
