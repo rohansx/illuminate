@@ -1,12 +1,88 @@
+<div align="center">
+
 # Illuminate
 
 **Compounding context for AI-coding teams.**
 
 ESLint for intent — the linter, the wiki, and the memory your agents are missing.
 
+[![release](https://img.shields.io/github/v/release/rohansx/illuminate?style=flat-square&color=2563eb)](https://github.com/rohansx/illuminate/releases)
+[![rust](https://img.shields.io/badge/rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![mcp](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-9333ea?style=flat-square)](docs/MCP.md)
+[![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
+[![tests](https://img.shields.io/badge/tests-650%20passing-16a34a?style=flat-square)](#)
+
 [illuminate.sh](https://illuminate.sh) · single Rust binary · local-first · MIT
 
-> **Status:** v0.12.0 shipped May 2026. The closed loop (capture → extract → audit) is real: prompt-trails feed an NER pipeline that populates the graph; the audit semantically searches that graph and returns blast-radius from a code graph alongside policy verdicts. Five bootstrap sources (agent files, ADRs, git history, README/CONTRIBUTING, interview YAML), function-call edges across six languages (Rust, Go, TypeScript, Python, Java, C), MCP server (stdio + Streamable HTTP), and a full CLI surface aligned with `docs/CLI.md`. See [`CHANGELOG.md`](CHANGELOG.md) for the full per-version log.
+</div>
+
+---
+
+## The flywheel
+
+```
+        ┌─────────────────────────────────────────────────────┐
+        │                                                     │
+        ▼                                                     │
+   ┌─────────┐    ┌──────────┐    ┌──────────┐    ┌─────────┐ │
+   │ capture │ →  │ extract  │ →  │  graph   │ →  │  audit  │ │
+   │ session │    │ entities │    │ + wiki + │    │ guards  │ │
+   │ trails  │    │ + edges  │    │  index   │    │ writes  │ │
+   └─────────┘    └──────────┘    └──────────┘    └────┬────┘
+                                       ▲               │
+                                       │               ▼
+                                  ┌────┴────┐    ┌──────────┐
+                                  │ failure │ ←  │ surface  │
+                                  │ capture │    │ findings │
+                                  └─────────┘    └──────────┘
+```
+
+**Three input mechanisms** feed **one knowledge graph**, which powers **two output surfaces** (the linter for agents, the wiki for humans). The loop compounds — three months in, your graph knows what your team rejected, what failed, and what to surface before code is written.
+
+---
+
+## Try it in 60 seconds
+
+```bash
+cargo install --git https://github.com/rohansx/illuminate illuminate-cli --locked
+cd your-project
+illuminate init -n your-project
+illuminate audit "add Redis caching to txn lookup"
+```
+
+Expected output (with the `no_redis` policy from `docs/GETTING_STARTED.md`):
+
+```
+✗ Violations detected:
+
+  Policy: no_redis
+  Found: Redis
+  Reason: Use in-memory LRU with TTL instead — see dec-no-redis
+  Severity: Error (confidence: 1.00)
+```
+
+Exit code `2`. Wire that into CI and you have machine-enforced architectural guardrails.
+
+→ Full walkthrough: **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**
+
+---
+
+## What it looks like
+
+`illuminate wiki serve` ships a real dashboard, not a CLI prompt:
+
+> _Screenshots of the live dashboard are captured against `illuminate wiki serve --port 8765` after running through `docs/GETTING_STARTED.md`. The capture script is at [`scripts/capture-screenshots.sh`](scripts/capture-screenshots.sh)._
+
+| View | URL | What you see |
+|------|-----|--------------|
+| **Home** | `/` | Stats cards (decisions / patterns / failures / modules / episodes), recent activity feed, quick links |
+| **Browse** | `/decisions`, `/patterns`, `/failures`, `/modules` | Filterable list views (status, tag, severity) |
+| **Page** | `/page/decisions/dec-no-redis` | Single decision rendered with front-matter card + body markdown + related panel |
+| **Search** | `/search?q=caching` | Two-pane: wiki pages + graph episodes (FTS5 + semantic) |
+| **Audit playground** | `/audit` | Paste a plan → see the audit response visually. The killer non-CLI surface for the rest of the team |
+| **JSON API** | `/api/{stats,pages,page/<id>,search,audit}` | Same data, machine-friendly, for ext integrations |
+
+Dark mode, mobile responsive, no JS framework, no build step — single binary still.
 
 ---
 
@@ -20,22 +96,14 @@ Three losses compound silently in every team using Claude Code, Cursor, or Codex
 2. **Decisions made today are forgotten by next week.** "We rejected Redis" — and two weeks later an agent suggests Redis to a different dev, with no memory of the prior decision.
 3. **Failures don't generalize.** A bug ships, gets fixed, and the lesson lives only in a post-mortem nobody reads.
 
-Illuminate solves these losses with a flywheel:
-
-```
-prompts captured → graph fed → agents guarded → failures captured → graph fed → ...
-```
-
 ---
 
 ## How it works
 
-Three input mechanisms feed one knowledge graph, which powers two output surfaces.
-
 **Inputs**
 
 - **Prompt-trail capture** — daemon watches Claude Code, Cursor, and Codex sessions and writes normalized trails to `.illuminate/trail/`.
-- **Decision extraction** — git commits, PR descriptions, ADRs, and `CLAUDE.md` files run through a local NER pipeline (GLiNER + GLiREL + embeddings via ONNX).
+- **Decision extraction** — git commits, PR descriptions, ADRs, README, `CLAUDE.md`, `.illuminate/interview.yaml` run through a local NER pipeline (GLiNER + GLiREL + embeddings via ONNX).
 - **Failure capture** — `illuminate failure log` and `wiki/failures/*.md` produce graph entities that surface in future audits.
 
 **One graph**
@@ -44,8 +112,8 @@ A bi-temporal, append-only knowledge graph stored as a single SQLite file in `.i
 
 **Outputs**
 
-- **The Linter** (machine-readable) — when an agent proposes a change via MCP, Illuminate audits the proposal against the graph and `illuminate.toml` policies. Returns violations, warnings, relevant past decisions, and prior failures *before* code is written.
-- **The Wiki** (human-readable) — markdown pages, browsable in any editor or in Obsidian. Decisions, patterns, anti-patterns, failures — all linked, all searchable, all in your git repo.
+- **The Linter** (machine-readable) — when an agent proposes a change via MCP, Illuminate audits the proposal against the graph and `illuminate.toml` policies. Returns violations, warnings, relevant past decisions, prior failures, blast-radius from a code graph (Rust + Go + TS + Python + Java + C), all *before* code is written.
+- **The Wiki** (human-readable) — markdown pages in `git`, browsable via the dashboard at `illuminate wiki serve`, in any editor, or in Obsidian. Decisions, patterns, anti-patterns, failures — all linked, all searchable.
 
 ---
 
@@ -72,11 +140,11 @@ The agent surfaces the past decision to the dev and proposes the LRU pattern ins
 ## Install
 
 ```bash
-# Homebrew
-brew install rohansx/tap/illuminate
-
 # Cargo
-cargo install --git https://github.com/rohansx/illuminate illuminate-cli
+cargo install --git https://github.com/rohansx/illuminate illuminate-cli --locked
+
+# Homebrew (when published)
+brew install rohansx/tap/illuminate
 
 # Prebuilt
 curl -L https://github.com/rohansx/illuminate/releases/latest/download/illuminate-x86_64-linux.tar.gz \
@@ -88,91 +156,51 @@ Requires Rust 1.85+ if building from source.
 
 ---
 
-## Quick start
+## CLI surface
 
-```bash
-cd your-project
-illuminate init --claude         # writes .illuminate/, scaffolds wiki, runs bootstrap
-illuminate wiki rebuild          # registers wiki pages as graph episodes
-illuminate audit "add Redis caching to txn lookup"
-illuminate wiki serve --port 8765
-```
-
-`illuminate init --claude` parses your `CLAUDE.md`/`AGENTS.md`/`.cursorrules` and Nygard ADRs into wiki pages, then registers them in the graph so day-one audits return real findings.
-
-### Worked example
-
-```bash
-$ cat > CLAUDE.md <<'EOF'
-## Caching
-
-We use Memcached. Never use Redis. Do not introduce stateful sidecars.
-EOF
-
-$ cat > .illuminate/illuminate.toml <<'EOF'
-[project]
-name = "demo"
-
-[policies.no_redis]
-rule = "rejected_pattern"
-pattern = "Redis"
-reason = "deployment target disallows stateful sidecars"
-severity = "error"
-EOF
-
-$ illuminate bootstrap
-bootstrap complete:
-  sources run:        ["agent_files"]
-  candidates found:   1
-  pages written:      1
-
-$ illuminate wiki rebuild
-rebuilt index.md (1 pages); registered 1 episodes
-
-$ illuminate audit "add Redis caching to billing service"
-✗ Violations detected:
-
-  Policy: no_redis
-  Found: Redis
-  Reason: deployment target disallows stateful sidecars
-  Severity: Error
-
-$ echo $?
-2
-
-$ illuminate audit "add Memcached caching to billing service"
-✓ No violations detected
-
-$ echo $?
-0
-```
-
-The audit fires deterministically against the policy + graph, with no LLM calls.
-
-### CLI surface
+Aligned with [docs/CLI.md](docs/CLI.md):
 
 ```
-illuminate init --claude         scaffold .illuminate/, run bootstrap, wire CLAUDE.md
-illuminate bootstrap             ingest CLAUDE.md / AGENTS.md / ADRs into wiki
-illuminate wiki rebuild          register wiki pages as graph episodes
-illuminate wiki lint             validate front-matter + required sections
-illuminate wiki list             list pages by type
-illuminate wiki serve            HTTP-render wiki on localhost
-illuminate wiki search "<q>"     grep + FTS5 search
-illuminate audit "<plan>"        check plan against policies + graph (exit 2 on violation)
-illuminate trail import <path>   normalize one Claude session jsonl
-illuminate trail watch           live-capture sessions to .illuminate/trail/
-illuminate trail register        register all trails as graph episodes
-illuminate failures list         list failure pages
-illuminate status                opt-in / wiki / graph / trail summary
-illuminate stats                 graph statistics
+illuminate init                  scaffold .illuminate/, run bootstrap
+illuminate bootstrap             ingest 5 sources (agent files, ADRs, git, README, interview)
+illuminate audit "<plan>"        check plan against policies + graph (exit 0/2/3)
+illuminate audit-diff [BASE]     audit changes since git base (default HEAD~1)
+illuminate audit-pr <num>        audit a GitHub PR (uses gh CLI; --comment posts back)
+illuminate impact <files...>     blast-radius for files (defined symbols, imports, BFS)
+illuminate explain <path>        decisions/patterns/failures touching a file
+illuminate failure log ...       record a new failure inline
+illuminate decisions list/show/for <path>
+illuminate patterns list/show
+illuminate failures list/show
+illuminate index                 build code-graph (symbols + edges)
+illuminate search "<q>"          FTS5 + semantic search across graph
+illuminate rebuild               rebuild graph.db from wiki + trail
+illuminate wiki serve            launch the dashboard at http://127.0.0.1:8765
+illuminate wiki redact "<re>"    bulk-redact regex across wiki + graph
+illuminate trail import/list/register/watch/install-service
+illuminate mcp serve             MCP server (stdio default; --http for Streamable HTTP)
+illuminate models download       fetch ONNX models (~150 MB, optional)
 ```
 
-### CI integration
+`audit` exit codes: `0` pass, `2` violation (CI should block), `3` warn.
 
-For PR-time audit, copy [`.github/workflows/example-audit-pr.yml.example`](.github/workflows/example-audit-pr.yml.example) into your repo. See [`docs/CI.md`](docs/CI.md).
+---
 
-Cursor and Codex sessions are captured directly: Cursor via the `state.vscdb` SQLite database (`cursorDiskKV` table polled), Codex via `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. Format knowledge ported from [codeburn](https://github.com/getagentseal/codeburn) (MIT) and credited in `docs/ARCHITECTURE.md`'s Related Projects section.
+## CI integration
+
+Drop-in GitHub Action — see [`docs/CI.md`](docs/CI.md):
+
+```yaml
+on: pull_request
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rohansx/illuminate/.github/actions/audit-pr@master
+```
+
+Calls `illuminate audit-pr ${{ github.event.pull_request.number }} --comment --format markdown`. Posts findings as a PR comment via `gh`. Block on exit 2.
 
 ---
 
@@ -181,18 +209,20 @@ Cursor and Codex sessions are captured directly: Cursor via the `state.vscdb` SQ
 ```
 your-project/
 ├── .illuminate/
-│   ├── illuminate.toml         # config + policies (in git)
-│   ├── graph.db                # SQLite (gitignored, regeneratable)
-│   ├── wiki/                   # markdown (in git, team-shared)
+│   ├── illuminate.toml          # config + policies (in git)
+│   ├── interview.yaml           # optional onboarding answers (in git)
+│   ├── graph.db                 # SQLite (gitignored, regeneratable)
+│   ├── index.db                 # code graph (gitignored)
+│   ├── wiki/                    # markdown (in git, team-shared)
 │   │   ├── decisions/
 │   │   ├── patterns/
 │   │   ├── failures/
 │   │   └── modules/
-│   └── trail/                  # raw session jsonl (gitignored)
-└── CLAUDE.md                   # contains audit-pre-write directive
+│   └── trail/                   # raw session jsonl (gitignored)
+└── CLAUDE.md                    # contains audit-pre-write directive
 ```
 
-`wiki/` is the team-shared source-of-truth. `graph.db` and `trail/` are local caches, regeneratable from `wiki/` + agent session history.
+`wiki/` is the team-shared source-of-truth. `graph.db`, `index.db`, and `trail/` are local caches, regeneratable from `wiki/` + agent session history.
 
 See [docs/SCHEMA.md](docs/SCHEMA.md) for the wiki page schema.
 
@@ -200,42 +230,44 @@ See [docs/SCHEMA.md](docs/SCHEMA.md) for the wiki page schema.
 
 ## Architecture
 
-Ten Rust crates, one binary:
+Twelve Rust crates, one binary:
 
 | Crate | Responsibility |
 |-------|---------------|
 | `illuminate-core` | Graph API on top of `ctxgraph` |
+| `illuminate-config` | Shared `illuminate.toml` parsers (audit, trail, extraction, mcp.http) |
 | `illuminate-trail` | Session capture (Claude Code, Cursor, Codex) |
 | `illuminate-extract` | NER pipeline (GLiNER + GLiREL via ONNX) |
 | `illuminate-embed` | all-MiniLM-L6-v2 embeddings (local) |
-| `illuminate-index` | tree-sitter code indexer |
-| `illuminate-audit` | Policy engine + graph queries |
-| `illuminate-watch` | Daemon harness |
-| `illuminate-reflect` | Failure capture + ingestion |
-| `illuminate-route` | LLM fallback router (PII-stripped) |
-| `illuminate-mcp` | JSON-RPC MCP server |
+| `illuminate-index` | tree-sitter symbols + edges (Rust/Go/TS/Python/Java/C) |
+| `illuminate-audit` | Policy engine + graph queries + semantic top-k |
+| `illuminate-bootstrap` | 5 bootstrap sources |
+| `illuminate-watch` | Daemon harness + git/GitHub ingestion |
+| `illuminate-reflect` | Reflexion store (failure capture) |
+| `illuminate-route` | Reading-plan generator (FTS5 + semantic RRF) |
+| `illuminate-wiki` | Markdown layer + the serve dashboard |
+| `illuminate-mcp` | JSON-RPC MCP server (stdio + HTTP) |
 | `illuminate-cli` | The binary |
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and [docs/CRATES.md](docs/CRATES.md) for per-crate detail.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the two-graph diagram (code graph ↔ decision graph) and the audit lifecycle.
 
 ---
 
 ## Documentation
 
-- **[Getting started](docs/GETTING_STARTED.md)** — step-by-step walkthrough: install → init → first audit → MCP wiring (validated end-to-end before each release)
+- **[Getting started](docs/GETTING_STARTED.md)** — step-by-step walkthrough (validated end-to-end before each release)
 - **[Product overview](docs/PRODUCT_OVERVIEW.md)** — what it does, why it works, how it positions
-- **[Architecture](docs/ARCHITECTURE.md)** — components, data flow, file layout
+- **[Architecture](docs/ARCHITECTURE.md)** — components, data flow, the two-graph join
 - **[Schema](docs/SCHEMA.md)** — markdown wiki schema
 - **[Ingestion](docs/INGESTION.md)** — three input pipelines
 - **[Audit](docs/AUDIT.md)** — the linter, in detail
-- **[Bootstrap](docs/BOOTSTRAP.md)** — cold-start population
+- **[Bootstrap](docs/BOOTSTRAP.md)** — cold-start population (5 sources)
 - **[CLI](docs/CLI.md)** — command reference
-- **[MCP](docs/MCP.md)** — agent-facing tool contract
+- **[MCP](docs/MCP.md)** — agent-facing tool contract (stdio + HTTP)
 - **[Crates](docs/CRATES.md)** — per-crate API
 - **[Privacy](docs/PRIVACY.md)** — data residency, threat model
-- **[Roadmap](docs/ROADMAP.md)** — milestones (latest: v0.12.0)
-
-Older docs live in [docs/old/](docs/old/) for historical reference.
+- **[Roadmap](docs/ROADMAP.md)** — milestones
+- **[Changelog](CHANGELOG.md)** — per-version log
 
 ---
 
@@ -243,7 +275,7 @@ Older docs live in [docs/old/](docs/old/) for historical reference.
 
 - **Local-first** — all capture, storage, and queries run on the dev's machine. No required cloud.
 - **Single binary** — no Docker, no Python, no Neo4j. One Rust binary, one SQLite file per repo.
-- **Deterministic queries** — no LLM in the audit/query path. Same input → same output. LLM fallback only during ingestion (~30%, with PII strip).
+- **Deterministic queries** — no LLM in the audit/query path. Same input → same output. LLM fallback only during ingestion (~30%, with PII strip via the optional `cloakpipe` feature).
 - **Append-only graph** — bi-temporal storage. Supersession is a new fact, not a mutation.
 - **Markdown is source-of-truth** — the graph indexes the wiki. Delete the graph; rebuild from wiki + trail.
 - **Compounding** — the graph gets stronger with use. Three months in, switching off Illuminate means losing the team's accumulated context.
@@ -265,19 +297,23 @@ Set `[extraction.llm] provider = "none"` to run fully offline at $0.
 
 ## Built on
 
-- [`ctxgraph`](https://github.com/rohansx/ctxgraph) — the bi-temporal knowledge graph engine (2.4× F1 vs Graphiti, ~250× faster)
+- [`ctxgraph`](https://github.com/rohansx/ctxgraph) — bi-temporal knowledge graph engine (2.4× F1 vs Graphiti, ~250× faster)
 - [`tree-sitter`](https://tree-sitter.github.io/) — incremental code parsing
 - [GLiNER](https://github.com/urchade/GLiNER) + [GLiREL](https://github.com/jackboyla/GLiREL) — local NER (ONNX)
+- [`axum`](https://github.com/tokio-rs/axum) — MCP HTTP transport
+- [`tiny_http`](https://github.com/tiny-http/tiny-http) — wiki dashboard server
+
+Format knowledge for Cursor / Codex parsers ported from [codeburn](https://github.com/getagentseal/codeburn) (MIT). Edge model + `impact_radius` informed by [code-review-graph](https://github.com/tirth8205/code-review-graph) (MIT). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)'s Related Projects section.
 
 ---
 
 ## Status
 
-v0.12.0 shipped. The closed loop is real:
+The closed loop is real and end-to-end:
 - **Capture**: Claude Code, Cursor, Codex sessions all parsed.
 - **Extract**: trail register / failures register run the GLiNER + GLiREL ONNX pipeline; entities and relations land in the graph.
-- **Audit**: policies, decision conflicts, semantic top-k via `Graph::search_fused`, code-graph blast-radius via recursive-CTE BFS over function-call edges (Rust + Go + TS + Python + Java + C).
-- **Surfaces**: CLI (`audit`, `audit-diff`, `audit-pr`, `impact`, `explain`, `decisions`, `patterns`, `failures`, `failure log`, `search`, `rebuild`, `bootstrap`, `wiki ...`), MCP server (stdio + Streamable HTTP), GitHub Action.
+- **Audit**: policies, decision conflicts, semantic top-k via `Graph::search_fused`, code-graph blast-radius via recursive-CTE BFS over function-call edges.
+- **Surfaces**: CLI, MCP server (stdio + Streamable HTTP), GitHub Action, **wiki dashboard at `illuminate wiki serve`** (home / browse / search / audit playground / JSON API).
 - **Bootstrap**: 5 sources wired (agent files, ADRs, git history, README/CONTRIBUTING, interview YAML).
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the per-version log and [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's still deferred.
@@ -287,3 +323,22 @@ See [`CHANGELOG.md`](CHANGELOG.md) for the per-version log and [`docs/ROADMAP.md
 ## License
 
 MIT.
+
+---
+
+<details>
+<summary><strong>Suggested GitHub repository metadata</strong> (paste into the About panel + Topics)</summary>
+
+**Description:** _Compounding context for AI-coding teams. ESLint for intent: capture prompt-trails → graph → audit agent plans before code is written. Single Rust binary, local-first, MCP-native._
+
+**Website:** `https://illuminate.sh`
+
+**Topics:**
+
+```
+knowledge-graph rust mcp ai-agents ci local-first linter
+wiki-as-code claude-code cursor codex tree-sitter onnx
+audit-tool decision-graph context-engineering
+```
+
+</details>
