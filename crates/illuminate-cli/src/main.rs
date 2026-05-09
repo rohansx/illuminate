@@ -328,7 +328,11 @@ enum Commands {
     },
 
     /// Populate the wiki from existing repo signals (CLAUDE.md, ADRs)
-    Bootstrap,
+    Bootstrap {
+        /// Skip the automatic `wiki rebuild` step at the end (writes pages only)
+        #[arg(long)]
+        no_rebuild: bool,
+    },
 
     /// Manage recorded failures
     Failures {
@@ -588,7 +592,9 @@ fn main() {
             commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io)
         }
         Commands::Wiki { cmd } => commands::wiki::run(cmd).map_err(illuminate::IlluminateError::Io),
-        Commands::Bootstrap => commands::bootstrap::run().map_err(illuminate::IlluminateError::Io),
+        Commands::Bootstrap { no_rebuild } => {
+            commands::bootstrap::run(no_rebuild).map_err(illuminate::IlluminateError::Io)
+        }
         Commands::Failures { cmd } => {
             commands::failures::run(cmd).map_err(illuminate::IlluminateError::Io)
         }

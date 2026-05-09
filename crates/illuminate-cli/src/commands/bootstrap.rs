@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-pub fn run() -> std::io::Result<()> {
+pub fn run(no_rebuild: bool) -> std::io::Result<()> {
     let cwd = std::env::current_dir()?;
     let root = find_repo_root(&cwd)?;
     let report = illuminate_bootstrap::orchestrate::run_bootstrap(&root)
@@ -16,6 +16,13 @@ pub fn run() -> std::io::Result<()> {
         "  pages queued for review: {}",
         report.pages_queued_for_review
     );
+
+    if !no_rebuild && report.pages_written > 0 {
+        println!();
+        println!("rebuilding wiki index + graph...");
+        super::wiki::cmd_rebuild()?;
+    }
+
     Ok(())
 }
 

@@ -145,7 +145,7 @@ fn cmd_list() -> std::io::Result<()> {
     Ok(())
 }
 
-fn cmd_rebuild() -> std::io::Result<()> {
+pub(crate) fn cmd_rebuild() -> std::io::Result<()> {
     let root = repo_root()?;
     let dir = root.join(".illuminate").join("wiki");
     let walked = walk_wiki(&dir).map_err(|e| std::io::Error::other(e.to_string()))?;
