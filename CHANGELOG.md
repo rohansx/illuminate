@@ -4,6 +4,21 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.16.0] — 2026-05-09
+
+### Added — getting-started walkthrough + `init` canonical location fix
+
+- **`docs/GETTING_STARTED.md`** — step-by-step walkthrough: install, init, first decision, optional models, bootstrap from interview YAML, first audit (violation + benign + JSON), code-graph blast-radius, MCP wiring (stdio + HTTP), the flywheel (trail register, failure log), CI integration, common-questions FAQ. Every command and output validated end-to-end in a tempdir before this commit. Linked from `README.md`.
+- **`illuminate init` now writes the canonical `.illuminate/illuminate.toml` location.** Validating the walkthrough surfaced a real UX bug: `init` previously wrote `illuminate.toml` to the repo root (the v0.1 legacy form), but `illuminate bootstrap`'s `find_repo_root` only accepted `.illuminate/illuminate.toml` — so the natural `init → bootstrap` flow failed with "no .illuminate/illuminate.toml found." Fixed: `init` now writes to `.illuminate/illuminate.toml` (the canonical location matching bootstrap, audit, and MCP path resolution). The audit policy loader's legacy fallback is preserved so existing v0.1-v0.15 projects continue to work without migration; new `init` writes only land in the canonical location. (`crates/illuminate-cli/src/commands/init.rs`)
+
+### Deferred to v0.17+
+
+- `evidence` field shape change from `Option<String>` to `Vec<String>` for full `docs/AUDIT.md` parity.
+- Bootstrap interactive TTY interview.
+- `failure log` editor mode.
+- MCP HTTP Server-Sent Events streaming.
+- mTLS / OAuth for MCP HTTP.
+
 ## [0.15.0] — 2026-05-09
 
 ### Added — end-to-end smoke test + bootstrap auto-rebuild
