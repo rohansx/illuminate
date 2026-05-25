@@ -471,10 +471,17 @@ impl Graph {
             std::collections::HashMap::new();
 
         // --- FTS5 ranked list ---
-        // Fetch a generous pool for RRF (up to 10x limit or 200)
+        // Fetch a generous pool for RRF (up to 10x limit or 200).
+        // Sanitize the query first so FTS5 operator characters / stopwords
+        // don't crash the MATCH clause — see `crate::sanitize_for_fts5`.
+        // An empty sanitized query simply means the FTS contribution to RRF
+        // is empty; the semantic path below still runs against the raw
+        // embedding (which already encodes the meaning).
         let fts_pool = (limit * 10).max(200);
-        let fts_results = self.storage.search_episodes(query, fts_pool);
-        if let Ok(fts) = fts_results {
+        let fts_query = crate::query::sanitize_for_fts5(query);
+        if !fts_query.is_empty()
+            && let Ok(fts) = self.storage.search_episodes(&fts_query, fts_pool)
+        {
             for (rank, (episode, _)) in fts.into_iter().enumerate() {
                 let rrf = 1.0 / (K + rank as f64 + 1.0);
                 *scores.entry(episode.id.clone()).or_insert(0.0) += rrf;
@@ -528,13 +535,31 @@ impl Graph {
     // ── Search ──
 
     /// Search episodes via FTS5 full-text search.
+    ///
+    /// The `query` is treated as natural language: [`crate::sanitize_for_fts5`]
+    /// strips FTS5 operator characters (`/`, `:`, `*`, `"`, parens, etc.),
+    /// drops stopwords, and OR-joins meaningful tokens before delegating to
+    /// the storage layer. Callers do not need to pre-sanitize.
+    ///
+    /// Returns an empty `Vec` if the sanitized query has no usable tokens
+    /// (e.g., all stopwords) — no SQL is executed in that case.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<(Episode, f64)>> {
-        self.storage.search_episodes(query, limit)
+        let fts = crate::query::sanitize_for_fts5(query);
+        if fts.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.storage.search_episodes(&fts, limit)
     }
 
     /// Search entities via FTS5.
+    ///
+    /// Same sanitization semantics as [`Self::search`].
     pub fn search_entities(&self, query: &str, limit: usize) -> Result<Vec<(Entity, f64)>> {
-        self.storage.search_entities(query, limit)
+        let fts = crate::query::sanitize_for_fts5(query);
+        if fts.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.storage.search_entities(&fts, limit)
     }
 
     // ── Traversal ──

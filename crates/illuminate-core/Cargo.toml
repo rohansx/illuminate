@@ -14,8 +14,8 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 rusqlite = { workspace = true }
 toml = { workspace = true }
-illuminate-config = { path = "../illuminate-config", version = "0.19.0" }
-illuminate-extract = { path = "../illuminate-extract", version = "0.19.0", optional = true }
+illuminate-config = { path = "../illuminate-config", version = "0.20.0" }
+illuminate-extract = { path = "../illuminate-extract", version = "0.20.0", optional = true }
 strsim = { workspace = true }
 
 [features]

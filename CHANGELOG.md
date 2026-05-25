@@ -4,6 +4,22 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.20.0] — 2026-05-25
+
+### Added — FTS5 sanitizer at the `Graph` boundary, audit MCP unblocked, repo hygiene
+
+This release closes the technical debt from v0.19 in a single batch.
+
+- **FTS5 sanitizer promoted into `illuminate-core`.** The helper that started life in `illuminate-enrich` (v0.19) and then moved up to `illuminate-route` (v0.19) now lives in `illuminate::query::sanitize_for_fts5` and is applied **inside `Graph::search`, `Graph::search_entities`, and `Graph::search_fused`**. Every caller of the graph search API (audit, route, MCP, dashboard, CLI search/query verbs, wiki dashboard `/search`) now benefits from the same fix transparently — no per-caller glue, no remembering to sanitize. Empty sanitized queries short-circuit before SQL execution. `illuminate-route::sanitize_for_fts5` is now a thin re-export of the core function for back-compat; `illuminate-enrich`'s re-export chain still works. 5 new tests in `illuminate-core::query::tests` cover operator-character stripping, stopword filtering, lowercasing + dedup, empty/garbage input, and snake_case identifier preservation. (`crates/illuminate-core/src/{query.rs,graph.rs}`)
+- **Audit MCP tool unblocked.** Verified end-to-end: the exact plan that failed 4× earlier in this session with `fts5: syntax error near "/"` (a multi-line plan containing slashes, colons, and an HTML angle bracket from a prior session transcript) now returns cleanly via `tools/call` against the live MCP server. The audit still flags the expected decision conflict (Redis keyword match against the trail episode) but the underlying call no longer dies on FTS5 syntax. This was the bug that made the CLAUDE.md audit gate effectively unusable on any plan mentioning a file path.
+- **Cleaner code paths in `illuminate-route` and `illuminate-enrich`.** Now that sanitization lives at the graph boundary, `route()` drops its pre-call sanitize + empty-check; the embedding still sees the raw subject (preserves meaning). `illuminate-enrich` drops its local `enrich_prompt` short-circuit. Net diff: 50+ LoC of duplicated sanitize logic removed; one single source of truth in `illuminate-core::query`.
+- **Repo hygiene.** Removed `Illuminate Landing _standalone_.html` (1.9 MB design-reference file from the v0.17 wiki-dashboard theme adoption). The theme is in `crates/illuminate-wiki/src/dashboard.rs`; the standalone HTML is no longer load-bearing.
+- **Workspace version bump.** `0.19.0` → `0.20.0` across `Cargo.toml` + all crate path-dep versions.
+
+### Deferred to v0.21+
+
+- All v0.19 deferrals carry forward (`illuminate-publish`, `illuminate browse`, `illuminate trust check`, `page_type: session` schema, enrichment demo video, plus the v0.18 carry-overs).
+
 ## [0.19.0] — 2026-05-25
 
 ### Added — v3 positioning reset + `illuminate-enrich` wedge crate
