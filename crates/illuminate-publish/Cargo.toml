@@ -1,16 +1,19 @@
 [package]
-name = "illuminate-route"
+name = "illuminate-publish"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Subject-to-file routing for illuminate — tri-modal search and reading plans"
+description = "Explicit publish gesture for illuminate — curate trail sessions into a team repo with per-session redaction"
 
 [dependencies]
 illuminate = { version = "0.21.0", path = "../illuminate-core" }
-illuminate-index = { version = "0.21.0", path = "../illuminate-index" }
-illuminate-embed = { version = "0.21.0", path = "../illuminate-embed" }
+illuminate-trail = { version = "0.21.0", path = "../illuminate-trail" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

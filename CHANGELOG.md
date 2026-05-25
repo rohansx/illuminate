@@ -4,6 +4,28 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.21.0] — 2026-05-25
+
+### Added — `illuminate-publish` crate + `illuminate publish` CLI verb (v3.0 wedge complete)
+
+This release ships the **second half of the v3 two-product positioning** — both wedges (`illuminate-enrich` from v0.19 + `illuminate-publish` here) are now live. The full four-stage pipeline (enrich → generate → capture → curate) is end-to-end functional. Per `docs/ROADMAP.md`, this closes the core scope of v3.0.
+
+- **`illuminate-publish` crate.** New `crates/illuminate-publish/` (~430 LoC). Public API: `RedactionLevel` (Full / Summary / Decision / Discard), `PublishRequest`, `PublishResponse`, `TeamRepoTarget` (LocalPath in MVP — GitRemote deferred to v3.1 per trust model), `PublishError`, and the entry points `publish(graph, req)` and `install_pre_commit_hook(repo_root, team_repo)`. The function reads a trail jsonl from `.illuminate/trail/`, renders a structured markdown page per the chosen redaction level (full = entire transcript, summary = first prompt + last response + files touched, decision = front-matter only, discard = no-op), writes to `<team_repo>/sessions/<YYYY-MM-DD>-<slug>.md`, and registers a graph episode with `source = "published:<agent>"` so future `illuminate enrich` calls can surface the published session. 9 unit tests cover each redaction level, filename / sessions-subdir layout, hook installation (with executable bit on Unix), graph-episode registration with correct source + metadata, and the slugify helper.
+- **`illuminate publish` CLI verb.** `illuminate publish --trail PATH --redaction <full|summary|decision|discard> --team-repo PATH [--commit-sha SHA] [--json]` writes one session. `illuminate publish --install-hook --team-repo PATH` writes a `.git/hooks/pre-commit` script that calls publish on every commit (defaults to `summary`; override per-commit via `ILLUMINATE_PUBLISH_REDACTION=<level>` env var or skip with `git commit --no-verify`). Verified live on this repo: `illuminate publish --trail .illuminate/trail/<file>.jsonl --redaction summary --team-repo /tmp/team-illuminate-smoke` produced a valid markdown page with front-matter `page_type: session` + `source: published:claude-code` and registered a graph episode `019e604f-...`.
+- **Wiki schema extension: `page_type: session`.** `docs/SCHEMA.md` gains a full section documenting the new page type, every front-matter field, body shape per redaction level, and the trust-model invariants enforced by the crate (only writes to the explicit `--team-repo` path, never network, `LocalPath` only in v3.0).
+- **Trust-model enforcement.** `illuminate-publish` is the **only** crate in the workspace that writes outside `.illuminate/` — and even then only to a path the caller has explicitly named. No defaults, no implicit network. The GitRemote variant is deliberately gated for v3.1 once `illuminate trust check` ships to lint the config.
+- **CHANGELOG, README, CLI docs.** New CLI surface line in `README.md`; new section in `docs/CLI.md` for `illuminate publish` with the flags table + examples + the `--install-hook` flow.
+- **Workspace version bump.** `0.20.0` → `0.21.0` across `Cargo.toml` + all crate path-deps.
+
+### Deferred to v0.22+
+
+- **`illuminate browse`** — terminal UI over published sessions (search, blame, open original jsonl in `$EDITOR`).
+- **`illuminate trust check`** — config linter that gates `TeamRepoTarget::GitRemote` and other network paths.
+- **`TeamRepoTarget::GitRemote`** — push to a configured git remote with consent prompt.
+- **LLM-assisted summary** at publish time (currently the `Summary` body is deterministic-template only).
+- **60-second enrichment + publish demo video** — the primary v3.0 launch artifact.
+- All v0.18 / v0.19 / v0.20 carry-overs.
+
 ## [0.20.0] — 2026-05-25
 
 ### Added — FTS5 sanitizer at the `Graph` boundary, audit MCP unblocked, repo hygiene

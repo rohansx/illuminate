@@ -17,6 +17,7 @@ pub mod log;
 pub mod mcp;
 pub mod models;
 pub mod patterns;
+pub mod publish;
 pub mod query;
 pub mod rebuild;
 pub mod reflect;

@@ -302,6 +302,33 @@ enum Commands {
         json: bool,
     },
 
+    /// Publish a captured trail session into a team repo (Stage 4 of the v3 pipeline)
+    Publish {
+        /// Path to the trail jsonl to publish (e.g. .illuminate/trail/<file>.jsonl)
+        #[arg(long)]
+        trail: Option<PathBuf>,
+
+        /// How much of the session to share: full | summary | decision | discard
+        #[arg(long, default_value = "summary")]
+        redaction: String,
+
+        /// Target team-repo directory (publish writes <team-repo>/sessions/<file>.md)
+        #[arg(long)]
+        team_repo: Option<PathBuf>,
+
+        /// Git commit SHA this session produced (recorded in front-matter)
+        #[arg(long)]
+        commit_sha: Option<String>,
+
+        /// Install a pre-commit hook that runs `illuminate publish` (requires --team-repo)
+        #[arg(long)]
+        install_hook: bool,
+
+        /// Emit the PublishResponse as JSON instead of a human-readable summary
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Enrich a prompt with relevant team context from the graph (pre-LLM, deterministic)
     Enrich {
         /// The developer's raw prompt
@@ -605,6 +632,14 @@ fn main() {
             max_nodes,
             json,
         } => commands::impact::run(files, index_db, depth, max_nodes, json),
+        Commands::Publish {
+            trail,
+            redaction,
+            team_repo,
+            commit_sha,
+            install_hook,
+            json,
+        } => commands::publish::run(trail, redaction, team_repo, commit_sha, install_hook, json),
         Commands::Enrich {
             prompt,
             files,

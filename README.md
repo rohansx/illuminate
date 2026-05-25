@@ -182,6 +182,7 @@ illuminate audit "<plan>"        check plan against policies + graph (exit 0/2/3
 illuminate audit-diff [BASE]     audit changes since git base (default HEAD~1)
 illuminate audit-pr <num>        audit a GitHub PR (uses gh CLI; --comment posts back)
 illuminate enrich "<prompt>"     deterministic pre-LLM prompt enrichment (v3.0 wedge)
+illuminate publish               curate + share a trail session with the team (v3.0 wedge)
 illuminate impact <files...>     blast-radius for files (defined symbols, imports, BFS)
 illuminate explain <path>        decisions/patterns/failures touching a file
 illuminate failure log ...       record a new failure inline

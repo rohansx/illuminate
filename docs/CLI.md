@@ -185,6 +185,51 @@ illuminate enrich "fix the race condition" --files src/payments/txn.rs --files s
 
 **MCP equivalent.** Planned for v0.20: `illuminate_enrich` MCP tool so agents can call enrich inline without shelling out. For now, the CLI verb is the only entry point.
 
+### `illuminate publish`
+
+Explicit publish gesture for one captured trail session. Reads a trail jsonl from `.illuminate/trail/`, redacts per the chosen level, writes a structured markdown page under `<team-repo>/sessions/<YYYY-MM-DD>-<slug>.md`, and registers a graph episode so future `illuminate enrich` calls can surface the published session. Shipped in v0.21 as the second half of the v3 two-product positioning (see `PRODUCT_OVERVIEW.md` → Illuminate Repo).
+
+```
+illuminate publish --trail PATH
+                   --redaction full|summary|decision|discard
+                   --team-repo PATH
+                   [--commit-sha SHA]
+                   [--json]
+
+illuminate publish --install-hook --team-repo PATH
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--trail PATH` | (required for publish) | Path to the trail jsonl to publish (e.g. `.illuminate/trail/<file>.jsonl`). |
+| `--redaction X` | `summary` | One of `full` / `summary` / `decision` / `discard`. See `docs/SCHEMA.md` → Session page for what each level emits. |
+| `--team-repo PATH` | (required) | Target directory. The crate writes `<team-repo>/sessions/<file>.md`. **The only place outside `.illuminate/` that any illuminate crate writes to.** |
+| `--commit-sha SHA` | (none) | Git commit this session produced — recorded in front-matter so the resulting page links the prompt to the code. |
+| `--json` | off | Emit the `PublishResponse` envelope (session_id, written_paths, graph_episode_id) instead of a human-readable summary. |
+| `--install-hook` | off | Skip the publish; write a `.git/hooks/pre-commit` script that runs `illuminate publish` on every commit. Requires `--team-repo`. The hook defaults to `--redaction summary`; override per commit via `ILLUMINATE_PUBLISH_REDACTION=<level>` or skip with `git commit --no-verify`. |
+
+**Trust-model invariants.** This is the only `illuminate` verb that writes outside `.illuminate/`, and only to the explicit `--team-repo` path. No defaults, no implicit network. The planned `TeamRepoTarget::GitRemote` variant is deliberately gated for v3.1 behind `illuminate trust check` to enforce a config-linter pass before any cross-machine write. See `docs/trust-model.md`.
+
+**Examples.**
+
+```bash
+# Publish the most recent trail session as a summary into a sibling team repo:
+LATEST=$(ls -1t .illuminate/trail/*.jsonl | head -1)
+illuminate publish --trail "$LATEST" --redaction summary --team-repo ../team-illuminate
+
+# Decision-only — front-matter and `commit_sha` only, body intentionally empty:
+illuminate publish --trail "$LATEST" --redaction decision \
+    --team-repo ../team-illuminate --commit-sha "$(git rev-parse HEAD)"
+
+# Install the pre-commit hook so every git commit auto-publishes a summary:
+illuminate publish --install-hook --team-repo ../team-illuminate
+
+# Decide per-commit at the hook level:
+ILLUMINATE_PUBLISH_REDACTION=full git commit -m "ship the LRU cache"
+```
+
+**Exit codes.** `0` on success or `discard`. Non-zero on missing flags or filesystem errors.
+
 ---
 
 ## Decision / pattern / failure commands
