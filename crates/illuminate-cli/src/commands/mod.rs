@@ -3,6 +3,7 @@ pub mod audit_diff;
 pub mod audit_pr;
 pub mod bootstrap;
 pub mod decisions;
+pub mod enrich;
 pub mod entities;
 pub mod explain;
 pub mod export;

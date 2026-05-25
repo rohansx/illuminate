@@ -1534,6 +1534,7 @@ dependencies = [
  "illuminate-audit",
  "illuminate-bootstrap",
  "illuminate-embed",
+ "illuminate-enrich",
  "illuminate-extract",
  "illuminate-index",
  "illuminate-mcp",
@@ -1565,6 +1566,23 @@ name = "illuminate-embed"
 version = "0.8.0"
 dependencies = [
  "fastembed",
+ "thiserror",
+]
+
+[[package]]
+name = "illuminate-enrich"
+version = "0.8.0"
+dependencies = [
+ "chrono",
+ "illuminate",
+ "illuminate-embed",
+ "illuminate-index",
+ "illuminate-route",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
  "thiserror",
 ]
 

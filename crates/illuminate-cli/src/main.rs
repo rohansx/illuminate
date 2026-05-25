@@ -302,6 +302,24 @@ enum Commands {
         json: bool,
     },
 
+    /// Enrich a prompt with relevant team context from the graph (pre-LLM, deterministic)
+    Enrich {
+        /// The developer's raw prompt
+        prompt: String,
+
+        /// Files the prompt is about (narrows code-graph queries)
+        #[arg(short, long, num_args = 0..)]
+        files: Vec<PathBuf>,
+
+        /// Soft cap on injected context length, in bytes
+        #[arg(long, default_value_t = 4096)]
+        max_bytes: usize,
+
+        /// Output format: human (default) | prompt | json
+        #[arg(long, default_value = "human", value_parser = ["human", "prompt", "json"])]
+        format: String,
+    },
+
     /// Explain why a file matters (which decisions, patterns, failures touch it)
     Explain {
         /// File path to explain
@@ -587,6 +605,12 @@ fn main() {
             max_nodes,
             json,
         } => commands::impact::run(files, index_db, depth, max_nodes, json),
+        Commands::Enrich {
+            prompt,
+            files,
+            max_bytes,
+            format,
+        } => commands::enrich::run(prompt, files, max_bytes, format),
         Commands::Explain { path, json } => commands::explain::run(path, json),
         Commands::Trail { cmd } => {
             commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io)
