@@ -1,24 +1,37 @@
 # Illuminate — Crate Reference
 
-Crate-by-crate breakdown: responsibility, public API surface, dependencies, and timeline. For the high-level architecture, see `ARCHITECTURE.md`. For specific components, see `INGESTION.md`, `AUDIT.md`, and `SCHEMA.md`.
+Crate-by-crate breakdown: responsibility, public API surface, dependencies, and timeline. For the high-level architecture, see `ARCHITECTURE.md`. For the product framing on top of these crates (v3: Enrich + Repo), see `PRODUCT_OVERVIEW.md`. For specific components, see `INGESTION.md`, `AUDIT.md`, and `SCHEMA.md`.
 
 ---
 
 ## Workspace layout
 
+**Shipped through v0.18 — 14 crates:**
+
 ```
 crates/
-├── illuminate-core      # graph API on top of ctxgraph
-├── illuminate-trail     # session capture (claude/cursor/codex)
-├── illuminate-extract   # NER pipeline (GLiNER, GLiREL, embeddings)
-├── illuminate-embed     # embeddings service
-├── illuminate-index     # tree-sitter code indexer
-├── illuminate-audit     # policy engine + graph queries
-├── illuminate-watch     # daemon harness (hosts trail watcher + workers)
-├── illuminate-reflect   # failure capture as Reflexion episodes
-├── illuminate-route     # subject-to-reading-plan generator (FTS5 + semantic RRF)
-├── illuminate-mcp       # MCP server (JSON-RPC)
-└── illuminate-cli       # binary
+├── illuminate-core       # graph API on top of ctxgraph
+├── illuminate-config     # shared illuminate.toml parsers
+├── illuminate-trail      # session capture (claude/cursor/codex)
+├── illuminate-extract    # NER pipeline (GLiNER, GLiREL, embeddings)
+├── illuminate-embed      # embeddings service
+├── illuminate-index      # tree-sitter code indexer (6 languages)
+├── illuminate-audit      # policy engine + graph queries
+├── illuminate-bootstrap  # cold-start population (5 sources)
+├── illuminate-watch      # daemon harness + git/GitHub ingestion
+├── illuminate-reflect    # failure capture as Reflexion episodes
+├── illuminate-route      # subject-to-reading-plan generator (FTS5 + semantic RRF)
+├── illuminate-wiki       # markdown layer + serve dashboard
+├── illuminate-mcp        # MCP server (JSON-RPC stdio + Streamable HTTP)
+└── illuminate-cli        # binary
+```
+
+**Planned for v3.0 — 2 additional crates:**
+
+```
+crates/
+├── illuminate-enrich     # pre-LLM prompt enrichment (Stage 1 of the v3 pipeline)
+└── illuminate-publish    # explicit publish gesture (Stage 4 of the v3 pipeline)
 ```
 
 The `illuminate-cli` crate is the only binary. Everything else is a library.
@@ -475,6 +488,120 @@ See `CLI.md` for full per-command documentation.
 
 ---
 
+## Planned crates (v3.x)
+
+The two crates below are designed but not yet implemented. They turn the existing substrate into the two-product v3 positioning (`PRODUCT_OVERVIEW.md` → Two Products, One Substrate).
+
+### `illuminate-enrich` (planned, v3.0)
+
+**Responsibility.** Pre-LLM prompt enrichment. Stage 1 of the v3 four-stage pipeline. Wraps the agent invocation, queries `illuminate-route` for a reading plan, fetches relevant decisions/patterns/failures from `illuminate-core`, and rewrites the prompt deterministically before the agent sees it. No LLM in the enrich path.
+
+**Key types (sketch).**
+
+```rust
+pub struct EnrichRequest {
+    pub raw_prompt: String,
+    pub repo_root: PathBuf,
+    pub files_hint: Vec<PathBuf>,    // optional, narrows code-graph queries
+    pub max_tokens: usize,           // budget for injected context
+}
+
+pub struct EnrichResponse {
+    pub enriched_prompt: String,
+    pub injections: Vec<Injection>,   // what was added, for trace/debug
+    pub graph_state_hash: [u8; 32],   // determinism receipt
+}
+
+pub struct Injection {
+    pub source: InjectionSource,      // Decision / Pattern / Failure / CodePath / Symbol
+    pub wiki_url: Option<String>,
+    pub content: String,
+    pub confidence: f32,
+}
+
+pub trait Enricher {
+    fn enrich(&self, req: EnrichRequest) -> Result<EnrichResponse>;
+}
+```
+
+**Public API.**
+
+```rust
+pub fn enrich_prompt(
+    graph: &Graph,
+    route: &dyn ReadingPlanGenerator,
+    embed: Option<&EmbedEngine>,
+    req: EnrichRequest,
+) -> Result<EnrichResponse>;
+```
+
+**Execution modes.**
+
+- **v3.0 — CLI wrapper.** `illuminate enrich -- claude code` wraps the agent process; intercepts the next prompt; rewrites; pipes to the agent. Most reliable since the agent never has to opt in.
+- **v3.1 — Pre-write hook.** Wires into Claude Code's `PreToolUse` hook (already used by `illuminate audit-hook`). Deterministic per write.
+
+**Dependencies.** `illuminate-core`, `illuminate-route`, `illuminate-embed`, `illuminate-index`, `serde`.
+
+**Determinism guarantee.** Same `(raw_prompt, repo_root, graph_state_hash)` → byte-identical `enriched_prompt`. Tested via property-style tests over the audit fixture corpus.
+
+**Timeline.** v3.0.
+
+---
+
+### `illuminate-publish` (planned, v3.0)
+
+**Responsibility.** Explicit publish gesture. Stage 4 of the v3 pipeline. New CLI verb `illuminate publish` and pre-commit hook. Redaction-level chooser. Writes a structured markdown page + json sidecar to a configurable team-repo path. Updates the local graph with a `Session` episode. Never uploads without explicit consent.
+
+**Key types (sketch).**
+
+```rust
+pub enum RedactionLevel {
+    Full,       // include the entire session transcript
+    Summary,    // include a generated summary + final code change
+    Decision,   // include only the decision page emitted from the session
+    Discard,    // do nothing
+}
+
+pub struct PublishRequest {
+    pub trail_path: PathBuf,         // path to .illuminate/trail/<file>.jsonl
+    pub redaction: RedactionLevel,
+    pub commit_sha: Option<String>,  // git commit this session produced
+    pub team_repo: TeamRepoTarget,   // local path | git remote
+}
+
+pub enum TeamRepoTarget {
+    LocalPath(PathBuf),              // e.g., ../team-illuminate
+    GitRemote { url: String, branch: String },
+}
+
+pub struct PublishResponse {
+    pub session_id: String,
+    pub written_paths: Vec<PathBuf>,
+    pub graph_episode_id: Option<String>,
+}
+```
+
+**Public API.**
+
+```rust
+pub fn publish(
+    graph: &mut Graph,
+    req: PublishRequest,
+) -> Result<PublishResponse>;
+
+pub fn install_pre_commit_hook(repo_root: &Path) -> Result<()>;
+```
+
+**Schema extension.** Adds a new `page_type: session` entry to `SCHEMA.md`. Existing `decision`, `pattern`, `failure`, `module` pages continue unchanged. Published sessions live in `team-illuminate/sessions/<date>-<slug>.md`.
+
+**Trust-model invariants.** `illuminate-publish` is the **only** crate that can write outside `.illuminate/`. Default-deny on uploads — `TeamRepoTarget::GitRemote` requires explicit config in `illuminate.toml` and prompts on first use. See `trust-model.md`.
+
+**Dependencies.** `illuminate-core`, `illuminate-trail` (to parse the source jsonl), `serde`, `chrono`, `git2` (optional, for remote pushes).
+
+**Timeline.** v3.0.
+
+---
+
 ## What's not its own crate (and why)
 
 A few things that *could* be crates but aren't:
@@ -483,7 +610,7 @@ A few things that *could* be crates but aren't:
 - **`illuminate-bootstrap`** — extracted in v0.4 to host agent-files / ADR / git-history / README sources cleanly. Now its own crate at `crates/illuminate-bootstrap/`.
 - **`illuminate-pii`** — PII stripping for LLM fallback. Lives inside `illuminate-extract::llm_extract` (gated on the optional `cloakpipe` Cargo feature) because it's tightly coupled to the LLM call path there, not in `illuminate-route`. Extract if multiple consumers need it.
 
-Resist the urge to over-decompose. The current 11 crates already exceeds many production Rust workspaces. Adding more crates per concern slows compile times and obscures the architecture.
+Resist the urge to over-decompose. The current 14 shipped crates (16 with the v3 planned ones) already exceed many production Rust workspaces. Adding more crates per concern slows compile times and obscures the architecture.
 
 ---
 
@@ -511,5 +638,7 @@ Resist the urge to over-decompose. The current 11 crates already exceeds many pr
 | `illuminate-route` | Reading-plan ranking tests across FTS5-only, semantic-only, and fused paths. |
 | `illuminate-mcp` | JSON-RPC contract tests. |
 | `illuminate-cli` | End-to-end smoke tests via `assert_cmd`. |
+| `illuminate-enrich` (planned) | Determinism property tests: same `(prompt, graph_state_hash)` → byte-identical output. Fixture-based golden tests for known repos. |
+| `illuminate-publish` (planned) | Round-trip tests for each `RedactionLevel`. Trust-model tests: assert no network call on `LocalPath` target. |
 
 Coverage target: 80%+ overall (per `rules/common/testing.md`).

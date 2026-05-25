@@ -1,245 +1,389 @@
-# Illuminate — Product Overview (v2)
+# Illuminate — Product Overview (v3)
 
 **Domain:** illuminate.sh
-**Tagline:** Compounding context for AI-coding teams.
-**Secondary line:** ESLint for intent — the linter, the wiki, and the memory your agents are missing.
+**Tagline:** GitHub for agents. Prompts are the new source code — version, share, and enrich them like you do code.
+**Secondary line:** Pre-prompt enrichment + prompt versioning + agent guarding, all local-first.
 
-> **Status:** v0.1 closed loop shipped May 2026. Trail capture (Claude Code), wiki layer, bootstrap, audit, MCP, GitHub Action all live. v0.2 (Cursor + auto-distill) and v0.3 (pre-write hook + adoption polish) on the roadmap. See `ROADMAP.md`.
-
----
-
-## The Problem
-
-AI coding agents now write a substantial fraction of production code. The tools to *generate* code have raced ahead. The tools to *remember* the reasoning behind that code, the failed attempts that shaped it, and the architectural decisions it has to respect — those have not.
-
-Three losses compound silently in every team using Claude Code, Cursor, or Codex:
-
-**1. Reasoning is lost the moment a session ends.**
-A developer iterates with an agent for an hour — exploring approaches, hitting dead ends, refining the spec, finally landing on an implementation. They commit the code. The session goes to `~/.claude/projects/<hash>.jsonl` on their laptop. The next reviewer sees the diff and not a word of why.
-
-**2. Decisions made today are forgotten by next week.**
-"We rejected Redis for caching because the deployment target doesn't allow stateful sidecars." Two weeks later, a different developer asks an agent to add caching. Agent suggests Redis. The decision is invisible to the agent and probably to the developer too.
-
-**3. Failures don't generalize.**
-An agent writes code that breaks production. The fix gets shipped. The lesson — *agents touching this module should know about race condition X* — exists only in the post-mortem doc nobody reads.
-
-Each loss alone is annoying. Together they mean the team's collective knowledge stays flat while code volume grows exponentially. Onboarding new hires gets harder. PR reviews get shallower. Agents drift.
-
-This is the problem Illuminate solves.
+> **Status (May 2026):** v0.1 → v0.18 shipped — capture, extract, audit, wiki dashboard, MCP stdio+HTTP, GitHub Action all live. This document is a **positioning reset**: the work that already shipped is the substrate; the two products framed below (Enrich, Repo) are the next-cycle build on top of it. See [`ROADMAP.md`](ROADMAP.md) for what shipped vs what's planned and [`CHANGELOG.md`](../CHANGELOG.md) for per-version detail.
 
 ---
 
-## The Insight
+## The Core Insight
 
-The answer isn't "ship better prompts" or "write more docs." Both have been tried for decades and don't work — humans don't maintain artifacts that don't directly produce code.
+For 30 years, software engineering versioned the wrong thing — and got lucky.
 
-The answer is a **flywheel** where every coding session, every architectural decision, and every failure becomes a source that feeds a structured graph, which then guards future agents from drift, which then surfaces decisions to humans when they need them.
+In the pre-AI era, humans wrote source code and compilers produced binaries. We versioned the **source** (human intent) because binaries could be regenerated cheaply. Git, GitHub, and the entire SCM industry exist because *source is the artifact worth preserving*.
+
+In the AI era, this assumption has quietly broken.
+
+Humans now write prompts. AI produces source code. The source code is the new *binary equivalent* — it's the machine output. The **prompt + reasoning + iteration** is the new source — it's the human intent.
+
+But we're still versioning the binaries. We commit code to git and throw away the prompts that produced it. The reasoning evaporates. The team's accumulated thinking exists only as scattered jsonl files on individual laptops.
+
+**Illuminate exists to fix this.** It's GitHub for agents — the version control, collaboration layer, and intelligence engine for the thing humans now actually write: prompts.
+
+---
+
+## Two Products, One Substrate
+
+Illuminate ships as one coherent system with two user-facing products, both powered by the same underlying decision graph and prompt index.
+
+### Product 1: Illuminate Enrich — The Pre-Prompt Optimizer
+
+Before a developer's prompt reaches Claude Code, Cursor, or Codex, Illuminate intercepts it, queries the team's accumulated context, and rewrites it to be more specific, grounded, and informed by relevant team decisions.
+
+The dev types: *"add caching to the txn endpoint"*
+
+Illuminate rewrites this (or surfaces additions) into: *"add caching to the txn endpoint at `src/payments/txn.rs`. Relevant past decisions: team rejected Redis 3mo ago due to deployment constraints (`wiki/decisions/2025-12-no-redis-payments.md`); team pattern for caching is LRU with 30s TTL (`wiki/patterns/lru-cache-with-ttl.md`). This module has had race-condition history — don't introduce mutex on the txn lock; lock-free atomics chosen (`wiki/failures/2026-02-race-condition-payments.md`)."*
+
+The agent receives the enriched prompt and produces materially better code on the first try. Fewer iterations. Less drift. Faster ship.
+
+**Why this is the wedge:**
+
+- **Visible value on every prompt.** The dev sees better generations immediately, not just when something goes wrong.
+- **Doesn't depend on agent cooperation.** Enrichment happens before the prompt reaches the agent, so it's deterministic — unlike post-hoc tools that hope the agent calls them.
+- **Free quality lift.** No model upgrade, no fine-tuning, no new infra. Just better context routing.
+- **Bottom-up adoption.** Devs install it because it makes *their* day better, not because management mandates it.
+
+> **Implementation status:** the substrate that makes enrichment possible (decision graph, semantic search, code-graph blast-radius, reading-plan generator in [`illuminate-route`](CRATES.md#illuminate-route)) already shipped through v0.18. The `illuminate-enrich` crate that wires this into a pre-LLM hook is **planned for v3.0** — see [`ROADMAP.md`](ROADMAP.md#v30--the-enrich-wedge).
+
+### Product 2: Illuminate Repo — GitHub for Agents
+
+A versioned, browsable, searchable record of every prompt the team has chosen to publish, the reasoning behind it, the code that resulted, and the decisions that emerged.
+
+Think `git log` for prompts. `git blame` for "why does this code exist?" GitHub's web UI for browsing your team's accumulated thinking.
+
+**Concretely:**
+
+- Every prompt → response → code change is captured locally as a session.
+- Devs explicitly publish sessions they want to share with the team (the `git commit` equivalent for prompts).
+- Published sessions live in a team-shared git repo of markdown + structured data.
+- Anyone on the team can browse, search, blame, and link to any past prompt.
+- Future agents query the repo as context when generating new code.
+
+**Why this matters:**
+
+- **Onboarding stops being broken.** New hires query the repo to understand "why does this team use LRU instead of Redis?" — they get the original prompt and reasoning, not a stale ADR.
+- **PR review gets its missing layer.** Reviewers see not just the diff but the prompt that produced it.
+- **Knowledge compounds.** Every published prompt makes future enrichment smarter, future agents better-guided, and future humans better-informed.
+- **Switching cost grows with usage.** A team six months in has a prompt history that can't be replicated by switching tools.
+
+> **Implementation status:** capture, wiki rendering, the browsable dashboard (`illuminate wiki serve`), and the markdown-as-source-of-truth schema already shipped through v0.18. The explicit publish gesture (`illuminate-publish` crate, pre-commit hook, redaction-level chooser) is **planned for v3.0** — see [`ROADMAP.md`](ROADMAP.md#v30--the-enrich-wedge).
+
+---
+
+## The Four-Stage Pipeline
+
+Illuminate's runtime is a four-stage pipeline. Every prompt flows through it:
 
 ```
-prompts captured → graph fed → agents guarded → failures captured → graph fed → ...
+   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
+   │  ENRICH  │ → │ GENERATE │ → │  CAPTURE │ → │  CURATE  │
+   │          │   │ (agent)  │   │          │   │          │
+   │ pre-LLM  │   │  Claude  │   │  local   │   │  dev     │
+   │ context  │   │  Cursor  │   │  trail   │   │  publishes│
+   │ injection│   │  Codex   │   │  jsonl   │   │  to team │
+   └──────────┘   └──────────┘   └──────────┘   └──────────┘
+        ↑                                            │
+        │                                            ▼
+        │                                       ┌──────────┐
+        │                                       │   TEAM   │
+        └───────────────────────────────────────│   REPO   │
+                  (graph indexes published       │ (github  │
+                   prompts, decisions, patterns) │  for     │
+                                                 │  agents) │
+                                                 └──────────┘
+                                                      │
+                                                      ▼
+                                                ┌──────────┐
+                                                │   GUARD  │
+                                                │  + AUDIT │
+                                                │ (linter, │
+                                                │  reflect)│
+                                                └──────────┘
 ```
 
-The loop tightens with every cycle. After three months, the graph holds enough context that new hires query it instead of asking seniors. After six months, agents working on the codebase produce noticeably less drift than agents working on uninstrumented codebases. After a year, switching off Illuminate means losing the team's accumulated engineering memory — which is what makes it a real product, not a feature.
+**Stage 1: Enrich (Product 1).** Before the prompt reaches the agent, the team's graph is queried for relevant context, which is injected into the prompt.
 
-This is what "compounding context" means. The graph gets stronger with use. That's the moat.
+**Stage 2: Generate.** The enriched prompt goes to Claude Code / Cursor / Codex. The agent produces code.
+
+**Stage 3: Capture.** The entire session — prompt, response, iteration, code change — is captured locally. This is automatic and silent. Nothing leaves the dev's machine.
+
+**Stage 4: Curate.** When the dev is ready (usually at commit time), Illuminate asks: *publish this session to the team repo?* The dev chooses: publish in full, publish summary, publish only the decision, or discard. Nothing is shared without consent.
+
+The team repo (Product 2) is the substrate. It feeds back into Stage 1 — every published prompt makes future enrichment smarter. The loop tightens.
+
+Alongside the pipeline, Illuminate runs two guard rails (both shipped through v0.18):
+
+- **Audit (linter).** Before the agent writes code, it cross-references the proposed change against the graph. Catches drift the enrichment didn't prevent. See [`AUDIT.md`](AUDIT.md).
+- **Reflect (failure capture).** When generated code fails (test breaks, incident, runtime error), the failure context is captured and added to the graph. Future agents touching the same area see warnings.
+
+| Stage | Shipped? | Crate |
+|---|---|---|
+| Enrich | Planned (v3.0) | `illuminate-enrich` (planned) |
+| Generate | n/a — runs in the host agent (Claude Code, Cursor, Codex) | — |
+| Capture | ✅ v0.1+ | `illuminate-trail` |
+| Curate | Partial — manual `illuminate failure log` and dashboard quick-add ship today; the per-session publish gesture is v3.0 | `illuminate-publish` (planned) |
+| Guard / Audit | ✅ v0.1+ | `illuminate-audit`, `illuminate-mcp` |
+| Reflect | ✅ v0.1+ | `illuminate-reflect` |
 
 ---
 
-## What It Does
+## The Trust Model
 
-Illuminate has three input mechanisms, one knowledge graph, and two output surfaces.
+This is the part that makes Illuminate viable. Get it wrong and developers won't install it. The full spec lives in [`trust-model.md`](trust-model.md); a summary follows.
 
-### Three input mechanisms
+### What stays local, always
 
-**1. Prompt-trail capture.** A daemon watches Claude Code, Cursor, and Codex sessions. Every coding session is automatically captured: the prompt, the iteration, the failed approaches, the final plan. Stored locally as raw "trail" files, never sent to a third party. From these, the system extracts decisions and patterns into the graph.
+- **Every session, captured automatically.** Stored in `.illuminate/trail/` on the dev's machine. Gitignored. Never auto-uploaded. Never seen by management.
+- **Personal scratch space.** Half-formed thoughts, dead ends, embarrassing prompts, debugging spirals — all stay local.
+- **Enrichment queries.** When the team graph is queried to enrich a prompt, the query happens locally against a local mirror.
 
-**2. Decision ingestion.** Git commits, PR descriptions, and merge messages are scanned by local ONNX models (GLiNER for entities, GLiREL for relations, all-MiniLM-L6-v2 for embeddings) to surface high-signal architectural decisions. LLM fallback ~30% of the time for ambiguous cases, with PII stripped first. The team can also write decisions explicitly in `illuminate.toml`.
+### What gets published, only with explicit consent
 
-**3. Failure capture (Reflect).** When an agent's code fails — tests break, production incident, runtime error — the failure context (root cause, fix, affected files) is recorded. Future agents touching the same area see warnings derived from the failure.
+- **Curated sessions.** The dev chooses what to publish, with what redaction level (full session / summary / decision only).
+- **Decisions, patterns, and failures.** Surfaced from published sessions, written to the team repo as markdown.
+- **No silent uploads.** Ever. No "anonymized telemetry" by default. No "team analytics opt-out checkbox you missed."
 
-### One knowledge graph
+### What's never built
 
-A bi-temporal, append-only knowledge graph stored as a single SQLite file in `.illuminate/graph.db`. Entities are deduplicated; relationships are typed; everything is timestamped. Built on top of `ctxgraph`. Local-first, deterministic queries, no LLM in the query path.
+- **No individual scoring.** Illuminate will not produce dashboards rating individual developers' prompt quality. Period.
+- **No management surveillance views.** No "see what your team is prompting" admin dashboard.
+- **No prompt leaderboards.** Aggregate team-level trends are possible only if a team explicitly opts in *and* the data is genuinely anonymized at the source.
 
-### Two output surfaces
-
-**1. The Linter (machine-readable).** When an agent proposes a change via MCP, Illuminate audits the proposal against the graph and `illuminate.toml` policies. Returns: violations, warnings, relevant past decisions, prior failures in the same area. The agent course-corrects *before* writing code.
-
-**2. The Wiki (human-readable).** Markdown pages, browsable in any editor or via Obsidian. Decisions, patterns, anti-patterns, failures — all linked, all searchable. Auto-maintained by the system; humans review distilled pages via PR. New hires read the wiki to understand "how this team thinks." Senior engineers query it when they forget why a past decision was made.
+This isn't a marketing constraint. It's a structural commitment. The moment Illuminate enables individual surveillance, devs game it, sabotage it, or refuse to install it — and the whole compounding-knowledge thesis collapses. The local-first architecture *enforces* the trust model, it doesn't just promise it.
 
 ---
 
 ## What It's Not
 
-- **Not a replacement for git, GitHub, or GitLab.** It runs alongside them. It uses git notes for some metadata, but it doesn't replace any existing version control.
-- **Not a prompt management SaaS.** Tools like Langfuse, PromptLayer, and Braintrust manage *production API prompts*. Illuminate captures *development-time coding sessions*, which is a different artifact entirely.
-- **Not a generic AI-powered wiki.** Notion AI and similar products bolt LLMs onto existing knowledge bases. Illuminate is the other direction: knowledge accrues as a side effect of normal coding work.
-- **Not a code review tool.** CodeRabbit, Qodo, and Graphite Agent review PRs after the fact. Illuminate prevents drift *before* code is written, and captures context the reviewer would otherwise lack.
-- **Not a hosted SaaS.** Local-first, self-hosted, your data never leaves your infrastructure. The graph and wiki sit in your repo or on your machine.
+- **Not surveillance software.** No individual scoring. No management dashboards. No prompt rating for HR. If a competitor builds that, it's a different product.
+- **Not a replacement for git or GitHub.** Runs alongside them. The team repo can literally be a GitHub repo with structured markdown.
+- **Not a hosted SaaS by default.** Local-first. Self-hostable. Hosted illuminate.sh is an optional convenience layer added later, not the product itself.
+- **Not a prompt management tool for production APIs.** Tools like Langfuse, PromptLayer, and Braintrust manage *production prompts shipped to end users*. Illuminate handles *development-time coding sessions*, a different artifact entirely.
+- **Not a generic AI-powered wiki.** The wiki is a byproduct of the loop, not the product. The product is the prompt-versioning + enrichment system.
+- **Not a code review tool.** Adjacent space, different artifact (Illuminate owns the prompt + reasoning trail, not the review verdict).
+- **Not competing with spec-kit.** spec-kit handles work *before* code is written (intent). Illuminate handles work *during and after* code is written (reality). They compose — Illuminate can ingest spec-kit's constitution and specs as decision sources.
 
 ---
 
-## How It Works in Practice
+## A Day in the Life
 
-A walkthrough of a single dev's day with Illuminate installed:
+A walkthrough of a single dev's day with Illuminate installed, showing both products in motion:
 
-**9:00 AM — Dev opens Claude Code in `payments-service` repo.**
-The daemon notices a new session start. It silently begins capturing.
+**9:00 AM — Dev opens Claude Code in `payments-service`.**
+The `illuminate-trail` daemon notices a new session start. Capture begins silently.
 
-**9:15 AM — Dev asks: "Add Redis caching to the transaction lookup endpoint."**
-Before Claude Code writes any code, it calls `illuminate_audit` (configured as a required pre-write step in `CLAUDE.md`). The audit returns: *"Past decision (3 months ago): Redis rejected for this service due to stateful sidecar restrictions on the deployment target. Alternative used: in-memory LRU with 30s TTL. See `wiki/decisions/2025-12-no-redis-payments.md`."* Claude Code surfaces this to the dev, suggests the LRU approach instead.
+**9:15 AM — Dev types: "Add caching to the transaction lookup endpoint."**
 
-**9:45 AM — Implementation lands. Dev commits.**
-The session is finalized in the trail. The decision-extractor runs, finds nothing materially new (an existing pattern was reused), so the graph isn't updated.
+Before Claude Code sees this prompt, `illuminate-enrich` intercepts it. It:
+
+1. Identifies "caching" as a concept the team has decided on.
+2. Queries the graph: finds `Decision::NoRedis` (3 months old) and `Pattern::LRU30s`.
+3. Identifies "transaction lookup endpoint" → `src/payments/txn.rs` via the code graph.
+4. Queries the graph: finds `Failure::RaceConditionPayments` (2 months old).
+5. Rewrites the prompt with this context inline.
+
+Claude Code receives the enriched prompt and produces code that uses the team's LRU pattern, in `src/payments/txn.rs`, with the race-condition warning addressed. **Right on the first try.** No iteration needed.
+
+**9:30 AM — Dev runs `git commit`.**
+
+A pre-commit hook asks: *"Publish this session's reasoning to the team repo?"* The dev clicks "publish summary." Illuminate writes a structured markdown page to `team-illuminate/sessions/2026-05-25-add-caching.md` linking to the commit, summarizing the reasoning, and updating the graph.
 
 **11:00 AM — Different dev, different repo, opens Cursor.**
-Same daemon, separate per-repo graph. Same workflow.
+
+Same daemon, separate per-repo trail. Same enrichment pipeline. The team graph is shared via the team repo; each repo's graph is local but indexes the team repo's published content.
 
 **3:00 PM — A flaky test reveals an old race condition.**
-Dev fixes it, writes a brief post-mortem in `wiki/failures/`. The reflect ingester picks it up and adds it to the graph. From now on, any agent touching the affected module will see the warning.
+
+Dev fixes it, writes a brief post-mortem. The `illuminate-reflect` ingester picks it up and adds it to the graph. From now on, any agent touching the affected module will see the warning *during the enrich stage*, before the prompt is even sent.
 
 **Next week — New hire joins.**
-They run `illuminate wiki serve` locally, browse the team's accumulated decisions, patterns, and failures. They ask: "Why does the payments service use in-memory caching instead of Redis?" The wiki answers in one click. They didn't have to ping anyone on Slack.
 
-This is what the loop looks like in motion.
+They `cd` into the team repo, run `illuminate browse`, and read the team's published sessions in order: decisions made, patterns adopted, failures avoided. They ask: "Why does the payments service use in-memory caching instead of Redis?" The repo answers in one click — original prompt, reasoning, alternatives considered, the LRU pattern that emerged. They didn't have to ping anyone on Slack. They're productive on day two.
 
 ---
 
 ## Architecture (high-level)
 
-Ten Rust crates, one binary, one SQLite file per repo. See `ARCHITECTURE.md` for the full diagrams.
+Sixteen Rust crates planned (fourteen shipped through v0.18, two planned for v3.0), one binary, one SQLite file per repo. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full diagrams and [`CRATES.md`](CRATES.md) for per-crate detail.
+
+**Shipped (v0.1 → v0.18):**
 
 - `illuminate-core` — graph + SQLite (built on `ctxgraph`)
-- `illuminate-trail` — prompt session capture (Claude Code, Cursor, Codex hooks)
+- `illuminate-config` — shared `illuminate.toml` parsers
+- `illuminate-trail` — automatic session capture (Claude Code, Cursor, Codex)
 - `illuminate-extract` — local NER (GLiNER + GLiREL via ONNX)
 - `illuminate-embed` — local embeddings (all-MiniLM-L6-v2)
-- `illuminate-index` — code indexer (tree-sitter)
-- `illuminate-audit` — policy engine + graph queries
-- `illuminate-reflect` — failure capture and ingestion
-- `illuminate-route` — LLM fallback router (used sparingly, ~30% of extraction)
-- `illuminate-mcp` — JSON-RPC server exposing audit tools to agents
-- `illuminate-cli` — `illuminate init`, `illuminate wiki`, `illuminate audit`, etc.
+- `illuminate-index` — code indexer (tree-sitter, six languages)
+- `illuminate-audit` — policy engine + drift detection (the linter)
+- `illuminate-bootstrap` — five cold-start sources
+- `illuminate-watch` — daemon harness + git/GitHub ingestion
+- `illuminate-reflect` — failure capture (Reflexion episodes)
+- `illuminate-route` — reading-plan generator (FTS5 + semantic RRF)
+- `illuminate-wiki` — markdown layer + dashboard
+- `illuminate-mcp` — JSON-RPC server exposing tools to agents (stdio + HTTP)
+- `illuminate-cli` — user-facing binary
 
-Compiled to a single binary. No Docker, no Python, no Neo4j, no cloud.
+**Planned (v3.0):**
+
+- `illuminate-enrich` — pre-LLM prompt enrichment (Product 1's wedge crate)
+- `illuminate-publish` — explicit publish gesture, redaction-level chooser, pre-commit hook
+
+Compiled to a single binary. No Docker, no Python, no Neo4j, no cloud required.
 
 ---
 
 ## Positioning
 
-**Privacy-first.** All capture is local. The graph is local. Wiki is local. PII is stripped before any LLM fallback. Self-host or run entirely offline.
+**Prompts are the new source code.** Illuminate is the version control, collaboration layer, and intelligence engine for them. GitHub for agents.
 
-**Deterministic.** Queries against the graph are deterministic — no LLM in the audit path means the same code change gets the same audit result every time. Reproducible, debuggable, gradable.
+**Local-first.** All capture is local. All enrichment is local. All audits are local. Publishing to the team repo is explicit and consensual.
 
-**Cheap.** ~$0.30 per 1,000 episodes ingested vs Graphiti's $1.80 (because most extraction runs locally on ONNX). Free for the query path entirely.
+**Deterministic enrichment.** No LLM in the enrich path means the same prompt + graph state produces the same enriched output. Reproducible, debuggable, fast.
 
-**Compounding.** The graph gets stronger with use. A team three months in produces materially better-guided agents than a team that just installed it. Switching cost grows with usage.
+**Cheap.** ~$0.30 per 1,000 sessions ingested (mostly local ONNX). Free at the enrichment and query paths. No per-seat SaaS pricing until the optional hosted layer.
 
-**Built on `ctxgraph`.** The bi-temporal knowledge graph engine is its own open-source project (2.4× F1 vs Graphiti, ~250× faster). Illuminate is the product layer on top.
+**Compounding.** The team repo gets stronger with use. A team six months in has materially better enrichment than a team that just installed it. The switching cost grows with usage.
+
+**Built on ctxgraph.** The bi-temporal knowledge graph engine is its own open-source project (2.4× F1 vs Graphiti, ~250× faster). Illuminate is the product layer.
 
 ---
 
 ## Existing Landscape
 
-Verified competitors and adjacent tools as of May 2026:
+**Prompt-to-code lineage (closest):**
+- `usegitai.com` — tracks AI-authored lines with git notes. Narrower (no graph, no enrich, no publish flow). Cloud-first.
+- `Ekaanth/blameprompt` — open-source git-blame-for-prompts. Capture only, no graph.
 
-**Closest competitors (prompt-to-code lineage):**
-- `usegitai.com` (Git AI) — closest existing product. Tracks AI-authored lines with git notes, has an `/ask` skill for future agents to query original intent. Strong execution. Narrower scope (no graph, no audit, no wiki). Cloud-first.
-- `Ekaanth/blameprompt` — open-source git-blame-for-prompts. Local-first. Solid capture mechanism, no graph or audit layer.
+**Spec-driven development (complementary):**
+- `github/spec-kit` — 95k stars, structured pre-code workflow. Illuminate complements: spec-kit captures planned intent, Illuminate captures actual reality. Likely ships as a spec-kit extension in addition to standalone.
 
 **Karpathy LLM Wiki implementations:**
-- The original gist (`karpathy/442a6bf555914893e9891c11519de94f`)
-- `rohitg00`'s LLM Wiki v2 — extends with quality scoring, supersession, mesh sync
-- `jgoldfed/keppi` — graph traversal CLI for markdown wikis
+- Original gist and derivatives. Personal-knowledge focused. Illuminate is the team-coding-workflow specialization.
 
-**Knowledge graph engines (substrate):**
-- `getzep/graphiti` — primary baseline. Higher cost, slower, requires Python and Neo4j.
-- `ctxgraph` — Illuminate's underlying engine. Already public.
+**Code knowledge graphs (substrate-adjacent):**
+- `tirth8205/code-review-graph` — structural code graph for token-efficient review. Complementary to Illuminate's decision graph. `illuminate-index` does the rust-native subset needed for audit queries.
 
-**Prompt management (different problem, included for completeness):**
-- Langfuse, PromptLayer, Braintrust, PromptHub, Agenta, LangSmith — production prompt management for API-served LLM applications. Adjacent space, different artifact.
+**Session-capture utilities:**
+- `getagentseal/codeburn` — multi-tool session parser for cost observability. Different output (cost dashboards). Useful as a reference for session-format reverse-engineering.
 
-No existing tool ships the full capture → distill → guard → reflect loop. The components exist independently; the integration is the product.
+**Prompt management (different problem):**
+- Langfuse, PromptLayer, Braintrust, PromptHub — production API prompt management. Illuminate handles development-time coding sessions, a different artifact entirely.
+
+No existing tool ships the full enrich → capture → curate → publish → guard loop for coding sessions. Components exist independently; the integration is the product.
 
 ---
 
 ## Why It Could Work
 
-- **The pain is real and growing.** Every team using AI coding agents at scale hits drift. The HN thread "Do we need a new GitHub for AI coding era?" hit the front page in late 2025 because the complaint is universal.
-- **The artifact is new.** The prompt + reasoning + plan trail is a new kind of engineering artifact. No existing tool owns it. Format and tooling are still up for grabs.
-- **Local-first matches the buyer.** AI companies in regulated verticals (Harvey, Abridge, Hippocratic AI) cannot ship dev prompts to a third-party SaaS. Local-first is table stakes for that segment.
-- **Onboarding is the killer use case.** "New hires query the team wiki instead of pinging seniors" is concrete, measurable, and procurement-ready. It's the user story to lead with.
-- **Compounding moat.** The graph gets more valuable with every session. Three months of accumulated context can't be replicated by switching to a competitor.
+- **The framing is true and unexploited.** Prompts genuinely are the new source code. No one has built proper version control for them yet. The category is open.
+- **Enrichment is a visible win.** Better generations on every prompt is a tangible value prop that doesn't require behavior change from devs.
+- **GitHub-comparison is sticky.** "GitHub for agents" lands in five seconds. Every developer instantly knows what it means.
+- **Local-first matches the buyer.** AI companies in regulated verticals (Harvey, Abridge, Hippocratic AI) cannot ship dev prompts to a third-party SaaS. Local-first is non-negotiable, and it's the architecture from day one.
+- **Onboarding is the killer use case.** "New hires read the team repo to understand how this team thinks" is concrete and procurement-ready.
+- **Compounding moat.** Six months of published team prompts can't be replicated by switching tools. Switching cost grows with usage.
+- **Spec-kit ecosystem is a tailwind, not a competitor.** 95k stars of validated demand for AI-coding workflow tooling. Illuminate fits as both standalone and as a spec-kit extension.
 
 ## Why It Might Not Work
 
 Honest list:
 
-- **Cold start.** Day-one of installation, the graph is empty and the linter has nothing to enforce. Bootstrapping needs explicit attention. (Mitigation: ingest existing git history, parse `CLAUDE.md` and `AGENTS.md`, optional onboarding interviews. See `BOOTSTRAP.md`.)
-- **Distillation quality.** When a session captures something, deciding *what's worth saving* is a judgment call. Wrong calls pollute the wiki and erode trust. (Mitigation: ship dev-triggered distill in v0.1, layer on automatic classification only when accuracy is proven.)
-- **Agent-calls-audit reliability.** MCP tools alone aren't enough — agents skip them. Need pre-write hooks, `CLAUDE.md` directives, *and* PR-time CI gates working in concert. (Mitigation: ship all three; pick the strongest for the demo.)
-- **Karpathy LLM Wiki hype is at peak.** Many builders will ship "wiki for X" products in the next quarter. Differentiation has to be the loop, not the wiki itself. (Mitigation: lead with the linter and the audit demo; the wiki is a side benefit.)
-- **Solo founder bandwidth.** This is a substantial product. v0.1 alone is ~3 months of focused work. Day job is a real constraint. (Mitigation: scope ruthlessly. Ship the loop in its smallest form. Defer everything else.)
+- **Enrichment quality is the technical bet.** If enriched prompts aren't visibly better than raw prompts, the product has no wedge. Requires real engineering on the query-and-context-injection pipeline.
+- **Cold start is hard.** Day one of installation, the team repo is empty. Enrichment has no context. Bootstrapping (parsing existing CLAUDE.md, ADRs, git history, spec-kit artifacts) needs real effort. *Mitigated by the shipped [`BOOTSTRAP.md`](BOOTSTRAP.md) pipeline — 5 sources, idempotent, sub-5-minute runs on a 6-month-old repo.*
+- **Curation friction.** If devs find "publish this session?" prompts annoying, they'll skip them. Need to find the right default (auto-publish on commit? prompt every time? batched weekly?) and let teams tune.
+- **Prompt-as-source framing is novel and needs evangelism.** People will dismiss it at first ("why would I version a prompt?"). Need landing-page copy, demos, talks that make the framing land. *See [`philosophy.md`](philosophy.md) for the manifesto.*
+- **Solo founder bandwidth.** Substantial product. v3.0 alone is 6–8 weeks of focused work on top of the v0.18 substrate. Day job is a real constraint.
+
+Mitigations:
+
+- Ship enrichment quality as the v3.0 demo. If enrichment doesn't visibly improve generations, kill the wedge.
+- Bootstrap from every available source on `illuminate init` (CLAUDE.md, ADRs, git history, spec-kit, existing wikis). *Already shipped — see [`BOOTSTRAP.md`](BOOTSTRAP.md).*
+- Default to "publish summary on git commit" with one-click override. Friction minimized.
+- Lead public communication with the enrichment demo (visible quality win) before the prompt-as-source manifesto (philosophical pitch).
+- Scope ruthlessly. v3.0 is enrich + publish on top of the existing capture/audit/wiki substrate. Cursor/Codex enrich hooks, hosted cloud, etc., are v3.1+.
 
 ---
 
 ## Build Plan
 
-See `ROADMAP.md` for full milestone detail. Summary:
+> **What already shipped (v0.1 → v0.18).** The substrate is real and end-to-end: trail capture (Claude Code, Cursor, Codex), local NER pipeline, audit + policy engine (with `decision_ref`, `evidence`, `wiki_url`, `trace_id`), MCP server (stdio + Streamable HTTP), GitHub Action, bootstrap (5 sources), wiki dashboard at `illuminate wiki serve` (home / browse / search / audit playground / JSON API / quick-add form). 14 crates, 650+ tests passing. See [`CHANGELOG.md`](../CHANGELOG.md) and [`ROADMAP.md`](ROADMAP.md#whats-shipped-v01--v018).
 
-### v0.1 — Closed loop, narrow scope (target: 8-10 weeks)
+The v3 build plan picks up from v0.18 and targets the two wedge crates that turn the substrate into the two-product story above.
 
-The absolute minimum that demonstrates the flywheel:
+### v3.0 — The Enrich Wedge (target: 6–8 weeks)
 
-1. **`illuminate-core`** (already done in `ctxgraph`) — the substrate
-2. **`illuminate-trail`** — Claude Code session capture daemon, writes to `.illuminate/trail/`
-3. **`illuminate-extract`** — local NER pipeline (GLiNER + embeddings) extracting decisions from trail + git history
-4. **`illuminate-audit`** — MCP tool exposing audit-before-write to agents
-5. **`illuminate-cli`** — `illuminate init`, `illuminate audit`, `illuminate wiki serve`
-6. **Markdown wiki rendering** — graph → human-browsable pages
+The minimum that demonstrates **both products** in motion on top of the existing substrate:
 
-Skip in v0.1: Cursor/Codex hooks (Claude Code only), automatic distill (dev-triggered only), reflect integration (manual log only), dashboards, analytics, auth, anything cloud.
+1. **`illuminate-enrich`** — pre-LLM prompt enrichment hook. Wraps the agent invocation (CLI wrapper first; pre-write hook second). Queries `illuminate-route` for a reading plan + relevant decisions/patterns/failures; injects them into the prompt deterministically. *The wedge crate.*
+2. **`illuminate-publish`** — explicit publish gesture. New CLI verb `illuminate publish` and pre-commit hook. Redaction-level chooser (full session / summary / decision-only / discard). Writes to a configurable team repo path (defaults to a sibling `team-illuminate/` directory or a configured git remote).
+3. **`illuminate browse`** — terminal UI over published sessions. Search, blame ("who prompted this code?"), open original session jsonl in `$EDITOR`.
+4. **Trust-model enforcement.** Default-deny on uploads. No `.illuminate/trail/` ever crosses a network boundary. `illuminate trust check` lints the config.
+5. **Enrichment demo artifact.** One 60-second video: raw prompt → enriched prompt → noticeably-better generation. Single most important launch artifact.
 
-Ship as open-source rust crates + binary. Single HN launch post.
+Skip in v3.0:
 
-### v0.2 — Broaden capture (target: 4-6 weeks after v0.1 ships)
+- Cursor / Codex *enrich* hooks (Claude Code only — capture already works for all three).
+- LLM-assisted summary at publish time (use a deterministic template).
+- Hosted cloud.
+- Cross-repo decision sharing.
 
-- Cursor + Codex hooks
-- Reflect ingester (failures from CI logs, sentry, manual reports)
-- LLM-classified distill (with human-in-the-loop review)
-- Per-repo `illuminate.toml` policies
+### v3.1 — Broaden Capture & Curation (target: 6–8 weeks after v3.0)
 
-### v0.3 — Polish + adoption (target: ongoing)
+- Cursor + Codex enrich hooks.
+- LLM-assisted distill at publish time (with human-in-the-loop preview).
+- `spec-kit-illuminate` — extension that ingests spec-kit's constitution and specs as decision sources.
+- Reflect ingester for CI logs / Sentry / PagerDuty (the manual `failure log` flow shipped in v0.11; this automates it).
+- Per-repo enrichment policies in `illuminate.toml`: which decisions to surface for which paths, max-token budget per enrich call, dampening for low-confidence decisions.
 
-- Pre-write hook for Claude Code (deterministic audit trigger, not MCP-dependent)
-- PR-time CI integration (GitHub Action)
-- Wiki search (semantic + grep)
-- Bootstrap helpers (parse existing ADRs, CLAUDE.md, etc.)
+### v3.2 — Polish + Adoption (target: ongoing)
 
-### v0.4+ — Commercial layer (only after meaningful OSS adoption)
+- Self-coaching dashboard (local-only, dev-owned, never shared upward) — "your last 10 prompts, what enrichment added, what the agent did with it." Pure dev value, never aggregated.
+- Wiki search v2 (semantic + grep with ranking weights per page type).
+- Bootstrap helpers for spec-kit constitutions, AGENTS.md variants, additional ADR formats.
+- VS Code / Cursor / Zed editor extensions wrapping `illuminate enrich` and `illuminate publish` (thin wrappers, not new surfaces).
 
-- Hosted graph mirror (optional, opt-in)
-- Team dashboards
-- Cross-repo decision sharing
-- Enterprise auth + RBAC
+### v3-cloud — Optional Hosted Layer
 
-Don't build any of v0.4 until v0.1-v0.3 has 50+ teams using it organically.
+Only after meaningful OSS adoption (50+ teams):
+
+- Hosted illuminate.sh — team repo mirror with faster search and queries.
+- Cross-repo decision sharing (with consent — see [`trust-model.md`](trust-model.md)).
+- Enterprise SSO + audit logs.
+- Multi-team graph federation.
+
+Strictly opt-in. Self-hosted is always a first-class option.
 
 ---
 
 ## Open Questions
 
-1. **First user.** Self-dogfood on internal repos? Design partners? Solo dogfooding on personal projects?
-2. **Distill default.** Dev-triggered, rule-based, or LLM-classified? (Recommendation: dev-triggered for v0.1.)
-3. **Wiki source-of-truth.** Markdown pages → graph index, or graph → markdown export? (Recommendation: markdown is source-of-truth, graph indexes it. Easier to reason about, easier to git-version. See `SCHEMA.md`.)
-4. **Distribution.** Single rust binary via cargo + curl install? Homebrew? VS Code extension wrapper? (Recommendation: cargo install + curl bash one-liner for v0.1.)
-5. **License.** MIT for the crates, or AGPL to discourage closed-source forks? (Recommendation: MIT for adoption, build commercial moat through hosted features later.)
+1. **First user.** Self-dogfood on Utkrushta repos? CloakPipe-adjacent design partners? Solo dogfooding on personal projects? *Recommendation: solo dogfood, then 3–5 design partners.*
+
+2. **Curation default.** Auto-publish summary on git commit (one-click override) vs. always-ask vs. never-publish-by-default? *Recommendation: auto-publish summary on commit, with one keystroke to opt out. Friction has to be near-zero or devs will skip.*
+
+3. **Team repo format.** Standard git repo with structured markdown + json, or proprietary format with conversion tools? *Recommendation: standard git + markdown. No lock-in. Editor-agnostic. Greppable.* (Already shipped: markdown is the source-of-truth in `wiki/` — extending the same convention to published sessions.)
+
+4. **Enrichment trigger.** MCP tool (agent has to call it) vs. CLI wrapper (intercepts the call) vs. pre-write hook (deterministic)? *Recommendation: CLI wrapper for v3.0 (most reliable, no agent cooperation needed), pre-write hook for v3.1.*
+
+5. **License.** MIT for the crates, or AGPL to discourage closed-source forks? *Recommendation: MIT for the core crates (maximize adoption). Commercial moat through hosted features later, not through licensing.* (Already shipped: MIT.)
+
+6. **Hosted timeline.** When to start building the cloud product? *Recommendation: not until v3.0 + v3.1 ship and have 50+ active teams. Premature cloud kills startups; the OSS adoption story funds the cloud product.*
 
 ---
 
 ## Next Steps
 
-- Validate end-to-end extraction accuracy on a real codebase before shipping v0.1
-- Decide on distillation default and wiki source-of-truth question
-- Land `ARCHITECTURE.md` and `SCHEMA.md` (done)
-- Pivot illuminate.sh landing page to the new positioning
-- Archive the old illuminate-as-OSS-copilot framing (done — see `docs/old/`)
+In order:
+
+1. **Validate enrichment end-to-end on a real codebase.** Take a 6+ month repo (one of your own works — Utkrushta is a candidate). Manually construct what enriched prompts would look like for 10 real prompts from your history. Compare generation quality with/without enrichment. If the difference is visible, ship. If not, fix the pipeline before going public.
+
+2. **Add `illuminate-enrich` and `illuminate-publish` to [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`CRATES.md`](CRATES.md)** with their own data-flow diagrams. *Done as part of this v3 reset.*
+
+3. **Land [`trust-model.md`](trust-model.md)** — the explicit local-vs-shared boundary document. Critical for adoption; devs will read this before installing. *Done as part of this v3 reset.*
+
+4. **Land [`philosophy.md`](philosophy.md)** — the "prompts are the new source code" manifesto. Public-facing essay. Could be the launch post. *Done as part of this v3 reset.*
+
+5. **Rebrand illuminate.sh landing page** to match the new positioning. Archive the old OSS-copilot codebase.
+
+6. **Ship the v3.0 enrichment demo.** One 60-second video showing a prompt → enriched prompt → better generation. This is the single most important artifact for launch.

@@ -1,6 +1,8 @@
 # Illuminate — Architecture
 
-This document describes how Illuminate is structured, how data flows through it, and how the components fit together. For *why* it exists and *what* it does, see `PRODUCT_OVERVIEW.md`.
+This document describes how Illuminate is structured, how data flows through it, and how the components fit together. For *why* it exists and *what* it does, see `PRODUCT_OVERVIEW.md` (v3 positioning) and `philosophy.md` (manifesto).
+
+> **v3 framing.** Illuminate is two user-facing products on one substrate: **Illuminate Enrich** (pre-LLM prompt enrichment) and **Illuminate Repo** (GitHub-for-agents — versioned published sessions). The architecture below describes the substrate as shipped through v0.18 plus the two planned crates (`illuminate-enrich`, `illuminate-publish`) that close the v3 loop. See `PRODUCT_OVERVIEW.md` for the four-stage pipeline (enrich → generate → capture → curate) and `ROADMAP.md` for what's shipped vs planned.
 
 ---
 
@@ -195,7 +197,9 @@ See `SCHEMA.md` for the full markdown schema for wiki pages.
 
 ## Crate Layout
 
-Ten crates, one workspace, one binary:
+Fourteen crates shipped (v0.18); sixteen planned with v3.0 (`illuminate-enrich` and `illuminate-publish` added to close the enrich + curate stages). One workspace, one binary.
+
+### Shipped crates (v0.1 → v0.18)
 
 ```
    ┌─────────────────────────────────────────────────────────┐
@@ -248,6 +252,50 @@ Crate responsibilities:
 | `illuminate-cli` | Top-level binary. Subcommands: `init`, `wiki`, `audit`, `failure`, `rebuild`, `serve`, etc. |
 
 The `cli` crate is the only binary. Everything else is a library. This keeps the binary surface small and lets users embed individual crates if they want (e.g., a different agent surface that just uses `illuminate-audit`). See `CRATES.md` for crate-by-crate detail.
+
+### Planned crates (v3.x)
+
+Two crates are designed but not yet implemented. They turn the existing substrate into the two-product v3 positioning (`PRODUCT_OVERVIEW.md`).
+
+| Crate | Stage | Responsibility | Status |
+|-------|-------|---------------|--------|
+| `illuminate-enrich` | **Enrich** (Stage 1) | Pre-LLM prompt enrichment. Wraps the agent invocation, queries `illuminate-route` for a reading plan, fetches relevant decisions/patterns/failures, and rewrites the prompt deterministically before the agent sees it. Two execution modes: CLI wrapper (v3.0) and pre-write hook (v3.1). No LLM in the enrich path — the same prompt + graph state produces the same output. | Planned (v3.0) |
+| `illuminate-publish` | **Curate** (Stage 4) | Explicit publish gesture. New CLI verb `illuminate publish` and pre-commit hook. Redaction-level chooser (full session / summary / decision-only / discard). Writes a structured markdown page + json sidecar to a configurable team-repo path; updates the local graph; never uploads without consent. | Planned (v3.0) |
+
+#### Where they sit
+
+```
+   ┌──────────┐                              ┌──────────┐
+   │  ENRICH  │ ─► agent (Claude/Cursor) ─►  │  CAPTURE │
+   │          │                              │          │
+   │ ill-     │                              │ ill-     │
+   │ enrich   │                              │ trail    │
+   │ (v3.0)   │                              │ (shipped)│
+   └────┬─────┘                              └────┬─────┘
+        │                                         │
+        ▼                                         ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │              illuminate-route + graph                    │
+   │   (reading-plan generator over decisions/patterns/       │
+   │    failures + code-graph blast-radius)                   │
+   └──────────────────────────────────────────────────────────┘
+        ▲                                         ▲
+        │                                         │
+   ┌────┴─────┐                              ┌────┴─────┐
+   │  GUARD   │                              │  CURATE  │
+   │ + AUDIT  │                              │          │
+   │ (shipped)│                              │ ill-     │
+   │ ill-     │                              │ publish  │
+   │ audit +  │                              │ (v3.0)   │
+   │ mcp      │                              └──────────┘
+   └──────────┘
+```
+
+`illuminate-enrich` does **not** introduce a new graph or storage path — it consumes `illuminate-route`'s existing reading-plan API, queries `illuminate-core` for context, and emits a rewritten prompt string. It is a pure transformation crate.
+
+`illuminate-publish` writes markdown to a team-repo path (defaults to a sibling `team-illuminate/` directory or a configured git remote). The schema for published sessions extends `SCHEMA.md` with a new `page_type: session` entry; existing `decision`, `pattern`, `failure`, `module` pages continue unchanged.
+
+Neither crate weakens the local-first commitment: `illuminate-enrich` runs entirely against the local graph, and `illuminate-publish` writes to a path the dev chose — there is no implicit network call.
 
 ---
 
