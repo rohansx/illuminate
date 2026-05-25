@@ -145,6 +145,46 @@ illuminate explain <path>
 
 No "plan" required. Useful for orientation when reading unfamiliar code.
 
+### `illuminate enrich`
+
+Deterministic pre-LLM prompt enrichment. Takes a developer prompt and the local graph, returns an enriched prompt with relevant decisions/patterns/failures and code paths injected. Shipped in v0.19 as the first half of the v3 two-product positioning (see `PRODUCT_OVERVIEW.md` → Illuminate Enrich).
+
+```
+illuminate enrich "<prompt>"
+                  [--files PATH ...]
+                  [--max-bytes N]
+                  [--format human|prompt|json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `<prompt>` | (required) | The developer's raw prompt. |
+| `-f PATH`, `--files PATH ...` | `[]` | Hint which files the prompt is about (narrows code-graph queries). |
+| `--max-bytes N` | `4096` | Soft cap on injected context length. Trailing injections drop deterministically when the budget overflows. |
+| `--format human \| prompt \| json` | `human` | `human` prints the enriched prompt plus a footer summarizing injection count and the determinism receipt prefix. `prompt` emits the enriched text verbatim (pipe into an agent). `json` emits the full `EnrichResponse` envelope. |
+
+**Determinism guarantee.** Same `(prompt, graph state)` → byte-identical output. Every response includes a hex-encoded `graph_state_hash` (SHA-256 over the canonical view of injections) as the receipt. Verified by the property test `determinism_property_same_input_yields_identical_output` in `crates/illuminate-enrich/src/lib.rs`.
+
+**Examples.**
+
+```bash
+# Default: enriched prompt + a footer line with the hash prefix.
+illuminate enrich "add Redis caching to the txn endpoint"
+
+# Pipe the enriched prompt straight into Claude Code:
+illuminate enrich "add caching to txn lookup" --format prompt | claude code
+
+# Inspect what was injected and the determinism receipt:
+illuminate enrich "refactor process_payment" --format json | jq '.injections, .graph_state_hash'
+
+# Narrow the code-graph query by passing file hints:
+illuminate enrich "fix the race condition" --files src/payments/txn.rs --files src/payments/cache.rs
+```
+
+**Exit codes.** `0` always (enrichment is informational, never blocking). For a hard gate, use `illuminate audit`.
+
+**MCP equivalent.** Planned for v0.20: `illuminate_enrich` MCP tool so agents can call enrich inline without shelling out. For now, the CLI verb is the only entry point.
+
 ---
 
 ## Decision / pattern / failure commands

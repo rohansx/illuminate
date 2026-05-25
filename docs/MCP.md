@@ -124,6 +124,46 @@ Explain why a file matters.
 }
 ```
 
+### `illuminate_enrich`
+
+Deterministic pre-LLM prompt enrichment. Surfaces relevant decisions, patterns, failures, and code paths so the next generation step starts from team context instead of a blank prompt. No LLM in the path — same `(prompt, graph state)` produces a byte-identical response (the `graph_state_hash` field is the SHA-256 receipt).
+
+Shipped in v0.19 as the first half of the v3 two-product positioning (see `PRODUCT_OVERVIEW.md` → Illuminate Enrich).
+
+**Request:**
+
+```json
+{
+  "method": "illuminate_enrich",
+  "params": {
+    "prompt": "add Redis caching to the txn endpoint",
+    "files": ["src/payments/txn.rs"],
+    "max_bytes": 4096
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "enriched_prompt": "# Team context (from illuminate)\n\n## Relevant decisions\n- [dec-no-redis](.illuminate/wiki/decisions/dec-no-redis.md)\n  Team rejected Redis for this service 3 months ago...\n\n## Patterns\n- [pat-lru-30s] LRU with 30s TTL\n\n---\n# Original prompt\nadd Redis caching to the txn endpoint",
+  "injections": [
+    { "source": "decision", "id": "dec-no-redis", "wiki_url": ".illuminate/wiki/decisions/dec-no-redis.md", "content": "...", "score_bucket": "high" },
+    { "source": "pattern", "id": "pat-lru-30s", "wiki_url": ".illuminate/wiki/patterns/pat-lru-30s.md", "content": "...", "score_bucket": "med" }
+  ],
+  "graph_state_hash": "c81828ca275fe0611a7721eada6232ec3e2e3dad99125bae87ef0686de9d83b2"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `prompt` | string (required) | The developer's raw prompt. |
+| `files` | string[] (optional) | File-path hints; narrows code-graph queries. |
+| `max_bytes` | integer (optional) | Soft cap on injected content; trailing injections drop deterministically when over budget. Default 4096. |
+
+**Determinism guarantee.** Same `(prompt, graph state)` → byte-identical `enriched_prompt`. Test coverage in `crates/illuminate-enrich/src/lib.rs::determinism_property_same_input_yields_identical_output`.
+
 ### `illuminate_search`
 
 Combined FTS5 + semantic search.

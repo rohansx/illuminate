@@ -15,7 +15,11 @@ use sha2::{Digest, Sha256};
 
 use illuminate::Graph;
 use illuminate_embed::EmbedEngine;
-use illuminate_route::{ReadingPlan, route};
+use illuminate_route::route;
+
+// Re-export so downstream tools (and tests) can sanitize without depending
+// on illuminate-route directly. The canonical home is `illuminate-route`.
+pub use illuminate_route::sanitize_for_fts5;
 
 /// What the developer typed plus optional hints.
 #[derive(Debug, Clone)]
@@ -138,20 +142,9 @@ pub fn enrich_prompt(
     embed: Option<&EmbedEngine>,
     req: &EnrichRequest,
 ) -> Result<EnrichResponse> {
-    // 1. Run the reading-plan query (route already does RRF over FTS5 + semantic).
-    //    FTS5 chokes on operator characters (`/`, `:`, `*`, etc.) and AND-joins
-    //    whitespace tokens — both are wrong for free-form prompts. Sanitize
-    //    into an OR query over meaningful tokens before delegating.
-    let fts_query = sanitize_for_fts5(&req.raw_prompt);
-    let plan: ReadingPlan = if fts_query.is_empty() {
-        ReadingPlan {
-            decisions: Vec::new(),
-            code_files: Vec::new(),
-            estimated_tokens: 0,
-        }
-    } else {
-        route(graph, embed, &fts_query, 10)?
-    };
+    // 1. Run the reading-plan query (route handles FTS5 sanitization + RRF
+    //    over FTS5 + semantic internally — see `sanitize_for_fts5`).
+    let plan = route(graph, embed, &req.raw_prompt, 10)?;
 
     // 2. Code paths mentioned in the prompt or supplied via files_hint.
     let mut detected_paths = extract_code_paths(&req.raw_prompt);
@@ -316,36 +309,6 @@ fn truncate_content(s: &str, max: usize) -> String {
     let mut out = s[..cut].to_string();
     out.push('…');
     out
-}
-
-/// Turn a free-form prompt into a safe FTS5 query.
-///
-/// FTS5 has reserved characters (`/`, `:`, `*`, `"`, parens, etc.) and AND-joins
-/// whitespace-separated tokens by default — both are wrong for free-form prompts.
-/// We extract alphanumeric tokens ≥ 3 chars, drop common stopwords, lowercase,
-/// dedup, and OR them together. Empty result means no usable search terms.
-pub fn sanitize_for_fts5(text: &str) -> String {
-    const STOPWORDS: &[&str] = &[
-        "the", "and", "for", "with", "from", "into", "that", "this", "have", "has", "had", "but",
-        "not", "are", "was", "were", "been", "you", "your", "our", "all", "any", "add", "use",
-        "new", "out", "via", "per", "let", "set", "get", "can", "may", "now", "yes", "ado", "off",
-        "one", "two",
-    ];
-    let mut seen: std::collections::BTreeSet<String> = Default::default();
-    let mut tokens: Vec<String> = Vec::new();
-    for raw in text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
-        if raw.len() < 3 {
-            continue;
-        }
-        let lower = raw.to_ascii_lowercase();
-        if STOPWORDS.contains(&lower.as_str()) {
-            continue;
-        }
-        if seen.insert(lower.clone()) {
-            tokens.push(lower);
-        }
-    }
-    tokens.join(" OR ")
 }
 
 /// Best-effort path detection — `src/foo/bar.rs`, `./pkg/main.go`, etc.

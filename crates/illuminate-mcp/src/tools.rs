@@ -822,6 +822,42 @@ impl ToolContext {
         serde_json::to_value(plan).map_err(|e| e.to_string())
     }
 
+    /// Tool: illuminate_enrich
+    /// Deterministic pre-LLM prompt enrichment — surface relevant decisions,
+    /// patterns, failures, and code paths so the next agent generation starts
+    /// from team context, not a blank prompt. See `crates/illuminate-enrich`.
+    pub async fn illuminate_enrich(&self, args: Value) -> Result<Value, String> {
+        let raw_prompt = args["prompt"]
+            .as_str()
+            .ok_or("missing required field: prompt")?
+            .to_string();
+
+        let files_hint = args["files"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(std::path::PathBuf::from))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let max_bytes = args["max_bytes"].as_u64().unwrap_or(4096) as usize;
+
+        let req = illuminate_enrich::EnrichRequest {
+            raw_prompt,
+            files_hint,
+            max_bytes,
+        };
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        let embed_ref = self.embed.as_deref();
+
+        let resp =
+            illuminate_enrich::enrich_prompt(&graph, embed_ref, &req).map_err(|e| e.to_string())?;
+
+        serde_json::to_value(resp).map_err(|e| e.to_string())
+    }
+
     /// Tool: illuminate_stats
     /// Graph statistics: episodes, entities, edges, sources, DB size.
     pub async fn illuminate_stats(&self, _args: Value) -> Result<Value, String> {
@@ -1391,6 +1427,19 @@ pub fn tools_list() -> Value {
                         "limit": {"type": "integer", "description": "Max entries (default 10)"}
                     },
                     "required": ["subject"]
+                }
+            },
+            {
+                "name": "illuminate_enrich",
+                "description": "Deterministic pre-LLM prompt enrichment. Given the developer's prompt, returns the same prompt with relevant team decisions, patterns, failures, and code-path context injected. Use BEFORE invoking another generation step so the agent starts from team context instead of a blank prompt. Same (prompt, graph state) → byte-identical output (graph_state_hash receipt is included).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "The developer's raw prompt"},
+                        "files": {"type": "array", "items": {"type": "string"}, "description": "Optional file-path hints (narrows code-graph queries)"},
+                        "max_bytes": {"type": "integer", "description": "Soft cap on injected context size (default 4096)"}
+                    },
+                    "required": ["prompt"]
                 }
             },
             {

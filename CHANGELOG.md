@@ -4,6 +4,28 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.19.0] — 2026-05-25
+
+### Added — v3 positioning reset + `illuminate-enrich` wedge crate
+
+This release marks the **v3 positioning reset** — Illuminate is now framed as "GitHub for agents" with two user-facing products (Illuminate Enrich, Illuminate Repo) on one substrate, and ships the first half of that pivot: a fully working `illuminate-enrich` crate + CLI verb.
+
+- **v3 docs reset across six files.** Rewrote `docs/PRODUCT_OVERVIEW.md` to adopt the GitHub-for-agents framing and the four-stage pipeline (enrich → generate → capture → curate); updated `docs/ARCHITECTURE.md` and `docs/CRATES.md` with shipped (14) + planned (2) crate sections and a `illuminate-enrich`/`illuminate-publish` data-flow diagram; reset `docs/ROADMAP.md` to v3.0/v3.1/v3.2/v3-cloud with the v0.1→v0.18 work collapsed into a single Shipped section; refreshed `README.md` hero, two-products section, four-stage pipeline diagram, and crate table with shipped/planned status. **New docs:** `docs/philosophy.md` (prompts-as-source-code manifesto) and `docs/trust-model.md` (three-rings local/team/internet boundary with verification scripts, no-individual-scoring commitment, regulated-verticals FAQ).
+- **`illuminate-enrich` crate.** New `crates/illuminate-enrich/` (~550 LoC). Public API: `EnrichRequest`, `EnrichResponse`, `Injection`, `InjectionSource`, and the pure transformation function `enrich_prompt(graph, embed, req) -> Result<EnrichResponse>`. No LLM in the path. **Determinism guarantee:** same `(prompt, graph state)` produces a byte-identical enriched prompt — enforced by a SHA-256 receipt (`graph_state_hash`) returned in every response and a property test that runs the same input twice and asserts identical output. Sorts injections deterministically by `(source, id)`; applies a byte budget to drop trailing items; categorizes source via both the source field and the `[id-prefix-...]` content token wiki episodes carry. 10 unit tests cover determinism, populated-graph injection, empty-graph passthrough, byte budget, source inference, FTS5 sanitizer behavior, path extraction, and score bucketing.
+- **`illuminate enrich` CLI verb.** New subcommand: `illuminate enrich "<prompt>" [--files PATH...] [--max-bytes N] [--format human|prompt|json]`. The `human` format prints the enriched prompt plus a footer summarizing injection count and the determinism hash prefix; `prompt` emits the enriched text verbatim (pipe-friendly); `json` emits the full `EnrichResponse` envelope. Verified live against the populated graph for this repo: `illuminate enrich "add Redis caching to the txn endpoint"` surfaces `dec-bs-claude-md-caching-never-use-redis` under "Relevant decisions" with a fresh `graph_state_hash`.
+- **FTS5 query sanitizer.** A long-standing v0.8.0 bug (the audit MCP tool failed on any plan containing `/`, `:`, `<`, etc.) is now worked around at the enrich-call boundary. `sanitize_for_fts5` strips FTS5 operator characters, drops stopwords, lowercases, dedups, and OR-joins meaningful tokens before delegating to `route()` / `Graph::search`. Same fix wants to land in `illuminate-route` and `Graph::search` directly — tracked as a follow-up.
+- **Workspace version bump.** `Cargo.toml` workspace.package.version bumped from `0.8.0` → `0.19.0` to match the actual release cadence in CHANGELOG. All hardcoded `version = "0.8.0"` path-deps across the workspace updated. `cargo build --workspace` passes cleanly at v0.19.0.
+
+### Deferred to v0.20+
+
+- **`illuminate-publish` crate** (the second v3.0 wedge, Stage 4 of the pipeline): explicit publish gesture, redaction-level chooser, pre-commit hook, structured `page_type: session` schema extension.
+- **`illuminate browse`** terminal UI over published sessions.
+- **`illuminate trust check`** config linter (default-deny on uploads).
+- **FTS5 sanitizer in `illuminate-route::route()` and `Graph::search()`** so audit + search + MCP all benefit. Caller-side fix in `illuminate-enrich` already works; source-side fix avoids per-caller duplication.
+- **`illuminate_enrich` MCP tool** so Claude Code can call enrich inline.
+- **60-second enrichment demo video** — the primary launch artifact for v3.0.
+- All v0.18 carry-overs (PNG screenshots in `docs/screenshots/`, `evidence` field shape, bootstrap interactive TTY, `failure log` editor mode, MCP HTTP SSE, mTLS/OAuth, `wiki redact` graph deletion, audit history view).
+
 ## [0.18.0] — 2026-05-09
 
 ### Added — dashboard quick-add form

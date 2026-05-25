@@ -7,9 +7,9 @@ repository.workspace = true
 description = "Daemon harness for illuminate — hosts the trail watcher, extraction workers, and ingestion sources (git, GitHub PRs, webhooks)"
 
 [dependencies]
-illuminate = { version = "0.8.0", path = "../illuminate-core" }
-illuminate-extract = { version = "0.8.0", path = "../illuminate-extract" }
-illuminate-embed = { version = "0.8.0", path = "../illuminate-embed" }
+illuminate = { version = "0.19.0", path = "../illuminate-core" }
+illuminate-extract = { version = "0.19.0", path = "../illuminate-extract" }
+illuminate-embed = { version = "0.19.0", path = "../illuminate-embed" }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

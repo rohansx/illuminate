@@ -37,6 +37,9 @@ pub struct FileEntry {
 /// Generate a reading plan for a subject using the decision graph.
 ///
 /// Uses RRF (Reciprocal Rank Fusion) across FTS5 and semantic search.
+/// The raw `subject` is used for embedding (preserves meaning); FTS5 paths
+/// use [`sanitize_for_fts5`] to strip operator characters and stopwords
+/// before the MATCH clause.
 pub fn route(
     graph: &Graph,
     embed: Option<&EmbedEngine>,
@@ -45,11 +48,23 @@ pub fn route(
 ) -> illuminate::Result<ReadingPlan> {
     let mut decisions = Vec::new();
 
-    // Fused search if embeddings available, otherwise FTS5 only
+    // Sanitize for FTS5 — strips `/`, `:`, `*`, stopwords; OR-joins the rest.
+    // Empty result means no usable search terms (return empty plan early).
+    let fts_query = sanitize_for_fts5(subject);
+    if fts_query.is_empty() {
+        return Ok(ReadingPlan {
+            decisions,
+            code_files: Vec::new(),
+            estimated_tokens: 0,
+        });
+    }
+
+    // Fused search if embeddings available, otherwise FTS5 only.
+    // The embedding still sees the raw `subject` so meaning is preserved.
     if let Some(embed_engine) = embed
         && let Ok(query_embedding) = embed_engine.embed(subject)
     {
-        let results = graph.search_fused(subject, &query_embedding, limit)?;
+        let results = graph.search_fused(&fts_query, &query_embedding, limit)?;
         for r in results {
             decisions.push(DecisionEntry {
                 id: r.episode.id,
@@ -62,7 +77,7 @@ pub fn route(
 
     // Fallback to FTS5-only if no fused results
     if decisions.is_empty() {
-        let results = graph.search(subject, limit)?;
+        let results = graph.search(&fts_query, limit)?;
         for (episode, score) in results {
             decisions.push(DecisionEntry {
                 id: episode.id,
@@ -107,6 +122,39 @@ pub fn route(
     })
 }
 
+/// Turn a free-form prompt or subject into a safe FTS5 query.
+///
+/// FTS5 has reserved characters (`/`, `:`, `*`, `"`, parens, etc.) and AND-joins
+/// whitespace tokens by default — both wrong for natural language. We extract
+/// alphanumeric tokens ≥ 3 chars, drop common stopwords, lowercase, dedup,
+/// and OR them together. Empty result means no usable search terms.
+///
+/// Originally lived in `illuminate-enrich`; promoted here in v0.19 so audit /
+/// search / MCP all benefit from the same fix.
+pub fn sanitize_for_fts5(text: &str) -> String {
+    const STOPWORDS: &[&str] = &[
+        "the", "and", "for", "with", "from", "into", "that", "this", "have", "has", "had", "but",
+        "not", "are", "was", "were", "been", "you", "your", "our", "all", "any", "add", "use",
+        "new", "out", "via", "per", "let", "set", "get", "can", "may", "now", "yes", "ado", "off",
+        "one", "two",
+    ];
+    let mut seen: std::collections::BTreeSet<String> = Default::default();
+    let mut tokens: Vec<String> = Vec::new();
+    for raw in text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+        if raw.len() < 3 {
+            continue;
+        }
+        let lower = raw.to_ascii_lowercase();
+        if STOPWORDS.contains(&lower.as_str()) {
+            continue;
+        }
+        if seen.insert(lower.clone()) {
+            tokens.push(lower);
+        }
+    }
+    tokens.join(" OR ")
+}
+
 /// Rough token estimate for a file based on path.
 fn estimate_tokens_for_file(path: &str) -> usize {
     // Rough estimate: average code file is ~200 lines, ~4 chars/token
@@ -118,5 +166,47 @@ fn estimate_tokens_for_file(path: &str) -> usize {
         "py" => 500,
         "toml" | "yaml" | "json" => 200,
         _ => 400,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitizer_strips_fts5_operator_chars() {
+        // The exact characters that broke audit + route in v0.18: `/`, `:`, `<`,
+        // `*`, parens, quotes. None should appear in the output.
+        let q = sanitize_for_fts5("add Redis caching to src/payments/txn.rs (urgent!)");
+        for bad in ['/', ':', '<', '>', '*', '"', '(', ')', '!'] {
+            assert!(!q.contains(bad), "found operator char {bad:?} in: {q}");
+        }
+        assert!(q.contains("redis"));
+        assert!(q.contains("caching"));
+        assert!(q.contains("payments"));
+        assert!(q.contains(" OR "));
+    }
+
+    #[test]
+    fn sanitizer_drops_stopwords_and_short_tokens() {
+        let q = sanitize_for_fts5("add the new for any can may");
+        assert_eq!(q, "", "all tokens were stopwords; got: {q}");
+    }
+
+    #[test]
+    fn sanitizer_lowercases_and_dedups() {
+        let q = sanitize_for_fts5("Redis REDIS redis caching CACHING");
+        // BTreeSet dedup → deterministic order: redis appears once, caching once.
+        let parts: Vec<&str> = q.split(" OR ").collect();
+        assert!(parts.contains(&"redis"));
+        assert!(parts.contains(&"caching"));
+        assert_eq!(parts.iter().filter(|p| **p == "redis").count(), 1);
+    }
+
+    #[test]
+    fn sanitizer_handles_empty_and_garbage() {
+        assert_eq!(sanitize_for_fts5(""), "");
+        assert_eq!(sanitize_for_fts5("///:::***"), "");
+        assert_eq!(sanitize_for_fts5("a b c d e"), ""); // all < 3 chars
     }
 }
