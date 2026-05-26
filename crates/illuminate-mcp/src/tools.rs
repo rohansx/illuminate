@@ -822,6 +822,65 @@ impl ToolContext {
         serde_json::to_value(plan).map_err(|e| e.to_string())
     }
 
+    /// Tool: illuminate_ask
+    /// Cross-corpus retrieval over decisions / patterns / failures / sessions /
+    /// ingested docs / trail. Returns a structured JSON envelope grouped by hit
+    /// kind — the same shape the `illuminate ask` CLI verb emits in `--format json`.
+    /// v0.22 ships retrieval-only (no LLM synthesis); the response is suitable for
+    /// the agent to summarize on its own or for v3.3 to layer a synthesis step on
+    /// top of.
+    pub async fn illuminate_ask(&self, args: Value) -> Result<Value, String> {
+        let question = args["question"]
+            .as_str()
+            .ok_or("missing required field: question")?
+            .to_string();
+        let limit = args["limit"].as_u64().unwrap_or(20) as usize;
+
+        let graph = self.graph.lock().map_err(|e| e.to_string())?;
+        // graph.search sanitizes via illuminate::sanitize_for_fts5 (v0.20+).
+        let raw_hits = graph
+            .search(&question, limit.max(20))
+            .map_err(|e| e.to_string())?;
+
+        let mut hits: Vec<Value> = Vec::with_capacity(raw_hits.len());
+        let mut present_kinds: std::collections::BTreeSet<String> = Default::default();
+        for (ep, score) in raw_hits {
+            let kind = classify_hit_kind(&ep);
+            present_kinds.insert(kind.to_string());
+            let title = derive_title(&ep);
+            let snippet = derive_snippet(&ep);
+            hits.push(json!({
+                "kind": kind,
+                "id": ep.id,
+                "title": title,
+                "snippet": snippet,
+                "source": ep.source,
+                "score_bucket": bucket_score_str(score),
+            }));
+        }
+        let all_kinds = [
+            "decision",
+            "pattern",
+            "failure",
+            "module",
+            "session",
+            "ingested_doc",
+            "trail_episode",
+        ];
+        let empty_kinds: Vec<String> = all_kinds
+            .iter()
+            .filter(|k| !present_kinds.contains(**k))
+            .map(|s| (*s).to_string())
+            .collect();
+
+        Ok(json!({
+            "question": question,
+            "hits": hits,
+            "hit_count": hits.len(),
+            "empty_kinds": empty_kinds,
+        }))
+    }
+
     /// Tool: illuminate_enrich
     /// Deterministic pre-LLM prompt enrichment — surface relevant decisions,
     /// patterns, failures, and code paths so the next agent generation starts
@@ -1195,6 +1254,113 @@ impl ToolContext {
     }
 }
 
+// ───────────── illuminate_ask helpers (kept inline; v3.3 may extract) ─────────────
+
+fn classify_hit_kind(ep: &illuminate::Episode) -> &'static str {
+    if let Some(src) = ep.source.as_deref() {
+        if src.starts_with("published:") {
+            return "session";
+        }
+        if src.starts_with("ingested:") {
+            return "ingested_doc";
+        }
+        if src.starts_with("trail:") {
+            return "trail_episode";
+        }
+        if src.starts_with("wiki:decisions") || src.starts_with("wiki:dec") {
+            return "decision";
+        }
+        if src.starts_with("wiki:patterns") || src.starts_with("wiki:pat") {
+            return "pattern";
+        }
+        if src.starts_with("wiki:failures") || src.starts_with("wiki:fail") {
+            return "failure";
+        }
+        if src.starts_with("wiki:modules") || src.starts_with("wiki:mod") {
+            return "module";
+        }
+    }
+    let trimmed = ep.content.trim_start();
+    if let Some(rest) = trimmed.strip_prefix('[')
+        && let Some(end) = rest.find(']')
+    {
+        let id = &rest[..end];
+        if id.starts_with("dec-") {
+            return "decision";
+        }
+        if id.starts_with("pat-") {
+            return "pattern";
+        }
+        if id.starts_with("fail-") {
+            return "failure";
+        }
+        if id.starts_with("mod-") {
+            return "module";
+        }
+        if id.starts_with("ses-") {
+            return "session";
+        }
+        if id.starts_with("doc-") {
+            return "ingested_doc";
+        }
+    }
+    "other"
+}
+
+fn derive_title(ep: &illuminate::Episode) -> String {
+    if let Some(meta) = &ep.metadata
+        && let Some(t) = meta.get("title").and_then(|v| v.as_str())
+        && !t.is_empty()
+    {
+        return t.to_string();
+    }
+    for line in ep.content.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let cleaned = if let Some(rest) = l.strip_prefix('[')
+            && let Some(end) = rest.find(']')
+        {
+            rest[end + 1..].trim().to_string()
+        } else {
+            l.to_string()
+        };
+        return truncate_str(&cleaned, 120);
+    }
+    "(untitled)".to_string()
+}
+
+fn derive_snippet(ep: &illuminate::Episode) -> String {
+    let cleaned = ep.content.replace('\n', " ").trim().to_string();
+    truncate_str(&cleaned, 280)
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut cut = max;
+    while !s.is_char_boundary(cut) && cut > 0 {
+        cut -= 1;
+    }
+    let mut out = s[..cut].to_string();
+    out.push('…');
+    out
+}
+
+fn bucket_score_str(s: f64) -> &'static str {
+    if s >= 0.9 {
+        "high"
+    } else if s >= 0.5 {
+        "med"
+    } else if s >= 0.1 {
+        "low"
+    } else {
+        "min"
+    }
+}
+
 /// Wrap a free-text query as an FTS5 phrase so punctuation (path separators,
 /// dashes, dots) is treated as literal content rather than parsed as FTS5
 /// syntax. Without this, queries like `src/payments` raise "syntax error
@@ -1427,6 +1593,18 @@ pub fn tools_list() -> Value {
                         "limit": {"type": "integer", "description": "Max entries (default 10)"}
                     },
                     "required": ["subject"]
+                }
+            },
+            {
+                "name": "illuminate_ask",
+                "description": "Cross-corpus retrieval over decisions / patterns / failures / sessions / ingested docs / trail. Returns a structured JSON envelope grouped by hit kind. v0.22 ships retrieval-only (no LLM synthesis) — the response is suitable for the agent to summarize on its own.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string", "description": "The question, as a natural-language string"},
+                        "limit": {"type": "integer", "description": "Max hits across all kinds (default 20)"}
+                    },
+                    "required": ["question"]
                 }
             },
             {

@@ -4,6 +4,27 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.22.0] — 2026-05-26
+
+### Added — v3.2 begins: `illuminate-ingest`, `illuminate ask`, `illuminate browse`
+
+This release opens the v3.2 docs-as-first-class phase (per [`docs/knowledge-layer.md`](docs/knowledge-layer.md)) and closes the last v3.0 GA gap (`illuminate browse`). Three new CLI verbs, one new MCP tool, one new crate.
+
+- **`illuminate-ingest` crate.** New `crates/illuminate-ingest/` (~480 LoC, 8 unit tests). Public API: `IngestAdapter` trait (`name` / `fetch_all` / `fetch_since`), `IngestedDoc` struct, `DocKind` enum (Adr / Architecture / Runbook / Design / OnboardingGuide / Convention / PromptCookbook / Integration / Oncall / Spec / Generic), `LocalMarkdownAdapter`, `IngestReport`, `IngestError`, plus the `ingest_all(graph, adapter)` and `ingest_since(graph, adapter, watermark)` entry points. **Strictly read-only on the external side** — no `push()` / `write()` / `commit_back()` methods anywhere in the crate (the trust-model invariant from [`docs/trust-model.md`](docs/trust-model.md) and [`docs/knowledge-layer.md`](docs/knowledge-layer.md)). `LocalMarkdownAdapter` walks roots for `*.md`, skips `node_modules` / `target` / `dist` / `.git` / dotfiles (depth-0 root is always allowed), extracts the first H1 as title, infers `DocKind` from the directory name (`docs/adr/` → `Adr`, `docs/runbooks/` → `Runbook`, etc.), and stamps the resulting episodes with `source: ingested:local-docs` + metadata `(adapter, external_id, doc_kind, title, url?, author?, updated_at)`.
+- **`illuminate ingest` CLI verb.** `illuminate ingest [--roots PATH...] [--json]`. Defaults to scanning `docs/`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`, `README.md` if `--roots` is not supplied. Verified live on this repo: pulled 43 doc episodes into the graph from `docs/`.
+- **`illuminate ask` CLI verb + `illuminate_ask` MCP tool.** Cross-corpus retrieval over decisions / patterns / failures / sessions / ingested docs / trail. `illuminate ask "<question>" [--limit N] [--format human|json]`. The MCP tool returns the same JSON envelope so Claude Code can call it inline. Pipeline: `graph.search` (already sanitized via the v0.20 FTS5 fix) → classify each hit by `source` prefix + `[id-prefix-...]` content token → group by kind → render as either a structured markdown report (`human`, default) or a JSON envelope with `{question, hits, hit_count, empty_kinds}`. **v0.22 ships retrieval-only — no LLM synthesis.** That's deferred to v3.3, which will add an optional final-rewrite step that consumes this exact envelope. Verified live: `illuminate ask "why no Redis caching"` returns the no-Redis decision at the top + 8 relevant ingested docs grouped under "Ingested docs"; same query via MCP `tools/call` returns the matching envelope with `hit_count: 11`.
+- **`illuminate browse` CLI verb.** `illuminate browse [--team-repo PATH] [--limit N] [--json]` lists published sessions sorted newest-first; `illuminate browse <id-or-filename>` renders the full body. Parses front-matter (`id` / `session_id` / `agent` / `model` / `redaction` / `commit_sha` / `created` / `title`). Closes the v3.0 GA gap — `illuminate-publish` shipped in v0.21 but until now there was no first-class way to read the published sessions back. Verified live against `/tmp/team-illuminate-smoke` from the v0.21 smoke test.
+- **`docs/CLI.md` + `docs/MCP.md`** updated with the three new CLI verbs and the new MCP tool. README CLI surface table gains three new lines.
+- **Workspace version bump** `0.21.0` → `0.22.0` across `Cargo.toml` + all path-deps.
+
+### Deferred to v0.23+
+
+- **`illuminate-ingest` external adapters:** `ConfluenceAdapter`, `NotionAdapter`, `GithubWikiAdapter`, `GoogleDocsAdapter`, `SpecKitAdapter`. The `IngestAdapter` trait is stable; adding adapters is mechanical work + per-adapter API auth. v0.22 ships `LocalMarkdownAdapter` only.
+- **LLM synthesis for `illuminate ask`** (v3.3) — adds an optional final-rewrite step consuming the v0.22 retrieval envelope.
+- **`illuminate trust check`** config linter for off-host writes.
+- **60-second enrichment + publish demo video** — primary v3.0 launch artifact.
+- All carry-overs from v0.18 / v0.19 / v0.20 / v0.21.
+
 ## [0.21.0] — 2026-05-25
 
 ### Added — `illuminate-publish` crate + `illuminate publish` CLI verb (v3.0 wedge complete)

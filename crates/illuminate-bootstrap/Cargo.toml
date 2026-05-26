@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Cold-start ingestion for illuminate — turns agent files and ADRs into wiki pages"
 
 [dependencies]
-illuminate-wiki = { version = "0.21.0", path = "../illuminate-wiki" }
+illuminate-wiki = { version = "0.22.0", path = "../illuminate-wiki" }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

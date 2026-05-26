@@ -643,7 +643,10 @@ pub fn render_audit_response(
             "Proceed only with explicit approval — see the findings below.",
         ),
         "warning" => ("warning", "Review the findings below before proceeding."),
-        _ => ("pass", "No violations detected — the change is consistent with prior decisions."),
+        _ => (
+            "pass",
+            "No violations detected — the change is consistent with prior decisions.",
+        ),
     };
     let plan_esc = html_escape(plan);
 

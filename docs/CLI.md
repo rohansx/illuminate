@@ -183,7 +183,106 @@ illuminate enrich "fix the race condition" --files src/payments/txn.rs --files s
 
 **Exit codes.** `0` always (enrichment is informational, never blocking). For a hard gate, use `illuminate audit`.
 
-**MCP equivalent.** Planned for v0.20: `illuminate_enrich` MCP tool so agents can call enrich inline without shelling out. For now, the CLI verb is the only entry point.
+**MCP equivalent.** Shipped in v0.19: `illuminate_enrich` MCP tool so agents can call enrich inline without shelling out.
+
+### `illuminate ingest`
+
+Pull external knowledge sources into the graph. Shipped in v0.22 as the foundation of the v3.2 docs-as-first-class phase (see [`knowledge-layer.md`](knowledge-layer.md)). v0.22 ships the `LocalMarkdownAdapter` only — Confluence / Notion / GitHub-wiki / Google-Docs / spec-kit adapters land in v0.23+.
+
+```
+illuminate ingest [--roots PATH ...]
+                  [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--roots PATH ...` | `docs/`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`, `README.md` (those that exist) | Roots to walk for `*.md`. Each root may be a file or a directory. |
+| `--json` | off | Emit the `IngestReport` as JSON instead of a human summary. |
+
+**Skip rules.** The walker skips `node_modules`, `target`, `dist`, `build`, `vendor`, `__pycache__`, `.venv`, `venv`, `.pytest_cache`, `.idea`, `.vscode`, and any dotfile / dotdir except `.github` / `.gitignore`. The root of the walk is always allowed (so a hidden root like `~/.illuminate/` works).
+
+**Trust-model invariants.** `illuminate-ingest` is strictly read-only on the external side — no `push`, no `write`, no `commit_back` methods anywhere in the crate. The crate writes only to the local graph, never back to the source.
+
+**Examples.**
+
+```bash
+# Pull this repo's docs/ into the graph as ingested episodes:
+illuminate ingest
+
+# Custom roots:
+illuminate ingest --roots docs --roots ARCHITECTURE.md --roots CLAUDE.md
+
+# Machine-readable summary:
+illuminate ingest --json | jq '{adapter, fetched, written}'
+```
+
+### `illuminate ask`
+
+Cross-corpus retrieval over decisions / patterns / failures / sessions / ingested docs / trail. Shipped in v0.22 — see [`knowledge-layer.md`](knowledge-layer.md) → "Chat with the team's brain."
+
+```
+illuminate ask "<question>"
+               [--limit N]
+               [--format human|json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `<question>` | (required) | Natural-language question, as one string. |
+| `--limit N` | `20` | Max hits across all kinds combined. |
+| `--format X` | `human` | `human` renders a structured markdown report grouped by hit kind; `json` emits an envelope with `{question, hits, hit_count, empty_kinds}` suitable for piping or LLM synthesis. |
+
+**Pipeline.** `graph.search` (sanitized via the v0.20 FTS5 fix) → classify each hit by `source` prefix + `[id-prefix-...]` content token → group by kind (Decisions / Patterns / Failures / Modules / Published sessions / Ingested docs / Trail / Other) → render.
+
+**v0.22 ships retrieval-only.** No LLM synthesis call — the structured envelope is the answer. v3.3 will add an optional final-rewrite step that consumes this exact envelope, so the `--format json` shape is stable.
+
+**Examples.**
+
+```bash
+# Quick retrieval:
+illuminate ask "why did we reject Redis?"
+
+# Pipe to an agent for synthesis (until v3.3 ships native synthesis):
+illuminate ask "what failures have we had with caching?" --format json | jq '.hits[] | .snippet'
+
+# Or via the MCP equivalent (illuminate_ask), so Claude Code can call it inline:
+# (configured via ~/.claude.json — see docs/MCP.md)
+```
+
+**MCP equivalent.** `illuminate_ask` tool (also shipped v0.22) — returns the same JSON envelope. See [`MCP.md`](MCP.md).
+
+### `illuminate browse`
+
+List and read published sessions from a team repo. Shipped in v0.22 — closes the v3.0 GA gap (`illuminate-publish` shipped in v0.21 but there was no first-class way to read the published sessions back).
+
+```
+illuminate browse [<id-or-filename>]
+                  [--team-repo PATH]
+                  [--limit N]
+                  [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `<id-or-filename>` | (none → list view) | When supplied, renders the full body of the matching session. Matches by front-matter `id`, `session_id`, or filename. |
+| `--team-repo PATH` | `../team-illuminate` or `./team-illuminate` (whichever has a `sessions/` subdirectory) | Where to look for published sessions. |
+| `--limit N` | `30` | Max rows in list view. |
+| `--json` | off | Emit JSON (array of session summaries in list view, single object in detail view). |
+
+**Examples.**
+
+```bash
+# List all published sessions (newest-first):
+illuminate browse --team-repo ../team-illuminate
+
+# Read one session:
+illuminate browse ses-2026-05-25-add-caching --team-repo ../team-illuminate
+
+# Machine-readable:
+illuminate browse --team-repo ../team-illuminate --json | jq '.[0].id'
+```
+
+---
 
 ### `illuminate publish`
 

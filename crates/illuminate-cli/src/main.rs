@@ -302,6 +302,50 @@ enum Commands {
         json: bool,
     },
 
+    /// Ingest external knowledge sources (local markdown for now) into the graph
+    Ingest {
+        /// Roots to walk for *.md files; defaults to docs/, ARCHITECTURE.md,
+        /// AGENTS.md, CLAUDE.md, README.md if those exist in cwd
+        #[arg(long, num_args = 0..)]
+        roots: Vec<PathBuf>,
+
+        /// Emit the IngestReport as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Ask a natural-language question across decisions, patterns, failures, sessions, and ingested docs
+    Ask {
+        /// The question, as a single string
+        question: String,
+
+        /// Max hits to return across all kinds combined
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+
+        /// Output format: human (default) or json
+        #[arg(long, default_value = "human", value_parser = ["human", "json"])]
+        format: String,
+    },
+
+    /// Browse published sessions in a team repo
+    Browse {
+        /// Optional: id / session_id / filename to render in full; if omitted, lists sessions
+        show: Option<String>,
+
+        /// Team repo path; defaults to ../team-illuminate or ./team-illuminate
+        #[arg(long)]
+        team_repo: Option<PathBuf>,
+
+        /// Max rows in list view
+        #[arg(long, default_value_t = 30)]
+        limit: usize,
+
+        /// Emit JSON instead of the human renderer
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Publish a captured trail session into a team repo (Stage 4 of the v3 pipeline)
     Publish {
         /// Path to the trail jsonl to publish (e.g. .illuminate/trail/<file>.jsonl)
@@ -632,6 +676,18 @@ fn main() {
             max_nodes,
             json,
         } => commands::impact::run(files, index_db, depth, max_nodes, json),
+        Commands::Ingest { roots, json } => commands::ingest::run(roots, json),
+        Commands::Ask {
+            question,
+            limit,
+            format,
+        } => commands::ask::run(question, limit, format),
+        Commands::Browse {
+            show,
+            team_repo,
+            limit,
+            json,
+        } => commands::browse::run(team_repo, show, limit, json),
         Commands::Publish {
             trail,
             redaction,

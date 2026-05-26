@@ -7,8 +7,8 @@ repository.workspace = true
 description = "Explicit publish gesture for illuminate — curate trail sessions into a team repo with per-session redaction"
 
 [dependencies]
-illuminate = { version = "0.21.0", path = "../illuminate-core" }
-illuminate-trail = { version = "0.21.0", path = "../illuminate-trail" }
+illuminate = { version = "0.22.0", path = "../illuminate-core" }
+illuminate-trail = { version = "0.22.0", path = "../illuminate-trail" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -183,6 +183,9 @@ illuminate audit-diff [BASE]     audit changes since git base (default HEAD~1)
 illuminate audit-pr <num>        audit a GitHub PR (uses gh CLI; --comment posts back)
 illuminate enrich "<prompt>"     deterministic pre-LLM prompt enrichment (v3.0 wedge)
 illuminate publish               curate + share a trail session with the team (v3.0 wedge)
+illuminate ingest [--roots ...]  pull external markdown docs into the graph (v3.2)
+illuminate ask "<question>"      cross-corpus retrieval over decisions/patterns/failures/sessions/docs (v3.2)
+illuminate browse [<id>]         list + read published sessions from a team repo
 illuminate impact <files...>     blast-radius for files (defined symbols, imports, BFS)
 illuminate explain <path>        decisions/patterns/failures touching a file
 illuminate failure log ...       record a new failure inline

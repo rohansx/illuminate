@@ -124,6 +124,52 @@ Explain why a file matters.
 }
 ```
 
+### `illuminate_ask`
+
+Cross-corpus retrieval over decisions / patterns / failures / sessions / ingested docs / trail. Shipped v0.22 as the MCP companion to the `illuminate ask` CLI verb — the agent gets a structured envelope (no LLM synthesis on Illuminate's side) and can either summarize it itself or pass it through v3.3's planned synthesis layer.
+
+**Request:**
+
+```json
+{
+  "method": "illuminate_ask",
+  "params": {
+    "question": "why did we reject Redis for the payments service?",
+    "limit": 20
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "question": "why did we reject Redis for the payments service?",
+  "hits": [
+    {
+      "kind": "decision",
+      "id": "019e1190-913b-7b32-a2d7-3fe57efca2f5",
+      "title": "Caching — never use Redis",
+      "snippet": "[dec-bs-claude-md-caching-never-use-redis] Caching — never use Redis ...",
+      "source": "wiki",
+      "score_bucket": "high"
+    },
+    {
+      "kind": "ingested_doc",
+      "id": "019e64ea-048a-7e02-ba2a-aca143ebe405",
+      "title": "Getting started with Illuminate",
+      "snippet": "...",
+      "source": "ingested:local-docs",
+      "score_bucket": "high"
+    }
+  ],
+  "hit_count": 11,
+  "empty_kinds": ["pattern", "failure", "module", "session"]
+}
+```
+
+`kind` is one of `decision` / `pattern` / `failure` / `module` / `session` / `ingested_doc` / `trail_episode` / `other`. `score_bucket` is one of `high` / `med` / `low` / `min`. `empty_kinds` lists the kinds with zero hits — useful for the agent's "no published sessions on this topic yet" callouts and (in v3.3) for the LLM synthesis prompt.
+
 ### `illuminate_enrich`
 
 Deterministic pre-LLM prompt enrichment. Surfaces relevant decisions, patterns, failures, and code paths so the next generation step starts from team context instead of a blank prompt. No LLM in the path — same `(prompt, graph state)` produces a byte-identical response (the `graph_state_hash` field is the SHA-256 receipt).

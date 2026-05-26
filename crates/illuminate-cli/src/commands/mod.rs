@@ -1,7 +1,9 @@
+pub mod ask;
 pub mod audit;
 pub mod audit_diff;
 pub mod audit_pr;
 pub mod bootstrap;
+pub mod browse;
 pub mod decisions;
 pub mod enrich;
 pub mod entities;
@@ -12,6 +14,7 @@ pub mod failures;
 pub mod hook;
 pub mod impact;
 pub mod index;
+pub mod ingest;
 pub mod init;
 pub mod log;
 pub mod mcp;
