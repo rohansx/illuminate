@@ -389,6 +389,84 @@ Use LRU with 30s TTL — Redis is rejected per dec-no-redis.
 
 ---
 
+## `docs/` — author-written, first-class content (v3.2+)
+
+> **Planned for v3.2.** Once `illuminate-ingest` lands and the `Doc` entity type is in `illuminate-core`, the team repo gains a `docs/` subtree alongside `decisions/` / `patterns/` / `failures/` / `modules/` / `sessions/`. Humans write the content in their editor of choice; `illuminate` indexes it. See [`knowledge-layer.md`](knowledge-layer.md) for the full design and feature landscape.
+
+The full team-repo layout once docs are first-class:
+
+```
+team-illuminate/
+├── illuminate.toml             # config + ingest sources
+├── schema.md                   # how the agent maintains the repo
+├── index.md                    # auto-generated catalog
+├── log.md                      # append-only audit trail
+│
+├── sessions/                   # auto-captured (published with consent — v0.21)
+├── decisions/                  # extracted + author-written
+├── patterns/                   # extracted + author-written
+├── failures/                   # extracted + author-written
+├── modules/                    # auto-generated module pages
+│
+└── docs/                       # author-written, first-class content (v3.2+)
+    ├── architecture/           # overview, auth-flow, payment-flow, etc.
+    ├── adr/                    # ADR-style numbered records (0001-... / 0002-...)
+    ├── designs/                # design docs (often auto-drafted via `--as-doc`)
+    ├── runbooks/               # operational procedures, rollback steps
+    ├── onboarding/             # curated reading order for new hires
+    ├── prompts/                # THE prompt cookbook — first-class content type
+    ├── integrations/           # external-service integration references (stripe, postgres, …)
+    ├── conventions/            # team conventions (naming, error-handling, …)
+    └── oncall/                 # on-call playbooks per service
+```
+
+### Doc front-matter (minimum)
+
+Doc files don't need to follow a single rigid schema — humans wrote them, in their editor of choice, often before Illuminate existed. The minimum the indexer expects:
+
+```markdown
+---
+id: arch-payment-flow                # filename stem, prefix-stable
+page_type: doc                       # always `doc`
+doc_kind: architecture               # adr | architecture | runbook | design | onboarding | prompt | integration | convention | oncall | generic
+title: Payment flow                  # human-readable title
+status: active                       # active | superseded | archived
+tags: [payments, architecture]       # optional, freeform
+created: 2025-09-03T10:00:00Z
+updated: 2026-05-25T14:22:00Z
+source: author                       # `author` (human-written) or `ingested:<adapter>` for read-only mirrors of external sources
+---
+
+# (markdown body — humans write this)
+```
+
+For ingested content (confluence pages, notion blocks, etc.), `illuminate-ingest` populates `source: ingested:<adapter>`, adds an `external_id`, and an `external_url` field linking back to the canonical source. **Ingested docs are read-only mirrors** — never written back to the external source.
+
+### Per-subdir conventions
+
+| Subdir | Naming convention | Typical fields |
+|--------|-------------------|----------------|
+| `docs/architecture/` | `<topic>.md` (overview, auth-flow, payment-flow, ...) | mermaid diagrams welcome; living-diagram auto-update is v3.4 |
+| `docs/adr/` | `NNNN-<slug>.md` (Nygard / MADR style — see [`BOOTSTRAP.md`](BOOTSTRAP.md)) | `decision_status: proposed \| accepted \| deprecated` |
+| `docs/designs/` | `<slug>.md` (often the same slug as the originating session, e.g. `cache-layer.md`) | `source: published-as-doc:<session-id>` when auto-drafted via `illuminate publish --as-doc` |
+| `docs/runbooks/` | `<service>-<scenario>.md` | `service`, `severity` |
+| `docs/onboarding/` | `NN-<topic>.md` (numbered for reading order) + `README.md` index | `prereqs: [other-onboarding-doc-ids]` |
+| `docs/prompts/` | `<task-shape>.md` (`adding-api-endpoint`, `database-migration`, `security-review`, …) | `agents: [claude-code, cursor]`, `auto_suggest_triggers: [...]` — used by `illuminate enrich` cookbook injection in v3.3 |
+| `docs/integrations/` | `<vendor>.md` (stripe, postgres, sendgrid, …) | `vendor`, `version` |
+| `docs/conventions/` | `<area>.md` (naming, error-handling, logging, …) | none required |
+| `docs/oncall/` | `<service>.md` | `service`, `pager_link` |
+
+### Trust-model invariants for docs
+
+- All write operations to `docs/*.md` use the same path the dev named — no implicit network. Same boundary as `illuminate-publish`.
+- External-source ingestion (`docs/` mirrors of confluence pages, etc.) is **always read-only**: `illuminate-ingest` pulls, never pushes back.
+- Authentication tokens for external adapters (`CONFLUENCE_TOKEN`, `NOTION_TOKEN`, …) read from env vars only. Never stored on disk.
+- Each external adapter in `illuminate.toml` requires an explicit `enabled = true` field; zero defaults that auto-fetch.
+
+Full design + the new features this unlocks (`illuminate ask`, doc decay detection, auto-draft from sessions, prompt cookbook auto-suggest, onboarding journeys, on-call bundles, agent skill packs) is in [`knowledge-layer.md`](knowledge-layer.md).
+
+---
+
 ## `index.md` (auto-generated)
 
 The top-level index. Generated by `illuminate wiki rebuild`. Contains:

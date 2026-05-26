@@ -255,12 +255,13 @@ The `cli` crate is the only binary. Everything else is a library. This keeps the
 
 ### Planned crates (v3.x)
 
-Two crates are designed but not yet implemented. They turn the existing substrate into the two-product v3 positioning (`PRODUCT_OVERVIEW.md`).
+Three crates that turn the existing substrate into the v3 positioning. The first two shipped in v0.19 / v0.21; the third is the v3.2 scope on the knowledge-layer work (`docs/knowledge-layer.md`).
 
 | Crate | Stage | Responsibility | Status |
 |-------|-------|---------------|--------|
-| `illuminate-enrich` | **Enrich** (Stage 1) | Pre-LLM prompt enrichment. Wraps the agent invocation, queries `illuminate-route` for a reading plan, fetches relevant decisions/patterns/failures, and rewrites the prompt deterministically before the agent sees it. Two execution modes: CLI wrapper (v3.0) and pre-write hook (v3.1). No LLM in the enrich path — the same prompt + graph state produces the same output. | Planned (v3.0) |
-| `illuminate-publish` | **Curate** (Stage 4) | Explicit publish gesture. New CLI verb `illuminate publish` and pre-commit hook. Redaction-level chooser (full session / summary / decision-only / discard). Writes a structured markdown page + json sidecar to a configurable team-repo path; updates the local graph; never uploads without consent. | Planned (v3.0) |
+| `illuminate-enrich` | **Enrich** (Stage 1) | Pre-LLM prompt enrichment. Wraps the agent invocation, queries `illuminate-route` for a reading plan, fetches relevant decisions/patterns/failures, and rewrites the prompt deterministically before the agent sees it. Two execution modes: CLI wrapper (v0.19) and pre-write hook (v3.1). No LLM in the enrich path — the same prompt + graph state produces the same output. | **Shipped v0.19** |
+| `illuminate-publish` | **Curate** (Stage 4) | Explicit publish gesture. New CLI verb `illuminate publish` and pre-commit hook. Redaction-level chooser (full session / summary / decision-only / discard). Writes a structured markdown page + json sidecar to a configurable team-repo path; updates the local graph; never uploads without consent. | **Shipped v0.21** |
+| `illuminate-ingest` | **Docs ingestion** | Read-only adapters for external knowledge homes — confluence, notion, github wiki, google docs, spec-kit artifacts, local `docs/*.md` trees. Pulls content, runs it through `illuminate-extract`, lands episodes with `source: ingested:<adapter>`. Strictly read-only — no write-back to external sources, ever. Trust-model invariant per [`trust-model.md`](trust-model.md). | Planned (v3.2) |
 
 #### Where they sit
 
@@ -293,9 +294,11 @@ Two crates are designed but not yet implemented. They turn the existing substrat
 
 `illuminate-enrich` does **not** introduce a new graph or storage path — it consumes `illuminate-route`'s existing reading-plan API, queries `illuminate-core` for context, and emits a rewritten prompt string. It is a pure transformation crate.
 
-`illuminate-publish` writes markdown to a team-repo path (defaults to a sibling `team-illuminate/` directory or a configured git remote). The schema for published sessions extends `SCHEMA.md` with a new `page_type: session` entry; existing `decision`, `pattern`, `failure`, `module` pages continue unchanged.
+`illuminate-publish` writes markdown to a team-repo path the caller named explicitly via `--team-repo`. v0.21 ships `TeamRepoTarget::LocalPath` only; the planned `GitRemote` variant is gated for v3.1 behind `illuminate trust check`. The schema for published sessions extends `SCHEMA.md` with a `page_type: session` entry; existing `decision`, `pattern`, `failure`, `module` pages are unchanged.
 
-Neither crate weakens the local-first commitment: `illuminate-enrich` runs entirely against the local graph, and `illuminate-publish` writes to a path the dev chose — there is no implicit network call.
+`illuminate-ingest` (planned, v3.2) reads external knowledge sources — confluence, notion, github wiki, google docs, spec-kit artifacts, additional local `docs/*.md` trees — and feeds them through `illuminate-extract` so they land in the graph alongside everything else. **Always read-only.** The crate exposes adapter interfaces (`ConfluenceAdapter`, `NotionAdapter`, etc.) configured per-team via `[ingest]` blocks in `illuminate.toml`. Adds a new MCP tool `illuminate_ask` for cross-corpus Q&A over decisions/patterns/failures/sessions/docs. See [`knowledge-layer.md`](knowledge-layer.md) for the full design.
+
+None of the three crates weakens the local-first commitment: `illuminate-enrich` runs entirely against the local graph, `illuminate-publish` writes only to the explicit `--team-repo` path the dev chose, and `illuminate-ingest` is strictly read-only on the external side (it pulls, it does not push).
 
 ---
 

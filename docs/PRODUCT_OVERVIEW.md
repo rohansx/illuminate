@@ -45,7 +45,7 @@ The agent receives the enriched prompt and produces materially better code on th
 - **Free quality lift.** No model upgrade, no fine-tuning, no new infra. Just better context routing.
 - **Bottom-up adoption.** Devs install it because it makes *their* day better, not because management mandates it.
 
-> **Implementation status:** the substrate that makes enrichment possible (decision graph, semantic search, code-graph blast-radius, reading-plan generator in [`illuminate-route`](CRATES.md#illuminate-route)) already shipped through v0.18. The `illuminate-enrich` crate that wires this into a pre-LLM hook is **planned for v3.0** — see [`ROADMAP.md`](ROADMAP.md#v30--the-enrich-wedge).
+> **Implementation status:** **shipped in v0.19** — `illuminate-enrich` is live with the CLI verb, the `illuminate_enrich` MCP tool, and a property-tested determinism guarantee. The substrate (decision graph, semantic search, code-graph blast-radius, reading-plan generator) underneath shipped through v0.18; v0.20 pushed the FTS5 query sanitizer one layer deeper into `Graph::search` so every caller benefits transparently. See [`ROADMAP.md`](ROADMAP.md#whats-shipped-v01--v018).
 
 ### Product 2: Illuminate Repo — GitHub for Agents
 
@@ -68,7 +68,23 @@ Think `git log` for prompts. `git blame` for "why does this code exist?" GitHub'
 - **Knowledge compounds.** Every published prompt makes future enrichment smarter, future agents better-guided, and future humans better-informed.
 - **Switching cost grows with usage.** A team six months in has a prompt history that can't be replicated by switching tools.
 
-> **Implementation status:** capture, wiki rendering, the browsable dashboard (`illuminate wiki serve`), and the markdown-as-source-of-truth schema already shipped through v0.18. The explicit publish gesture (`illuminate-publish` crate, pre-commit hook, redaction-level chooser) is **planned for v3.0** — see [`ROADMAP.md`](ROADMAP.md#v30--the-enrich-wedge).
+> **Implementation status:** **shipped in v0.21** — `illuminate-publish` is live with `illuminate publish --trail PATH --redaction <level> --team-repo PATH`, a `.git/hooks/pre-commit` installer, and 9 unit tests covering each redaction level. Capture, wiki rendering, and the dashboard substrate shipped through v0.18. The `docs/` content type (auto-draft from sessions, `illuminate ask`, `illuminate browse`) is the v3.2+ scope — see [`knowledge-layer.md`](knowledge-layer.md).
+
+---
+
+## Three Content Categories in the Team Repo
+
+The team repo holds three kinds of content. All three are markdown + structured metadata in git. All three feed the same graph and the same enrichment pipeline. All three are queryable by humans and agents.
+
+1. **Auto-captured.** Created by Illuminate as a byproduct of normal coding work — `sessions/` (via `illuminate-publish`), `decisions/`, `patterns/`, `failures/`, `modules/` (extracted by `illuminate-extract`).
+2. **Author-written.** Created by humans in their editor of choice, committed to the team repo like any other code — `docs/architecture/`, `docs/adr/`, `docs/designs/`, `docs/runbooks/`, `docs/onboarding/`, `docs/integrations/`, `docs/conventions/`, **`docs/prompts/`** (the prompt cookbook), `docs/oncall/`.
+3. **Ingested.** Pulled read-only from existing knowledge homes — `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, repo ADRs, spec-kit artifacts, confluence pages, notion pages, github wiki, google docs, PDFs.
+
+The first category ships today (v0.21). The second category is a schema convention — humans can write `docs/*.md` into their team repo and `illuminate-extract` already discovers them via the bootstrap pipeline. The third category needs `illuminate-ingest` (planned for v3.2 — see [`knowledge-layer.md`](knowledge-layer.md)).
+
+What this unlocks once all three categories are live: cross-corpus Q&A via `illuminate ask`, doc decay detection against the tree-sitter code graph, auto-drafted design docs from sessions, prompt cookbooks that auto-suggest during enrichment, personalized onboarding journeys, on-call context bundles, and agent skill packs. The full landscape is in [`knowledge-layer.md`](knowledge-layer.md).
+
+> **Secondary positioning frame.** Beyond "GitHub for agents," teams adopting the third content category can pitch Illuminate to engineering managers as: *the engineering team's AI-aware knowledge home — docs, decisions, prompts, and failures, all in git, all indexed, all queryable by humans and agents.* The primary developer-facing pitch is unchanged.
 
 ---
 
@@ -162,6 +178,7 @@ This isn't a marketing constraint. It's a structural commitment. The moment Illu
 - **Not a hosted SaaS by default.** Local-first. Self-hostable. Hosted illuminate.sh is an optional convenience layer added later, not the product itself.
 - **Not a prompt management tool for production APIs.** Tools like Langfuse, PromptLayer, and Braintrust manage *production prompts shipped to end users*. Illuminate handles *development-time coding sessions*, a different artifact entirely.
 - **Not a generic AI-powered wiki.** The wiki is a byproduct of the loop, not the product. The product is the prompt-versioning + enrichment system.
+- **Not confluence or notion.** Illuminate is git-based and markdown-native. Teams write docs in their editor of choice (VS Code, Obsidian, neovim, whatever). Illuminate makes those docs first-class context for AI agents — not the other way around. External-source ingestion (confluence, notion, github wiki, google docs) is **always read-only**: never writes back. See [`knowledge-layer.md`](knowledge-layer.md) for the boundary in detail.
 - **Not a code review tool.** Adjacent space, different artifact (Illuminate owns the prompt + reasoning trail, not the review verdict).
 - **Not competing with spec-kit.** spec-kit handles work *before* code is written (intent). Illuminate handles work *during and after* code is written (reality). They compose — Illuminate can ingest spec-kit's constitution and specs as decision sources.
 

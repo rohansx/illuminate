@@ -1,6 +1,6 @@
 # Illuminate — Roadmap
 
-> **Status:** v0.18 shipped (May 2026). The substrate is real and end-to-end. This document is a **v3 reset** — the work that already shipped is collapsed into a single Shipped section; the next-cycle plan (v3.0 → v3.2 → v3-cloud) targets the two-product positioning described in [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md). See [`CHANGELOG.md`](../CHANGELOG.md) for the per-version log.
+> **Status:** v0.21 shipped (May 2026). The v3.0 wedges (`illuminate-enrich` + `illuminate-publish`) are live; both products of the v3 positioning are end-to-end functional. This document tracks the **next-cycle plan** — v3.1 (broaden capture), v3.2 (docs as first-class content per [`knowledge-layer.md`](knowledge-layer.md)), v3.3 (high-value doc features), v3.4 (workflow features), v3.5 (polish + adoption), v3-cloud (optional hosted). See [`CHANGELOG.md`](../CHANGELOG.md) for the per-version log.
 
 ---
 
@@ -45,29 +45,28 @@ These remain on the punch list but are not in the v3.0 critical path:
 
 - **Ship the loop, then expand it.** Every release demonstrates the full pipeline end-to-end; new releases tighten the existing loop rather than introducing parallel half-loops.
 - **Each release valuable on its own.** No "you need v3.1 to use v3.0" gates. v3.0 stands alone as the enrich-wedge demo + publish gesture.
-- **No commercial layer until OSS adoption is proven.** v3-cloud is off the table until v3.0 + v3.1 have 50+ teams using them organically.
+- **No commercial layer until OSS adoption is proven.** v3-cloud is off the table until v3.5 hits its adoption exit criteria (50+ teams).
 - **Evidence before scope.** Decisions about v3.1 scope are deferred until v3.0 is in users' hands.
 - **Local-first is non-negotiable.** Every release must work fully offline. Cloud features are additions, never replacements.
 
 ---
 
-## v3.0 — The Enrich Wedge
-
-**Target window:** 6–8 weeks from kickoff.
+## v3.0 — The Enrich Wedge — **mostly shipped**
 
 **Goal:** Turn the v0.18 substrate into the two-product positioning. Ship `illuminate-enrich` (Product 1's wedge) and `illuminate-publish` (Product 2's curate gesture). Both products demonstrably in motion in a single 60-second demo video.
 
-### In scope
+### Status
 
-| Component | What ships |
-|-----------|-----------|
-| `illuminate-enrich` (new) | Pre-LLM prompt enrichment crate. CLI wrapper mode (`illuminate enrich -- claude code`). Queries `illuminate-route` for a reading plan; rewrites the prompt deterministically with relevant decisions/patterns/failures and code-graph paths. No LLM in the enrich path. |
-| `illuminate-publish` (new) | Explicit publish gesture. `illuminate publish` CLI verb + pre-commit hook installer. Redaction-level chooser (full / summary / decision-only / discard). Writes structured markdown + json sidecar to `team-illuminate/sessions/<date>-<slug>.md`. |
-| `illuminate browse` | Terminal UI over published sessions. Search, blame ("who prompted this code?"), open original session jsonl in `$EDITOR`. |
-| `illuminate trust check` | Lints `illuminate.toml` for any config that would route data off-host without consent. Surfaces the trust-model invariants. |
-| Trust-model docs | `docs/trust-model.md` lands with the v3 reset (see [`trust-model.md`](trust-model.md)). |
-| Schema extension | `page_type: session` added to `SCHEMA.md`. Existing decision/pattern/failure/module schemas unchanged. |
-| Enrichment demo artifact | One 60-second video: raw prompt → enriched prompt → noticeably-better generation. Single most important launch artifact. |
+| Component | Status |
+|-----------|--------|
+| `illuminate-enrich` (CLI wrapper + property test + MCP tool) | ✅ **Shipped v0.19** |
+| `illuminate-publish` (CLI verb + pre-commit hook + redaction-level chooser) | ✅ **Shipped v0.21** |
+| Trust-model docs (`docs/trust-model.md`) | ✅ Shipped (v3 docs reset commit `021913f`) |
+| Schema extension (`page_type: session` in `SCHEMA.md`) | ✅ Shipped v0.21 |
+| FTS5 sanitizer at the `Graph` boundary (unblocks audit MCP) | ✅ Shipped v0.20 (bonus) |
+| `illuminate browse` (terminal UI over published sessions) | 🔜 Still pending |
+| `illuminate trust check` (config linter for off-host writes) | 🔜 Still pending |
+| Enrichment demo artifact (60-second video) | 🔜 Still pending — primary launch artifact |
 
 ### Out of scope (v3.0)
 
@@ -80,11 +79,11 @@ These remain on the punch list but are not in the v3.0 critical path:
 
 ### Exit criteria
 
-- `illuminate enrich -- claude code "<prompt>"` returns an enriched prompt that includes at least one decision, pattern, or failure reference on a populated repo. Verified end-to-end against the Utkrushta dogfood graph.
-- `illuminate publish` invoked from a pre-commit hook writes a valid markdown + json pair to the configured team-repo path. Round-trip readable by `illuminate browse`.
-- `illuminate trust check` returns 0 on a default `illuminate.toml` and non-zero when a misconfigured `TeamRepoTarget::GitRemote` is present without a paired consent flag.
-- Determinism guarantee for enrich: same `(prompt, graph_state_hash)` → byte-identical output. Verified by property test.
-- Single-binary install still works (`cargo install illuminate-cli`); no new system dependencies.
+- `illuminate enrich "<prompt>"` returns an enriched prompt that includes at least one decision, pattern, or failure reference on a populated repo — **verified end-to-end on this repo at v0.19**.
+- `illuminate publish` invoked from a pre-commit hook writes a valid markdown page to the configured team-repo path — **verified end-to-end on this repo at v0.21** (produced `/tmp/team-illuminate-smoke/sessions/2026-05-10-...md` + graph episode `019e604f-...`).
+- `illuminate trust check` returns 0 on a default `illuminate.toml` and non-zero when a misconfigured `TeamRepoTarget::GitRemote` is present without a paired consent flag — **still pending**.
+- Determinism guarantee for enrich: same `(prompt, graph_state_hash)` → byte-identical output — **verified by property test in v0.19**.
+- Single-binary install still works (`cargo install illuminate-cli`); no new system dependencies — **verified, no new deps in v0.19 / v0.20 / v0.21**.
 
 ### Distribution
 
@@ -119,11 +118,95 @@ These remain on the punch list but are not in the v3.0 critical path:
 
 ---
 
-## v3.2 — Polish + Adoption
+## v3.2 — Docs as First-Class Content
 
-**Target window:** ongoing after v3.1.
+**Target window:** 6–8 weeks after v3.1.
 
-**Goal:** Reduce friction for adoption. Make enrichment unmissable.
+**Goal:** Make the team repo's third content category — author-written and ingested docs — first-class alongside auto-captured sessions/decisions/patterns/failures. The headline feature is **`illuminate ask`**: cross-corpus Q&A over everything the graph knows. Companion design doc: [`knowledge-layer.md`](knowledge-layer.md).
+
+### In scope
+
+| Component | What ships |
+|-----------|-----------|
+| `illuminate-ingest` (new crate) | Read-only adapters for external knowledge homes — confluence, notion, github wiki, google docs, spec-kit artifacts, additional local `docs/*.md` trees. Each adapter implements `IngestAdapter` (`fetch_all` / `fetch_since`). **Strictly read-only:** no write-back. Configured per-team via `[ingest]` block in `illuminate.toml`. |
+| `Doc` entity type in `illuminate-core` | New entity with sub-types: `Adr`, `Runbook`, `Design`, `OnboardingGuide`, `Convention`, `PromptCookbook`, `Integration`, `Oncall`, `Generic`. Schema additions only — no breaking changes to existing entity types. |
+| `illuminate ask` CLI verb | Cross-corpus Q&A. Pipeline: parse question → graph retrieval (decisions + patterns + failures + sessions + docs) → final synthesis LLM call. Single source of truth for "what does this team think about X?". |
+| `illuminate browse` CLI verb | Already in v3.0 scope; landing here in v3.2 as a docs-aware renderer (links between docs/decisions/patterns auto-resolved). |
+| `illuminate ingest [--watch]` | Run all configured adapters once or on a schedule. Watch mode keeps the graph in sync incrementally via `fetch_since(watermark)`. |
+| `illuminate_ask` MCP tool | Exposes cross-corpus Q&A to Claude Code, Cursor, and Codex. The MCP-side companion to the CLI verb. |
+| `ilm` shorthand alias | Symlink / `[bin]` alias `ilm` → `illuminate` so the `ilm ask` / `ilm browse` / `ilm ingest` UX in [`knowledge-layer.md`](knowledge-layer.md) works without typing the long form. |
+| `docs/` schema entry | `SCHEMA.md` gains a `docs/` directory section with per-subdir conventions (adr, designs, runbooks, onboarding, prompts, integrations, conventions, oncall). |
+
+### Exit criteria
+
+- `illuminate ingest` against a repo with `[ingest.local_docs]` configured ingests every `docs/*.md` into the graph as `source: ingested:local-docs` episodes. Round-trip via `illuminate ask` returns the right doc.
+- At least three external adapters land (confluence + notion + github-wiki recommended; spec-kit + google-docs nice-to-have).
+- `illuminate ask "why did we choose X?"` answers with citations across decision pages, session pages, and doc pages on a populated team repo.
+- Trust-model invariant verified: `grep -r 'fn push\|fn write\|fn commit_back' crates/illuminate-ingest/` returns nothing. Read-only by construction.
+- `ilm ask` / `ilm browse` / `ilm ingest` all resolve via the shorthand alias.
+
+### Out of scope (v3.2)
+
+- LLM-assisted summary at publish (v3.1 carry-over if not done).
+- Doc decay detection — v3.3 (depends on `Doc` entity type landing first).
+- Auto-drafted docs from sessions (`--as-doc`) — v3.3.
+- Prompt cookbook auto-suggest during enrich — v3.3.
+- Cross-repo team-of-teams federation — v3.4.
+
+---
+
+## v3.3 — High-Value Doc Features
+
+**Target window:** 6–8 weeks after v3.2.
+
+**Goal:** Turn the docs corpus into something that compounds — drift detection against the code graph, auto-drafted docs from sessions, prompt cookbook with auto-suggest, and agent-aware doc review.
+
+### In scope
+
+| Component | What ships |
+|-----------|-----------|
+| Doc decay detection (PR bot) | Watches doc files vs the tree-sitter code graph. When a doc references a symbol that has materially changed or been removed, opens a PR against the team repo flagging stale sections. Wikis can't do this because they don't see the code; code-review tools can't because they don't see the docs. Illuminate sees both. |
+| `illuminate publish --as-doc` | Auto-draft a design doc from a session's reasoning trail. Dev reviews + edits + merges. Collapses the cost of writing design docs so they actually get written. |
+| Prompt cookbook auto-suggest | Match the dev's prompt against patterns in `docs/prompts/` during `illuminate enrich`. Inject matched cookbook entries as additional context. First team to nail this becomes 2-3× more effective at prompting. |
+| Agent-aware doc review | When a doc change is PR'd, audit it against existing decisions/patterns. Same logic as `illuminate audit` on code, applied to doc drift. |
+| `docs/prompts/` as a first-class content type | Schema additions, examples, and `illuminate prompts list/show` CLI for curating the team's prompt cookbook. |
+
+### Exit criteria
+
+- Doc decay PR bot catches a stale doc reference on a real repo and opens a PR with the right line ranges flagged.
+- `illuminate publish --as-doc docs/designs/<slug>.md` produces a coherent design-doc draft from a real session.
+- Prompt-cookbook injection visible in `illuminate enrich --format json` output when the prompt matches a cookbook entry.
+
+---
+
+## v3.4 — Workflow Features
+
+**Target window:** ongoing after v3.3.
+
+**Goal:** Turn the corpus into workflows — onboarding journeys, on-call context bundles, agent skill packs, federation, living diagrams.
+
+### In scope
+
+| Component | What ships |
+|-----------|-----------|
+| `illuminate onboard` | Personalized onboarding journey for new hires. Walks foundational decisions → patterns → service-specific docs in graph-suggested order. Mark sections read, suggest next. |
+| `illuminate oncall <service>` | Context bundle for incidents: relevant docs, recent decisions, past failures, the prompts that produced the failing code. Focused reading list instead of 3 AM wiki grep. |
+| `illuminate skill build` | Auto-generate a Claude Code skill pack from the team's docs + decisions + patterns. Drop into `~/.claude/skills/` — agent now knows what your team knows. Updates as the repo evolves. |
+| Cross-repo team-of-teams federation | Optional layer: share certain doc categories (security policies, deployment patterns, on-call runbooks) across N team-illuminate repos. Opt-in per repo. Federated, not centralized. |
+| Living architecture diagrams | mermaid diagrams in `docs/architecture/*.md` auto-updated against the tree-sitter parse. Diagrams + code stay in sync without manual upkeep. |
+
+### Exit criteria
+
+- A new hire on a real team can run `illuminate onboard` and reach productive contributions in days, not months (measured via case-study).
+- `illuminate skill build` produces a skill pack that, when installed, demonstrably improves Claude Code's first-pass accuracy on team-specific tasks.
+
+---
+
+## v3.5 — Polish + Adoption
+
+**Target window:** ongoing alongside v3.3 / v3.4.
+
+**Goal:** Reduce friction for adoption. Make the loop unmissable.
 
 ### In scope
 
@@ -131,9 +214,9 @@ These remain on the punch list but are not in the v3.0 critical path:
 |-----------|-----------|
 | Self-coaching dashboard | Local-only, dev-owned, never shared upward. "Your last 10 prompts, what enrichment added, what the agent did with it." Pure dev value; aggregation forbidden. |
 | Wiki search v2 | Semantic + grep with per-page-type ranking weights. CLI + dashboard. |
-| Bootstrap helpers v2 | spec-kit constitutions, AGENTS.md variants, additional ADR formats. Slack / Linear / Jira import (optional, opt-in). |
-| Editor extensions | Thin wrappers for VS Code / Cursor / Zed that surface `illuminate enrich` + `illuminate publish` inline. Not new surfaces — just convenience. |
-| Onboarding wizard | `illuminate init --interactive` walks through agent setup, runs bootstrap, opens the wiki, and runs the enrichment demo. |
+| Bootstrap helpers v2 | Slack / Linear / Jira import (optional, opt-in). Additional ADR formats. |
+| Editor extensions | Thin wrappers for VS Code / Cursor / Zed that surface `illuminate enrich` + `illuminate publish` + `illuminate ask` inline. Not new surfaces — just convenience. |
+| Onboarding wizard | `illuminate init --interactive` walks through agent setup, runs bootstrap, opens the wiki, and runs the enrichment + ask demo. |
 
 ### Exit criteria
 
@@ -145,7 +228,7 @@ These remain on the punch list but are not in the v3.0 critical path:
 
 ## v3-cloud — Optional Hosted Layer
 
-**Target window:** only after v3.2 hits its exit criteria.
+**Target window:** only after v3.5 hits its exit criteria.
 
 **Goal:** Make money without breaking the local-first promise.
 

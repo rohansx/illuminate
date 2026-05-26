@@ -26,12 +26,19 @@ crates/
 └── illuminate-cli        # binary
 ```
 
-**Planned for v3.0 — 2 additional crates:**
+**Shipped in v3.0 — 2 additional crates (now at v0.21):**
 
 ```
 crates/
-├── illuminate-enrich     # pre-LLM prompt enrichment (Stage 1 of the v3 pipeline)
-└── illuminate-publish    # explicit publish gesture (Stage 4 of the v3 pipeline)
+├── illuminate-enrich     # pre-LLM prompt enrichment (Stage 1) — shipped v0.19
+└── illuminate-publish    # explicit publish gesture (Stage 4) — shipped v0.21
+```
+
+**Planned for v3.2 — 1 additional crate (`knowledge-layer.md`):**
+
+```
+crates/
+└── illuminate-ingest     # read-only adapters for confluence/notion/github-wiki/google-docs/spec-kit
 ```
 
 The `illuminate-cli` crate is the only binary. Everything else is a library.
@@ -598,7 +605,76 @@ pub fn install_pre_commit_hook(repo_root: &Path) -> Result<()>;
 
 **Dependencies.** `illuminate-core`, `illuminate-trail` (to parse the source jsonl), `serde`, `chrono`, `git2` (optional, for remote pushes).
 
-**Timeline.** v3.0.
+**Timeline.** Shipped v0.21 (`LocalPath` target only; `GitRemote` deferred to v3.1).
+
+---
+
+### `illuminate-ingest` (planned, v3.2)
+
+**Responsibility.** Read-only adapters for external knowledge homes. Pulls content from confluence, notion, github wiki, google docs, spec-kit artifacts, and additional local `docs/*.md` trees; feeds them through `illuminate-extract` so they land in the graph alongside trail-captured episodes. **Always read-only.** Never writes back to external systems. The third pillar of the v3 architecture — alongside `illuminate-enrich` (Stage 1) and `illuminate-publish` (Stage 4) — see [`knowledge-layer.md`](knowledge-layer.md).
+
+**Key types (sketch).**
+
+```rust
+pub trait IngestAdapter {
+    /// Stable identifier — `"confluence"`, `"notion"`, `"github-wiki"`, etc.
+    /// Used to tag episodes with `source: ingested:<name>`.
+    fn name(&self) -> &'static str;
+
+    /// Pull all documents matching the adapter's config. Returns iterator
+    /// of (id, content, metadata) so the caller can stream into extract.
+    fn fetch_all(&self) -> Result<Box<dyn Iterator<Item = IngestedDoc>>>;
+
+    /// Pull only what changed since the supplied watermark — used by
+    /// `illuminate ingest --watch` to keep the graph in sync incrementally.
+    fn fetch_since(&self, watermark: DateTime<Utc>) -> Result<Box<dyn Iterator<Item = IngestedDoc>>>;
+}
+
+pub struct IngestedDoc {
+    pub external_id: String,        // confluence page id, notion block id, ...
+    pub url: Option<String>,        // canonical URL back to the source
+    pub title: String,
+    pub markdown: String,
+    pub author: Option<String>,
+    pub updated_at: DateTime<Utc>,
+    pub adapter: &'static str,      // "confluence" | "notion" | ...
+    pub kind: DocKind,              // Adr | Runbook | Design | OnboardingGuide | Generic | ...
+}
+
+pub struct LocalMarkdownAdapter { /* roots: Vec<PathBuf> */ }
+pub struct ConfluenceAdapter { /* base_url, space_ids, token_env */ }
+pub struct NotionAdapter { /* workspace_id, token_env */ }
+pub struct GithubWikiAdapter { /* owner, repo, token_env */ }
+pub struct GoogleDocsAdapter { /* token_env, root_folder_id */ }
+pub struct SpecKitAdapter { /* repo_root */ }
+```
+
+**Public API (sketch).**
+
+```rust
+/// Load adapter set from `[ingest]` section of illuminate.toml.
+pub fn adapters_from_config(cfg: &IngestConfig) -> Vec<Box<dyn IngestAdapter>>;
+
+/// Run all adapters once. Returns counts per adapter.
+pub fn ingest_all(graph: &mut Graph, adapters: &[Box<dyn IngestAdapter>]) -> Result<IngestReport>;
+
+/// Watch mode — schedule a periodic incremental pull per adapter.
+pub fn watch(graph: Arc<Mutex<Graph>>, adapters: Vec<Box<dyn IngestAdapter>>, interval: Duration) -> JoinHandle<()>;
+```
+
+**Trust-model invariants.** Strictly **read-only** on the external side. No adapter exposes a `push()` / `write()` / `commit_back()` method. Bearer tokens for external APIs read from env vars only (never stored on disk). Each adapter's config in `illuminate.toml` requires an explicit opt-in field (`enabled = true`); zero defaults that auto-fetch.
+
+**Dependencies.** `illuminate-core`, `illuminate-extract`, `serde`, `chrono`, `reqwest` (TLS), `pulldown-cmark` (already in workspace), per-adapter optional features for `confluence`, `notion`, `github`, `google-drive`.
+
+**Companion CLI / MCP additions.**
+
+- `illuminate ask "<question>"` — cross-corpus Q&A over decisions, patterns, failures, sessions, and ingested docs. Uses the graph for structured retrieval plus a single synthesis call.
+- `illuminate browse [<path>]` — opens the team repo's markdown in a local renderer (or pipes to `glow` / `bat` / `$PAGER`).
+- `illuminate ingest [--watch]` — runs all configured adapters once (or on a schedule).
+- New MCP tool `illuminate_ask` — exposes the same cross-corpus Q&A to Claude Code, Cursor, and Codex.
+- `illuminate onboard` / `illuminate oncall <service>` / `illuminate skill build` — workflow features that compose with the new `Doc` entity type (v3.3/v3.4).
+
+**Timeline.** v3.2. Full landscape in [`knowledge-layer.md`](knowledge-layer.md).
 
 ---
 
