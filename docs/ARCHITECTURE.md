@@ -1,6 +1,6 @@
 # Illuminate — Architecture
 
-This document describes how Illuminate is structured, how data flows through it, and how the components fit together. For *why* it exists and *what* it does, see `PRODUCT_OVERVIEW.md` (v3 positioning) and `philosophy.md` (manifesto).
+This document describes how Illuminate is structured, how data flows through it, and how the components fit together. For *why* it exists and *what* it does, see [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md) (v3 positioning) and [`philosophy.md`](philosophy.md) (manifesto). For the canonical specification of **what data sits at each layer (raw trail / session summary / graph entities), the storage layout, retention, and the redaction pipeline**, see [`data-model.md`](data-model.md).
 
 > **v3 framing.** Illuminate is two user-facing products on one substrate: **Illuminate Enrich** (pre-LLM prompt enrichment) and **Illuminate Repo** (GitHub-for-agents — versioned published sessions). The architecture below describes the substrate as shipped through v0.18 plus the two planned crates (`illuminate-enrich`, `illuminate-publish`) that close the v3 loop. See `PRODUCT_OVERVIEW.md` for the four-stage pipeline (enrich → generate → capture → curate) and `ROADMAP.md` for what's shipped vs planned.
 

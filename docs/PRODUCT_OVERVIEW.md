@@ -147,7 +147,7 @@ Alongside the pipeline, Illuminate runs two guard rails (both shipped through v0
 
 ## The Trust Model
 
-This is the part that makes Illuminate viable. Get it wrong and developers won't install it. The full spec lives in [`trust-model.md`](trust-model.md); a summary follows.
+This is the part that makes Illuminate viable. Get it wrong and developers won't install it. The full trust spec lives in [`trust-model.md`](trust-model.md); the canonical "what is stored at each layer, with what retention, and the redaction pipeline" reference is in [`data-model.md`](data-model.md). A summary follows.
 
 ### What stays local, always
 

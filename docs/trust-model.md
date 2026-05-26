@@ -4,7 +4,7 @@ This document is the explicit boundary between what Illuminate captures, what it
 
 > **The one-sentence version:** Everything stays local until you explicitly publish it; some things are never built no matter what a customer asks for.
 
-For the product framing this trust model serves, see [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md). For the manifesto, see [`philosophy.md`](philosophy.md). For the technical implementation of the local-first guarantees, see [`PRIVACY.md`](PRIVACY.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md).
+For the product framing this trust model serves, see [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md). For the manifesto, see [`philosophy.md`](philosophy.md). For the canonical specification of **what is stored at each of the three layers (raw trail / session summary / graph entities), with what retention, and what the redaction pipeline filters out**, see [`data-model.md`](data-model.md). For the technical implementation of the local-first guarantees in code, see [`PRIVACY.md`](PRIVACY.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 

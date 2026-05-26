@@ -2,7 +2,7 @@
 
 This document specifies what data Illuminate captures, where it lives, what (if anything) leaves the dev's machine, and how the system behaves under failure. It's the document the security review at a regulated buyer (Harvey, Abridge, Hippocratic AI, financial institutions, healthcare) will read first.
 
-For the architecture that this model rests on, see `ARCHITECTURE.md`.
+For the architecture that this model rests on, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For the **canonical reference on what is stored at each of the three layers (raw trail / session summary / graph entities), where it lives, how long it's retained, and what the redaction pipeline filters out**, see [`data-model.md`](data-model.md) — that's the artifact compliance reviewers should read alongside this one.
 
 ---
 
