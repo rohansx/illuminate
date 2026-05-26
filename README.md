@@ -291,6 +291,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the two-graph diagram (code
 - **[Trust model](docs/trust-model.md)** — what stays local, what gets published, what is never built
 - **[Data model](docs/data-model.md)** — the three-layer storage spec (raw trail / session summary / graph entities), retention, redaction
 - **[Knowledge layer](docs/knowledge-layer.md)** — docs as first-class content in the team repo (v3.2+)
+- **[Code graph strategy](docs/code-graph-strategy.md)** — why `illuminate-index` stays narrow and how it composes with GitNexus / code-review-graph
 
 ---
 

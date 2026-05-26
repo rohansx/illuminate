@@ -270,6 +270,8 @@ impl CodeIndex {
 
 **Timeline.** v0.1.
 
+**Scope rationale.** See [`code-graph-strategy.md`](code-graph-strategy.md) for the in-scope / out-of-scope decision matrix and why this crate deliberately stays narrow rather than competing with GitNexus / code-review-graph on full code-intelligence depth.
+
 ---
 
 ## `illuminate-audit`

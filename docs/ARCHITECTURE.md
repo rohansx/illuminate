@@ -390,6 +390,8 @@ See `AUDIT.md` for the full audit-tool contract.
 
 ## Two Graphs, One Audit
 
+> **For the strategy behind keeping the code graph narrow** (and why `illuminate-index` deliberately stops short of full call graphs, inheritance chains, cluster analysis, etc. — composing with GitNexus / code-review-graph instead of replacing them), see [`code-graph-strategy.md`](code-graph-strategy.md).
+
 Illuminate runs two graphs side-by-side. They live in different SQLite files and answer different questions; `illuminate-audit` is the only place they get joined.
 
 ```
