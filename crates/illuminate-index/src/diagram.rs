@@ -78,7 +78,11 @@ pub fn emit_mermaid(files: &[String], imports: &[Edge]) -> String {
     out.push_str(MERMAID_HEADER);
     out.push('\n');
     for label in &kept_labels {
-        out.push_str(&format!("    {}[\"{}\"]\n", node_id(label), escape_label(label)));
+        out.push_str(&format!(
+            "    {}[\"{}\"]\n",
+            node_id(label),
+            escape_label(label)
+        ));
     }
     for line in &kept_edges {
         out.push_str(line);
@@ -178,7 +182,10 @@ mod diagram_emitter_tests {
         let edges = vec![imp("src/a.rs", "widget")];
         let out = emit_mermaid(&files, &edges);
         // Both endpoints are nodes, the target node appears, and an arrow joins them.
-        assert!(out.contains("[\"src/a.rs\"]"), "source file node missing:\n{out}");
+        assert!(
+            out.contains("[\"src/a.rs\"]"),
+            "source file node missing:\n{out}"
+        );
         assert!(out.contains("[\"widget\"]"), "target node missing:\n{out}");
         let src_id = node_id("src/a.rs");
         let tgt_id = node_id("widget");
@@ -216,7 +223,10 @@ mod diagram_emitter_tests {
         let edges = vec![imp("src/a.rs", "dup"), imp("src/a.rs", "dup")];
         let out = emit_mermaid(&files, &edges);
         let arrow_count = out.matches(" --> ").count();
-        assert_eq!(arrow_count, 1, "duplicate edges must collapse to one:\n{out}");
+        assert_eq!(
+            arrow_count, 1,
+            "duplicate edges must collapse to one:\n{out}"
+        );
     }
 
     #[test]
@@ -226,7 +236,10 @@ mod diagram_emitter_tests {
             .collect();
         let out = emit_mermaid(&files, &[]);
         let node_count = out.matches("[\"").count();
-        assert_eq!(node_count, MAX_NODES, "node set must be capped at MAX_NODES");
+        assert_eq!(
+            node_count, MAX_NODES,
+            "node set must be capped at MAX_NODES"
+        );
     }
 
     #[test]
@@ -242,6 +255,10 @@ mod diagram_emitter_tests {
         // An edge whose target collapses to the same label as the source.
         let edges = vec![imp("src/a.rs", "src/a.rs")];
         let out = emit_mermaid(&files, &edges);
-        assert_eq!(out.matches(" --> ").count(), 0, "self-loops must be skipped:\n{out}");
+        assert_eq!(
+            out.matches(" --> ").count(),
+            0,
+            "self-loops must be skipped:\n{out}"
+        );
     }
 }

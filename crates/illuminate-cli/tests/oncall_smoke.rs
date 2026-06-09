@@ -110,8 +110,14 @@ fn oncall_surfaces_both_seeded_titles_and_section_headings() {
 
     // Section headings: failures + decisions must be named.
     let lower = stdout.to_lowercase();
-    assert!(lower.contains("failures"), "missing failures heading: {stdout}");
-    assert!(lower.contains("decisions"), "missing decisions heading: {stdout}");
+    assert!(
+        lower.contains("failures"),
+        "missing failures heading: {stdout}"
+    );
+    assert!(
+        lower.contains("decisions"),
+        "missing decisions heading: {stdout}"
+    );
 
     // The footer must name the real follow-up verbs.
     assert!(

@@ -86,9 +86,18 @@ fn api_dashboard_returns_stable_envelope() {
     assert!(v.get("project").is_some(), "missing `project`");
     assert!(v.get("generated_at").is_some(), "missing `generated_at`");
     assert!(v.get("stats").is_some(), "missing `stats`");
-    assert!(v.get("recent_sessions").is_some(), "missing `recent_sessions`");
-    assert!(v.get("recent_decisions").is_some(), "missing `recent_decisions`");
-    assert!(v.get("recent_failures").is_some(), "missing `recent_failures`");
+    assert!(
+        v.get("recent_sessions").is_some(),
+        "missing `recent_sessions`"
+    );
+    assert!(
+        v.get("recent_decisions").is_some(),
+        "missing `recent_decisions`"
+    );
+    assert!(
+        v.get("recent_failures").is_some(),
+        "missing `recent_failures`"
+    );
     assert!(v.get("audit_rows").is_some(), "missing `audit_rows`");
 
     assert_eq!(v["project"], "testproj");
@@ -220,7 +229,9 @@ fn api_dashboard_tokens_object_is_present_and_numeric() {
         "cache_saved_pct",
         "sessions",
     ] {
-        let field = tokens.get(key).unwrap_or_else(|| panic!("missing tokens.{key}"));
+        let field = tokens
+            .get(key)
+            .unwrap_or_else(|| panic!("missing tokens.{key}"));
         assert!(
             field.is_number(),
             "tokens.{key} must be numeric, got {field}"

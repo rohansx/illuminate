@@ -788,11 +788,7 @@ pub fn run() {
             symbol_type,
             limit,
         } => commands::symbols::run(name, symbol_type, limit),
-        Commands::Diagram {
-            format,
-            out,
-            roots,
-        } => commands::diagram::run(format, out, roots),
+        Commands::Diagram { format, out, roots } => commands::diagram::run(format, out, roots),
         Commands::Export { format } => commands::export::run(&format),
         Commands::Summary { limit } => commands::summary::run(limit),
         Commands::Onboard { json } => commands::onboard::run(json),

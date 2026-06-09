@@ -40,7 +40,10 @@ fn cursor_install_writes_hooks_json_with_illuminate() {
     );
 
     let cfg = tmp.path().join(".cursor/hooks.json");
-    assert!(cfg.is_file(), "cursor config must exist at .cursor/hooks.json");
+    assert!(
+        cfg.is_file(),
+        "cursor config must exist at .cursor/hooks.json"
+    );
 
     let body = fs::read_to_string(&cfg).unwrap();
     let json: serde_json::Value = serde_json::from_str(&body).expect("valid json");
@@ -106,7 +109,10 @@ fn codex_install_writes_config_with_illuminate() {
     );
 
     let cfg = tmp.path().join(".codex/hooks.json");
-    assert!(cfg.is_file(), "codex config must exist at .codex/hooks.json");
+    assert!(
+        cfg.is_file(),
+        "codex config must exist at .codex/hooks.json"
+    );
 
     let body = fs::read_to_string(&cfg).unwrap();
     let json: serde_json::Value = serde_json::from_str(&body).expect("valid json");

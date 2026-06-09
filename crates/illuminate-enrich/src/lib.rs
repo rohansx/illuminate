@@ -456,10 +456,7 @@ fn token_set(text: &str) -> std::collections::BTreeSet<String> {
 
 /// Jaccard similarity |A∩B| / |A∪B| between two token sets. Returns 0.0 when
 /// either set is empty (never NaN).
-fn jaccard(
-    a: &std::collections::BTreeSet<String>,
-    b: &std::collections::BTreeSet<String>,
-) -> f64 {
+fn jaccard(a: &std::collections::BTreeSet<String>, b: &std::collections::BTreeSet<String>) -> f64 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
     }
@@ -632,7 +629,10 @@ mod tests {
         assert!(sim > 0.0 && sim <= 1.0, "sim out of range: {sim}");
         // Identical sets → 1.0; disjoint → 0.0; no NaN on empties.
         assert_eq!(jaccard(&a, &a), 1.0);
-        assert_eq!(jaccard(&token_set("zzz qqq"), &token_set("redis cache")), 0.0);
+        assert_eq!(
+            jaccard(&token_set("zzz qqq"), &token_set("redis cache")),
+            0.0
+        );
         assert_eq!(
             jaccard(
                 &std::collections::BTreeSet::new(),

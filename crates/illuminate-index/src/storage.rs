@@ -226,9 +226,7 @@ pub fn edge_count(conn: &Connection) -> Result<usize> {
 /// `illuminate diagram` node set. Sorting in SQL keeps the output stable so two
 /// runs over the same index produce byte-identical diagrams.
 pub fn list_files(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT file_path FROM symbols ORDER BY file_path",
-    )?;
+    let mut stmt = conn.prepare("SELECT DISTINCT file_path FROM symbols ORDER BY file_path")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Into::into)
@@ -445,7 +443,11 @@ mod diagram_reader_tests {
         upsert_edges(
             &conn,
             "src/a.rs",
-            &[import_edge("src/a.rs", "zlib"), import_edge("src/a.rs", "alib"), call],
+            &[
+                import_edge("src/a.rs", "zlib"),
+                import_edge("src/a.rs", "alib"),
+                call,
+            ],
         )
         .unwrap();
 

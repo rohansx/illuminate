@@ -164,11 +164,7 @@ fn audit_docs_json_envelope_carries_contradiction() {
     seed_no_redis_decision(repo);
 
     let doc = repo.join("design.md");
-    fs::write(
-        &doc,
-        "# Caching design\n\nWe use Redis for the cache.\n",
-    )
-    .unwrap();
+    fs::write(&doc, "# Caching design\n\nWe use Redis for the cache.\n").unwrap();
 
     let out = run(repo, &["audit-docs", "design.md", "--json"]);
     let stdout = String::from_utf8_lossy(&out.stdout);

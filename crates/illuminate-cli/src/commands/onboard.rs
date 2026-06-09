@@ -390,8 +390,14 @@ fn render_human<W: Write>(out: &mut W, brief: &Brief) -> std::io::Result<()> {
             "failures, or modules recorded. capture some, then re-run onboard:"
         )?;
         writeln!(out)?;
-        writeln!(out, "  illuminate failure log --title ... --root-cause ... --fix ... --severity ...")?;
-        writeln!(out, "  illuminate wiki new decision   (then `illuminate wiki rebuild`)")?;
+        writeln!(
+            out,
+            "  illuminate failure log --title ... --root-cause ... --fix ... --severity ..."
+        )?;
+        writeln!(
+            out,
+            "  illuminate wiki new decision   (then `illuminate wiki rebuild`)"
+        )?;
         return Ok(());
     }
 
@@ -457,7 +463,10 @@ mod tests {
             classify(&ep("x", Some("failure:fail-stampede"))),
             Some(Section::Failure)
         );
-        assert_eq!(classify(&ep("x", Some("reflexion"))), Some(Section::Failure));
+        assert_eq!(
+            classify(&ep("x", Some("reflexion"))),
+            Some(Section::Failure)
+        );
         assert_eq!(
             classify(&ep("x", Some("wiki:mod/payments"))),
             Some(Section::Module)
@@ -488,7 +497,10 @@ mod tests {
     #[test]
     fn classify_failure_front_matter_body() {
         let body = "---\nid: fail-stampede\ntitle: Cache stampede\npage_type: failure\n---\n\n## Root Cause\n\nno jitter\n";
-        assert_eq!(classify(&ep(body, Some("failure:fail-stampede"))), Some(Section::Failure));
+        assert_eq!(
+            classify(&ep(body, Some("failure:fail-stampede"))),
+            Some(Section::Failure)
+        );
         // Even without the source label, the front matter classifies it.
         assert_eq!(classify(&ep(body, None)), Some(Section::Failure));
     }
@@ -496,7 +508,10 @@ mod tests {
     #[test]
     fn derive_title_prefers_front_matter_then_strips_tag() {
         let body = "---\nid: fail-x\ntitle: Cache stampede on cold start\npage_type: failure\n---\n\n## Root Cause\n";
-        assert_eq!(derive_title(&ep(body, None)), "Cache stampede on cold start");
+        assert_eq!(
+            derive_title(&ep(body, None)),
+            "Cache stampede on cold start"
+        );
         assert_eq!(
             derive_title(&ep("[dec-foo] Use Postgres for billing", None)),
             "Use Postgres for billing"
@@ -507,7 +522,10 @@ mod tests {
     fn preview_skips_front_matter_and_collapses_lines() {
         let body = "---\nid: fail-x\ntitle: T\npage_type: failure\n---\n\n## Root Cause\n\nno jitter on the TTL\n";
         let p = preview(body, 100);
-        assert!(!p.contains("page_type"), "front matter must be skipped: {p}");
+        assert!(
+            !p.contains("page_type"),
+            "front matter must be skipped: {p}"
+        );
         assert!(p.contains("no jitter"), "body prose must survive: {p}");
     }
 

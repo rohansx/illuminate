@@ -182,7 +182,10 @@ mod tests {
 
     #[test]
     fn content_mentions_path_is_case_insensitive() {
-        assert!(content_mentions_path("Touched SRC/Payments today.", "src/payments"));
+        assert!(content_mentions_path(
+            "Touched SRC/Payments today.",
+            "src/payments"
+        ));
     }
 
     #[test]

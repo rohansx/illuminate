@@ -148,7 +148,10 @@ fn emit_human(stale: &[StaleRef], scanned: usize) {
         stale.len()
     );
     for s in stale {
-        println!("  STALE {}:{} → `{}` (no such symbol)", s.file, s.line, s.symbol);
+        println!(
+            "  STALE {}:{} → `{}` (no such symbol)",
+            s.file, s.line, s.symbol
+        );
     }
 }
 

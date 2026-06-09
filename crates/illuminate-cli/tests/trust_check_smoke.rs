@@ -51,7 +51,8 @@ fn default_config_passes_clean() {
     );
     let lower = stdout.to_lowercase();
     assert!(
-        lower.contains("trust") && (lower.contains("ok") || lower.contains("pass") || lower.contains("clean")),
+        lower.contains("trust")
+            && (lower.contains("ok") || lower.contains("pass") || lower.contains("clean")),
         "expected a clean trust notice; stdout: {stdout}"
     );
 }
@@ -94,8 +95,7 @@ fn remote_target_without_consent_fails_and_names_target() {
     );
     // The report must name the offending target so the dev can find it.
     assert!(
-        stdout.contains("git@github.com:acme/team-illuminate.git")
-            || stdout.contains("[publish]"),
+        stdout.contains("git@github.com:acme/team-illuminate.git") || stdout.contains("[publish]"),
         "report must name the offending off-host target; stdout: {stdout}"
     );
     let lower = stdout.to_lowercase();
@@ -141,8 +141,8 @@ fn json_envelope_is_stable_on_failure() {
         !out.status.success(),
         "json failing config must still exit non-zero; stdout: {stdout}"
     );
-    let parsed: serde_json::Value =
-        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("invalid json: {e}\n{stdout}"));
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("invalid json: {e}\n{stdout}"));
 
     assert_eq!(
         parsed.get("ok").and_then(|v| v.as_bool()),
@@ -188,11 +188,18 @@ fn json_envelope_is_stable_on_pass() {
         out.status.success(),
         "json clean config must exit 0; stdout: {stdout}"
     );
-    let parsed: serde_json::Value =
-        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("invalid json: {e}\n{stdout}"));
-    assert_eq!(parsed.get("ok").and_then(|v| v.as_bool()), Some(true), "{stdout}");
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("invalid json: {e}\n{stdout}"));
     assert_eq!(
-        parsed.get("findings").and_then(|v| v.as_array()).map(|a| a.len()),
+        parsed.get("ok").and_then(|v| v.as_bool()),
+        Some(true),
+        "{stdout}"
+    );
+    assert_eq!(
+        parsed
+            .get("findings")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len()),
         Some(0),
         "clean config must have zero findings; {stdout}"
     );

@@ -45,7 +45,9 @@ fn negated_mention_does_not_violate() {
     let (_dir, graph) = tempdir_graph();
     let auditor = Auditor::new(graph, vec![redis_rejected_policy()]);
 
-    let result = auditor.audit("We will not use Redis for this service").unwrap();
+    let result = auditor
+        .audit("We will not use Redis for this service")
+        .unwrap();
 
     assert_eq!(
         result.status,
@@ -64,7 +66,9 @@ fn affirmative_mention_still_violates() {
     let (_dir, graph) = tempdir_graph();
     let auditor = Auditor::new(graph, vec![redis_rejected_policy()]);
 
-    let result = auditor.audit("Add a Redis cache to the billing service").unwrap();
+    let result = auditor
+        .audit("Add a Redis cache to the billing service")
+        .unwrap();
 
     assert_eq!(
         result.status,
@@ -73,10 +77,7 @@ fn affirmative_mention_still_violates() {
     );
     assert_eq!(result.policy_violations.len(), 1);
     assert_eq!(result.policy_violations[0].policy_name, "no_redis");
-    assert_eq!(
-        result.policy_violations[0].found.as_deref(),
-        Some("Redis")
-    );
+    assert_eq!(result.policy_violations[0].found.as_deref(), Some("Redis"));
 }
 
 #[test]

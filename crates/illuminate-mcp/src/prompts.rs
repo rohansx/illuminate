@@ -120,7 +120,8 @@ pub fn get_prompt(name: &str, arguments: Option<&Value>) -> Result<Value, String
                 .unwrap_or("")
                 .trim();
             let subject_clause = if task.is_empty() {
-                "Subject: derive it from the conversation so far (the user's first request).".to_string()
+                "Subject: derive it from the conversation so far (the user's first request)."
+                    .to_string()
             } else {
                 format!("Subject: \"{task}\".")
             };

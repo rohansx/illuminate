@@ -191,12 +191,7 @@ fn populate_calls_graph(db_path: &std::path::Path) {
         file_path: "crates/billing/src/lib.rs".to_string(),
         line: 2,
     };
-    upsert_edges(
-        &conn,
-        "crates/billing/src/lib.rs",
-        &[charge_calls_settle],
-    )
-    .unwrap();
+    upsert_edges(&conn, "crates/billing/src/lib.rs", &[charge_calls_settle]).unwrap();
 }
 
 /// Regression test for MCP/CLI impact parity: the MCP `compute_impact` must

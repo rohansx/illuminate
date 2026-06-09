@@ -219,11 +219,7 @@ fn looks_like_concept(tok: &str) -> bool {
 /// Scan a doc's prose paragraphs for affirmative recommendations of any
 /// rejected concept. Returns one [`Contradiction`] per (paragraph, decision)
 /// pair, deterministically ordered by line then decision id.
-fn scan_doc(
-    file: &str,
-    text: &str,
-    decisions: &[RejectingDecision],
-) -> Vec<Contradiction> {
+fn scan_doc(file: &str, text: &str, decisions: &[RejectingDecision]) -> Vec<Contradiction> {
     let mut out: Vec<Contradiction> = Vec::new();
     if decisions.is_empty() {
         return out;
@@ -428,7 +424,8 @@ mod tests {
     #[test]
     fn rejected_concepts_ignores_affirmatively_used_concept() {
         // A decision that AFFIRMS Postgres does not reject it.
-        let rejected = rejected_concepts("[dec-use-pg] Use Postgres\n\nWe use Postgres for storage.");
+        let rejected =
+            rejected_concepts("[dec-use-pg] Use Postgres\n\nWe use Postgres for storage.");
         assert!(
             !rejected.contains(&"postgres".to_string()),
             "an affirmed concept must NOT be rejected: {rejected:?}"

@@ -75,8 +75,8 @@ fn write_json(path: &Path, value: &serde_json::Value) -> illuminate::Result<()> 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(IlluminateError::Io)?;
     }
-    let json_str =
-        serde_json::to_string_pretty(value).map_err(|e| IlluminateError::Extraction(e.to_string()))?;
+    let json_str = serde_json::to_string_pretty(value)
+        .map_err(|e| IlluminateError::Extraction(e.to_string()))?;
     std::fs::write(path, json_str).map_err(IlluminateError::Io)?;
     Ok(())
 }
@@ -100,9 +100,7 @@ fn install_cursor(root: &Path) -> illuminate::Result<PathBuf> {
         .as_object_mut()
         .expect("read_json always yields an object");
     obj.entry("version").or_insert_with(|| serde_json::json!(1));
-    let hooks = obj
-        .entry("hooks")
-        .or_insert_with(|| serde_json::json!({}));
+    let hooks = obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
     let after_edit = hooks
         .as_object_mut()
         .expect("hooks is an object")

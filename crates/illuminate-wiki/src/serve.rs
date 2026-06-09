@@ -264,9 +264,7 @@ fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
 
     let edges: usize = pages
         .iter()
-        .map(|p| {
-            p.front.related.len() + p.front.supersedes.len() + p.front.superseded_by.len()
-        })
+        .map(|p| p.front.related.len() + p.front.supersedes.len() + p.front.superseded_by.len())
         .sum();
 
     let mut sorted: Vec<&WikiPage> = pages.iter().collect();
@@ -285,8 +283,7 @@ fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
         })
     };
 
-    let recent_sessions: Vec<serde_json::Value> =
-        sorted.iter().take(10).map(|p| row(p)).collect();
+    let recent_sessions: Vec<serde_json::Value> = sorted.iter().take(10).map(|p| row(p)).collect();
     let recent_decisions: Vec<serde_json::Value> = sorted
         .iter()
         .filter(|p| p.front.page_type == PageType::Decision)
@@ -303,9 +300,7 @@ fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
     // auditor reasons over when checking a plan against prior intent.
     let audit_rows: Vec<serde_json::Value> = sorted
         .iter()
-        .filter(|p| {
-            matches!(p.front.page_type, PageType::Decision | PageType::Failure)
-        })
+        .filter(|p| matches!(p.front.page_type, PageType::Decision | PageType::Failure))
         .take(10)
         .map(|p| row(p))
         .collect();

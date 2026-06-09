@@ -143,7 +143,10 @@ fn check_cloud_sync(root: &toml::Value) -> Vec<TrustFinding> {
         return Vec::new();
     };
 
-    let enabled = sync.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let enabled = sync
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     if !enabled || has_consent(sync) {
         return Vec::new();
     }

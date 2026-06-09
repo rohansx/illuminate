@@ -137,10 +137,7 @@ fn build_brief(graph: &Graph, service: &str) -> illuminate::Result<Brief> {
         failures,
         decisions,
         modules,
-        query_verbs: QUERY_VERBS
-            .iter()
-            .map(|v| verb_head(v))
-            .collect(),
+        query_verbs: QUERY_VERBS.iter().map(|v| verb_head(v)).collect(),
     })
 }
 
@@ -329,7 +326,10 @@ fn render_human<W: Write>(out: &mut W, brief: &Brief) -> std::io::Result<()> {
             out,
             "no failures, decisions, or modules in this graph mention that"
         )?;
-        writeln!(out, "service. try a broader query, or capture context first:")?;
+        writeln!(
+            out,
+            "service. try a broader query, or capture context first:"
+        )?;
         writeln!(out)?;
         render_footer(out, &brief.service)?;
         return Ok(());
@@ -394,7 +394,10 @@ mod tests {
             classify(&ep("x", Some("failure:fail-stampede"))),
             Some(Section::Failure)
         );
-        assert_eq!(classify(&ep("x", Some("reflexion"))), Some(Section::Failure));
+        assert_eq!(
+            classify(&ep("x", Some("reflexion"))),
+            Some(Section::Failure)
+        );
         assert_eq!(
             classify(&ep("x", Some("wiki:dec/use-postgres"))),
             Some(Section::Decision)
@@ -440,7 +443,10 @@ mod tests {
         ));
         // Content match (not in the derived title).
         assert!(mentions_service(
-            &ep("[dec-x] Idempotency keys\n\nThe payments service dedupes retries.", None),
+            &ep(
+                "[dec-x] Idempotency keys\n\nThe payments service dedupes retries.",
+                None
+            ),
             "payments"
         ));
         // Source match.
@@ -453,7 +459,10 @@ mod tests {
     #[test]
     fn mentions_service_is_case_insensitive_and_substring() {
         // needle is pre-lowercased by build_brief; verify substring + case-fold.
-        assert!(mentions_service(&ep("[dec-x] PAYMENTS GATEWAY", None), "payments"));
+        assert!(mentions_service(
+            &ep("[dec-x] PAYMENTS GATEWAY", None),
+            "payments"
+        ));
         assert!(mentions_service(
             &ep("[dec-x] the billing-payments-svc handler", None),
             "payments"
@@ -481,7 +490,10 @@ mod tests {
     fn preview_skips_front_matter_and_collapses_lines() {
         let body = "---\nid: fail-x\ntitle: T\npage_type: failure\n---\n\n## Root Cause\n\nno idempotency key on the payments charge\n";
         let p = preview(body, 100);
-        assert!(!p.contains("page_type"), "front matter must be skipped: {p}");
+        assert!(
+            !p.contains("page_type"),
+            "front matter must be skipped: {p}"
+        );
         assert!(
             p.contains("no idempotency key"),
             "body prose must survive: {p}"
@@ -554,6 +566,10 @@ mod tests {
         assert!(a.failures.is_empty());
         assert!(a.modules.is_empty());
         // query_verbs carry the real follow-up command heads.
-        assert!(a.query_verbs.iter().any(|v| v == "illuminate failures list"));
+        assert!(
+            a.query_verbs
+                .iter()
+                .any(|v| v == "illuminate failures list")
+        );
     }
 }

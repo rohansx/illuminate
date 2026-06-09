@@ -405,7 +405,10 @@ mod tests {
             classify(&ep("x", Some("failure:fail-stampede"))),
             Some(Section::Failure)
         );
-        assert_eq!(classify(&ep("x", Some("reflexion"))), Some(Section::Failure));
+        assert_eq!(
+            classify(&ep("x", Some("reflexion"))),
+            Some(Section::Failure)
+        );
         // Modules and plain prose are ignored by the skill pack.
         assert_eq!(classify(&ep("x", Some("wiki:mod/payments"))), None);
         assert_eq!(classify(&ep("just some prose", None)), None);
@@ -434,10 +437,16 @@ mod tests {
             failures: vec![],
         };
         let doc = render(&pack);
-        assert!(doc.starts_with("---\n"), "must open with front-matter: {doc}");
+        assert!(
+            doc.starts_with("---\n"),
+            "must open with front-matter: {doc}"
+        );
         // The second `---` closes the front-matter block.
         let after = doc.strip_prefix("---\n").unwrap();
-        assert!(after.contains("\n---"), "front-matter must be closed: {doc}");
+        assert!(
+            after.contains("\n---"),
+            "front-matter must be closed: {doc}"
+        );
         assert!(doc.contains("\nname: "), "must carry a name key: {doc}");
         assert!(
             doc.contains("\ndescription: "),
@@ -463,7 +472,10 @@ mod tests {
         };
         assert!(pack.is_empty());
         let doc = render(&pack);
-        assert!(doc.starts_with("---\n"), "skeleton must have front-matter: {doc}");
+        assert!(
+            doc.starts_with("---\n"),
+            "skeleton must have front-matter: {doc}"
+        );
         assert!(doc.contains("\nname: "), "skeleton must carry name: {doc}");
         assert!(
             doc.contains("\ndescription: "),

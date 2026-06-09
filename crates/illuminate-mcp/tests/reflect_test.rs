@@ -65,9 +65,15 @@ async fn reflect_persists_episode_in_canonical_reflexion_shape() {
 
     // Canonical structured fields round-trip exactly.
     assert_eq!(refl.failure, "Redis connection pool exhaustion in staging");
-    assert_eq!(refl.root_cause, "VPC limits concurrent Redis connections to 50");
+    assert_eq!(
+        refl.root_cause,
+        "VPC limits concurrent Redis connections to 50"
+    );
     assert_eq!(refl.corrective_action, "Use Memcached instead of Redis");
-    assert_eq!(refl.files_affected, vec!["src/cache/provider.rs".to_string()]);
+    assert_eq!(
+        refl.files_affected,
+        vec!["src/cache/provider.rs".to_string()]
+    );
     assert_eq!(refl.severity, illuminate_reflect::Severity::High);
 }
 

@@ -110,6 +110,9 @@ fn empty_graph_hash_is_stable() {
     let b = enrich_prompt(&graph, None, &req).expect("b");
 
     assert_eq!(a.graph_state_hash, b.graph_state_hash);
-    assert_eq!(a.enriched_prompt, req.raw_prompt, "empty graph → raw prompt");
+    assert_eq!(
+        a.enriched_prompt, req.raw_prompt,
+        "empty graph → raw prompt"
+    );
     assert!(a.injections.is_empty());
 }

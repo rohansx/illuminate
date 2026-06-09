@@ -46,7 +46,12 @@ mod tests {
         assert_eq!(asset("/app").unwrap().0, HTML_CT);
         assert!(asset("/app").unwrap().1.contains("data-bind"));
         assert_eq!(asset("/illuminate-v4.css").unwrap().0, CSS_CT);
-        assert!(asset("/illuminate-v4.js").unwrap().1.contains("/api/dashboard"));
+        assert!(
+            asset("/illuminate-v4.js")
+                .unwrap()
+                .1
+                .contains("/api/dashboard")
+        );
     }
 
     #[test]

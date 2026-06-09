@@ -63,9 +63,9 @@ fn seed_decision(repo: &Path) {
 /// `---` fenced YAML block. Panics if the front-matter delimiters are absent —
 /// the assertion the smoke test relies on.
 fn split_front_matter(doc: &str) -> (&str, &str) {
-    let rest = doc
-        .strip_prefix("---\n")
-        .unwrap_or_else(|| panic!("SKILL.md must open with a `---` front-matter delimiter:\n{doc}"));
+    let rest = doc.strip_prefix("---\n").unwrap_or_else(|| {
+        panic!("SKILL.md must open with a `---` front-matter delimiter:\n{doc}")
+    });
     let end = rest
         .find("\n---")
         .unwrap_or_else(|| panic!("SKILL.md front-matter must be closed by a `---` line:\n{doc}"));
@@ -184,7 +184,10 @@ fn skill_build_out_writes_deterministic_file() {
         repo,
         &["skill", "build", "--out", out_path.to_str().unwrap()],
     );
-    assert!(out2.status.success(), "second skill build --out must exit 0");
+    assert!(
+        out2.status.success(),
+        "second skill build --out must exit 0"
+    );
     let second = fs::read_to_string(&out_path).expect("re-read SKILL.md");
     assert_eq!(
         first, second,

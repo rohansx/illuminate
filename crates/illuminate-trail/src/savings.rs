@@ -60,8 +60,7 @@ pub fn aggregate_tokens(records: &[TrailRecord]) -> TokenTotals {
         totals.cache_read_input_tokens += r.cache_read_input_tokens.unwrap_or(0);
     }
 
-    totals.cache_saved_pct =
-        cache_saved_pct(totals.cache_read_input_tokens, totals.input_tokens);
+    totals.cache_saved_pct = cache_saved_pct(totals.cache_read_input_tokens, totals.input_tokens);
     totals
 }
 

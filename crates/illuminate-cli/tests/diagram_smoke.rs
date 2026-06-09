@@ -119,7 +119,10 @@ fn diagram_out_writes_to_file() {
         String::from_utf8_lossy(&out.stderr)
     );
     let written = repo.join("build/arch.mmd");
-    assert!(written.exists(), "diagram --out must create the file (and parent dir)");
+    assert!(
+        written.exists(),
+        "diagram --out must create the file (and parent dir)"
+    );
     let body = fs::read_to_string(&written).unwrap();
     assert!(
         body.starts_with("flowchart TD"),

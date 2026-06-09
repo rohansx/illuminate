@@ -196,7 +196,10 @@ fn is_code_like(s: &str) -> bool {
         return true;
     }
     let mut chars = s.chars();
-    let first_upper = chars.next().map(|c| c.is_ascii_uppercase()).unwrap_or(false);
+    let first_upper = chars
+        .next()
+        .map(|c| c.is_ascii_uppercase())
+        .unwrap_or(false);
     let has_inner_upper = s.chars().skip(1).any(|c| c.is_ascii_uppercase());
     first_upper || has_inner_upper
 }
@@ -206,8 +209,21 @@ fn is_code_like(s: &str) -> bool {
 fn looks_like_source_path(prefix: &str) -> bool {
     matches!(
         prefix.rsplit('.').next(),
-        Some("rs" | "go" | "ts" | "tsx" | "js" | "jsx" | "py" | "java" | "c" | "h" | "cpp" | "cc"
-            | "cxx" | "hpp")
+        Some(
+            "rs" | "go"
+                | "ts"
+                | "tsx"
+                | "js"
+                | "jsx"
+                | "py"
+                | "java"
+                | "c"
+                | "h"
+                | "cpp"
+                | "cc"
+                | "cxx"
+                | "hpp"
+        )
     ) && prefix.contains('.')
 }
 

@@ -128,10 +128,22 @@ fn onboard_surfaces_seeded_decision_and_failure_titles() {
 
     // Section structure: decisions / patterns / failures / modules headings.
     let lower = stdout.to_lowercase();
-    assert!(lower.contains("decisions"), "missing decisions section: {stdout}");
-    assert!(lower.contains("patterns"), "missing patterns section: {stdout}");
-    assert!(lower.contains("failures"), "missing failures section: {stdout}");
-    assert!(lower.contains("modules"), "missing modules section: {stdout}");
+    assert!(
+        lower.contains("decisions"),
+        "missing decisions section: {stdout}"
+    );
+    assert!(
+        lower.contains("patterns"),
+        "missing patterns section: {stdout}"
+    );
+    assert!(
+        lower.contains("failures"),
+        "missing failures section: {stdout}"
+    );
+    assert!(
+        lower.contains("modules"),
+        "missing modules section: {stdout}"
+    );
 
     // The "how to query the graph" footer must name real verbs.
     assert!(
@@ -224,7 +236,9 @@ fn onboard_json_emits_cookbook_array() {
         .filter_map(|d| d.get("title").and_then(|t| t.as_str()))
         .collect();
     assert!(
-        !dec_titles.iter().any(|t| t.contains("Adding an API endpoint")),
+        !dec_titles
+            .iter()
+            .any(|t| t.contains("Adding an API endpoint")),
         "the cookbook entry must not be reclassified as a decision: {stdout}"
     );
 }
@@ -240,7 +254,10 @@ fn onboard_is_byte_identical_across_two_runs_over_a_fixed_graph() {
 
     let a = run(repo, &["onboard"]);
     let b = run(repo, &["onboard"]);
-    assert!(a.status.success() && b.status.success(), "both runs must exit 0");
+    assert!(
+        a.status.success() && b.status.success(),
+        "both runs must exit 0"
+    );
     assert_eq!(
         a.stdout, b.stdout,
         "onboard human output must be byte-identical across two runs over a fixed graph"

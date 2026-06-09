@@ -37,7 +37,8 @@ fn sample_trail() -> TrailRecord {
             Message {
                 role: MessageRole::Assistant,
                 timestamp: Utc.with_ymd_and_hms(2026, 5, 25, 10, 29, 0).unwrap(),
-                text: "Used an LRU with a 30s TTL — Redis is rejected per dec-no-redis.".to_string(),
+                text: "Used an LRU with a 30s TTL — Redis is rejected per dec-no-redis."
+                    .to_string(),
             },
         ],
         files_touched: vec![
@@ -103,7 +104,10 @@ fn draft_has_front_matter_keys_and_all_h2_sections() {
 
     // files_touched rendered as a bullet list.
     assert!(md.contains("`src/payments/txn.rs`"), "first file rendered");
-    assert!(md.contains("`src/payments/cache.rs`"), "second file rendered");
+    assert!(
+        md.contains("`src/payments/cache.rs`"),
+        "second file rendered"
+    );
 }
 
 #[test]

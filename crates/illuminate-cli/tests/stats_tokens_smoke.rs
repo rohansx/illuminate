@@ -132,8 +132,14 @@ fn stats_prints_token_panel_from_captured_trails() {
         "missing Cache-saved% row:\n{stdout}"
     );
     // Folded totals must surface verbatim.
-    assert!(stdout.contains("300"), "expected total input 300:\n{stdout}");
-    assert!(stdout.contains("100"), "expected total output 100:\n{stdout}");
+    assert!(
+        stdout.contains("300"),
+        "expected total input 300:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("100"),
+        "expected total output 100:\n{stdout}"
+    );
     assert!(stdout.contains("25"), "expected 25% cache-saved:\n{stdout}");
     assert!(
         stdout.contains('2') && lower.contains("session"),

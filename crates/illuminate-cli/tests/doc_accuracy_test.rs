@@ -187,7 +187,10 @@ fn crates_md_count_matches_disk() {
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
         .count();
-    assert_eq!(on_disk, 17, "expected 17 crate dirs on disk, found {on_disk}");
+    assert_eq!(
+        on_disk, 17,
+        "expected 17 crate dirs on disk, found {on_disk}"
+    );
 
     let doc = read_doc("docs/CRATES.md");
     assert!(
@@ -242,7 +245,15 @@ fn every_real_command_is_documented_in_cli_md() {
     // - `reflect` is the MCP-facing reflexion recorder (see MCP.md), surfaced
     //   to humans as `failure log`.
     let exempt: BTreeSet<&str> = [
-        "help", "mcp", "log", "query", "entities", "export", "watch", "audit-hook", "reflect",
+        "help",
+        "mcp",
+        "log",
+        "query",
+        "entities",
+        "export",
+        "watch",
+        "audit-hook",
+        "reflect",
     ]
     .into_iter()
     .collect();
