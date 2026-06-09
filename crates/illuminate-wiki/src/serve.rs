@@ -14,9 +14,9 @@
 //! `crates/illuminate-cli/src/commands/wiki.rs` for the CLI wiring.
 
 use crate::dashboard::{
-    GraphHit, WikiHit, build_page_markdown, html_escape, id_prefix, page_layout, page_type_dir,
-    parse_query, render_audit_form, render_audit_response, render_home, render_list,
-    render_new_form, render_page, render_search, slugify, snippet_around,
+    DashStats, GraphHit, WikiHit, build_page_markdown, html_escape, humanize_ago, id_prefix,
+    page_layout, page_type_dir, parse_query, render_audit_form, render_audit_response, render_home,
+    render_list, render_new_form, render_page, render_search, slugify, snippet_around,
 };
 use crate::page::{PageType, WikiPage};
 use crate::walk::walk_wiki;
@@ -32,6 +32,16 @@ pub type AuditFn = dyn Fn(&str) -> serde_json::Value + Send + Sync;
 /// surface graph hits without a typed dependency on `illuminate-core`.
 pub type GraphSearchFn = dyn Fn(&str, usize) -> Vec<GraphHit> + Send + Sync;
 
+/// Closure invoked by `/api/dashboard` to fold captured prompt-trails into a
+/// token-savings summary. Returns a JSON object shaped like
+/// `{ sessions, input, output, cache_creation, cache_read, cache_saved_pct }`.
+///
+/// Kept as a closure (like [`AuditFn`]) so the wiki crate has zero typed
+/// dependency on `illuminate-trail` — the CLI wires it to
+/// `illuminate_trail::savings::aggregate_tokens` over the parsed `.illuminate/
+/// trail/*.jsonl` files. A `None` source yields a zeroed object (no `null`s).
+pub type TokensFn = dyn Fn() -> serde_json::Value + Send + Sync;
+
 /// Per-request context passed into [`route`].
 ///
 /// Lifetimes: the test path constructs this with stack-borrowed closures,
@@ -41,6 +51,9 @@ pub struct RouteCtx<'a> {
     pub root: &'a Path,
     pub project_name: Option<&'a str>,
     pub auditor: Option<&'a AuditFn>,
+    /// Optional token-savings source for the dashboard savings tile. `None`
+    /// (no captured trails wired in) yields a zeroed `tokens` object.
+    pub tokens: Option<&'a TokensFn>,
 }
 
 /// Response produced by [`route`] — passed to `tiny_http::Response::from_string`.
@@ -86,6 +99,7 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         ("GET", "/audit") => RouteResp::html(200, render_audit_form(ctx.project_name)),
         ("GET", "/search") => handle_search(ctx, &params),
         ("GET", "/api/stats") => handle_api_stats(ctx),
+        ("GET", "/api/dashboard") => handle_api_dashboard(ctx),
         ("GET", "/api/pages") => handle_api_pages(ctx, &params),
         ("GET", p) if p.starts_with("/api/page/") => {
             handle_api_page(ctx, p.trim_start_matches("/api/page/"))
@@ -218,6 +232,113 @@ fn handle_api_stats(ctx: &RouteCtx) -> RouteResp {
         "total": pages.len(),
     });
     RouteResp::json(200, body.to_string())
+}
+
+/// Aggregate dashboard payload — one fetch hydrates every panel.
+///
+/// The front-end (`illuminate-web/dashboard.html` + `illuminate-v4.js`) loads
+/// this once and swaps its static mock numbers for live values, falling back to
+/// the static markup if the request fails. The envelope keys are a stable
+/// contract; see `tests/serve_dashboard_api_test.rs`.
+///
+/// `stats` mirrors [`handle_api_stats`] (page-type counts) and adds
+/// `entities`/`edges` for the graph KPI tile. The wiki crate keeps zero typed
+/// dependency on the code graph, so those graph counts are derived from the
+/// page corpus: every wiki page is registered as one graph episode (entity) by
+/// `illuminate wiki rebuild`, and `edges` approximates the cross-references
+/// (`related` + `supersedes` + `superseded_by`) declared in front-matter.
+fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
+    let pages = collect_pages(ctx.root);
+    let stats = DashStats::from_pages(&pages);
+    let now = chrono::Utc::now();
+
+    let edges: usize = pages
+        .iter()
+        .map(|p| {
+            p.front.related.len() + p.front.supersedes.len() + p.front.superseded_by.len()
+        })
+        .sum();
+
+    let mut sorted: Vec<&WikiPage> = pages.iter().collect();
+    sorted.sort_by_key(|p| std::cmp::Reverse(p.front.updated));
+
+    let row = |p: &WikiPage| -> serde_json::Value {
+        serde_json::json!({
+            "id": p.front.id,
+            "title": p.front.title,
+            "type": page_type_dir(&p.front.page_type),
+            "status": p.front.status,
+            "tags": p.front.tags,
+            "severity": p.front.severity,
+            "updated": p.front.updated.to_rfc3339(),
+            "ago": humanize_ago(p.front.updated, now),
+        })
+    };
+
+    let recent_sessions: Vec<serde_json::Value> =
+        sorted.iter().take(10).map(|p| row(p)).collect();
+    let recent_decisions: Vec<serde_json::Value> = sorted
+        .iter()
+        .filter(|p| p.front.page_type == PageType::Decision)
+        .take(10)
+        .map(|p| row(p))
+        .collect();
+    let recent_failures: Vec<serde_json::Value> = sorted
+        .iter()
+        .filter(|p| p.front.page_type == PageType::Failure)
+        .take(10)
+        .map(|p| row(p))
+        .collect();
+    // The audit panel surfaces recent decisions + failures — the pages an
+    // auditor reasons over when checking a plan against prior intent.
+    let audit_rows: Vec<serde_json::Value> = sorted
+        .iter()
+        .filter(|p| {
+            matches!(p.front.page_type, PageType::Decision | PageType::Failure)
+        })
+        .take(10)
+        .map(|p| row(p))
+        .collect();
+
+    let body = serde_json::json!({
+        "project": ctx.project_name.unwrap_or("illuminate"),
+        "generated_at": now.to_rfc3339(),
+        "stats": {
+            "decisions": stats.decisions,
+            "patterns": stats.patterns,
+            "failures": stats.failures,
+            "modules": stats.modules,
+            "total": pages.len(),
+            "entities": pages.len(),
+            "edges": edges,
+        },
+        "recent_sessions": recent_sessions,
+        "recent_decisions": recent_decisions,
+        "recent_failures": recent_failures,
+        "audit_rows": audit_rows,
+        "tokens": dashboard_tokens(ctx),
+    });
+    RouteResp::json(200, body.to_string())
+}
+
+/// Token-savings sub-object for the dashboard envelope.
+///
+/// When a [`TokensFn`] is wired into the context (the CLI folds captured
+/// trails through `illuminate_trail::savings::aggregate_tokens`), its JSON is
+/// returned verbatim. With no source, every field is a numeric zero — never
+/// `null` — so the savings tile renders `0` instead of blanking out.
+fn dashboard_tokens(ctx: &RouteCtx) -> serde_json::Value {
+    match ctx.tokens {
+        Some(f) => f(),
+        None => serde_json::json!({
+            "sessions": 0,
+            "input": 0,
+            "output": 0,
+            "cache_creation": 0,
+            "cache_read": 0,
+            "cache_saved_pct": 0.0,
+        }),
+    }
 }
 
 fn handle_api_pages(
@@ -489,6 +610,7 @@ pub fn serve_with(
     project_name: Option<String>,
     auditor: Option<Arc<AuditFn>>,
     graph_search: Option<Arc<GraphSearchFn>>,
+    tokens: Option<Arc<TokensFn>>,
 ) -> std::io::Result<()> {
     let addr = format!("127.0.0.1:{port}");
     let server = tiny_http::Server::http(&addr)
@@ -512,11 +634,13 @@ pub fn serve_with(
         };
 
         let auditor_ref = auditor.as_deref();
+        let tokens_ref = tokens.as_deref();
         let resp = {
             let ctx = RouteCtx {
                 root: &root,
                 project_name: project_name.as_deref(),
                 auditor: auditor_ref,
+                tokens: tokens_ref,
             };
             let mut r = route(&ctx, &method, &url, &body);
             // Inject graph hits into search responses if a graph closure is wired in.
@@ -548,7 +672,7 @@ pub fn serve_with(
 /// Back-compat shim for callers that don't have an auditor. Renders the
 /// dashboard, browse, search and a 503 audit playground.
 pub fn serve(wiki_root: &Path, port: u16) -> std::io::Result<()> {
-    serve_with(wiki_root, port, None, None, None)
+    serve_with(wiki_root, port, None, None, None, None)
 }
 
 fn extract_search_query(url: &str) -> Option<String> {

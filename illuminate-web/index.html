@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>illuminate — agent context engineering for coding teams</title>
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+    <rect width="200" height="200" fill="#0d0c10"/>
+    <g transform="translate(60,60)" stroke="#ffb547" stroke-width="2" fill="none">
+      <rect x="0" y="0" width="80" height="80"/>
+      <circle cx="40" cy="40" r="10" fill="#ffb547"/>
+    </g>
+    <g stroke="#ffb547" stroke-width="1" opacity="0.5">
+      <line x1="40" y1="100" x2="60" y2="100"/>
+      <line x1="140" y1="100" x2="160" y2="100"/>
+      <line x1="100" y1="40" x2="100" y2="60"/>
+      <line x1="100" y1="140" x2="100" y2="160"/>
+    </g>
+  </svg>
+</template>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="illuminate-v4.css" />
+</head>
+<body>
+
+<a class="skip-link" href="#hero">Skip to content</a>
+
+<!-- ============================================================
+     FIXED LEFT RAIL
+     ============================================================ -->
+<aside class="rail" aria-label="Section nav">
+  <div class="mark" aria-hidden="true"></div>
+  <div class="sep"></div>
+  <nav class="vnav">
+    <a href="#shift" data-label="01" aria-label="01 · the shift" aria-current="true">01</a>
+    <a href="#pipeline" data-label="02" aria-label="02 · the pipeline">02</a>
+    <a href="#surfaces" data-label="03" aria-label="03 · two surfaces">03</a>
+    <a href="#trust" data-label="04" aria-label="04 · trust model">04</a>
+    <a href="#day" data-label="05" aria-label="05 · a day in the life">05</a>
+    <a href="#arch" data-label="06" aria-label="06 · architecture">06</a>
+    <a href="#aud" data-label="07" aria-label="07 · audiences">07</a>
+    <a href="#landscape" data-label="08" aria-label="08 · the landscape">08</a>
+    <a href="#plan" data-label="09" aria-label="09 · build plan">09</a>
+  </nav>
+  <div class="footer">illuminate · v0.1 · <b>cargo install</b></div>
+</aside>
+
+<!-- ============================================================
+     TOP STATUS STRIP
+     ============================================================ -->
+<header class="topbar">
+  <div class="system">
+    <span class="dot"></span>
+    <span>illuminate<b>.sh</b></span>
+    <span class="pipe">/</span>
+    <span>pipeline online</span>
+    <span class="pipe">/</span>
+    <span data-clock>—</span>
+  </div>
+  <div class="metrics">
+    <div class="metric"><span class="k">enrich p50</span><span class="v amber" data-metric="enrich">38ms</span></div>
+    <div class="metric"><span class="k">capture cpu</span><span class="v" data-metric="capture">0.8%</span></div>
+    <div class="metric"><span class="k">graph nodes</span><span class="v" data-metric="graph">1,247</span></div>
+  </div>
+  <nav class="links">
+    <a href="#shift">manifesto</a>
+    <a href="#arch">arch</a>
+    <a href="#plan">plan</a>
+    <a href="#" >docs</a>
+  </nav>
+  <a class="install" data-copy="cargo install illuminate"><span class="pr">$</span> cargo install illuminate <span style="opacity:.5;">⎘</span></a>
+</header>
+
+<main>
+
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<section class="hero" id="hero">
+  <div class="container">
+    <div class="hero-grid">
+
+      <div class="hero-l">
+        <span class="hero-eyebrow"><span class="pulse"></span> agent context engineering · v0.1</span>
+
+        <h1>your agent should <em>already know that.</em></h1>
+
+        <p class="hero-tag">
+          illuminate gives AI coding agents <b>the context your team's senior engineer would</b> — three months of decisions, patterns, and prior failures, <span class="amber">woven into every prompt</span>, deterministically, before the LLM is even called.
+        </p>
+
+        <div class="hero-actions">
+          <a class="btn primary" href="#install">Install illuminate <span class="arrow">→</span></a>
+          <a class="btn" href="#pipeline">See the pipeline</a>
+          <a class="btn" href="#shift" style="border-color:transparent;background:transparent;">Read the manifesto →</a>
+        </div>
+
+        <div class="hero-strip">
+          <div class="cell">
+            <span class="k">wedge</span>
+            <span class="v"><b>Enrich</b></span>
+            <span class="u">pre-LLM prompt rewriter · &lt;100ms</span>
+          </div>
+          <div class="cell">
+            <span class="k">substrate</span>
+            <span class="v"><b>Repo</b></span>
+            <span class="u">team-shared decision graph · git-native</span>
+          </div>
+          <div class="cell">
+            <span class="k">runtime</span>
+            <span class="v"><b>Local</b></span>
+            <span class="u">12 rust crates · one binary · zero telemetry</span>
+          </div>
+          <div class="cell">
+            <span class="k">engine</span>
+            <span class="v"><b>ctxgraph</b></span>
+            <span class="u">2.4× F1 vs Graphiti · 250× faster</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- INSTRUMENT — live before/after enrichment -->
+      <aside class="instrument" aria-label="Live enrichment instrument">
+        <div class="inst-bar">
+          <span class="led"></span>
+          <span class="title">illuminate-enrich</span>
+          <span>· payments-service</span>
+          <span class="right">session <b>claude-code/abc12</b></span>
+        </div>
+
+        <div class="inst-section">
+          <div class="lbl">
+            <b class="gray">before</b>
+            <span>what the dev types</span>
+            <span class="right">raw · 8 tokens</span>
+          </div>
+          <div class="inst-prompt">"add caching to the txn endpoint"</div>
+        </div>
+
+        <div class="inst-trace" aria-hidden="true">
+          <span class="glow"></span>
+          <span class="step">enrich</span>
+          <span class="ln"></span>
+          <span class="step">identify · query · weave</span>
+          <span class="ln"></span>
+          <span class="step"><b>38 ms</b></span>
+          <span class="glow"></span>
+        </div>
+
+        <div class="inst-section">
+          <div class="lbl">
+            <b>after</b>
+            <span>what the agent receives</span>
+            <span class="right">+3 decisions · +1 pattern · +1 warning</span>
+          </div>
+          <pre class="inst-enriched"><span class="h">"Add caching to the transaction lookup endpoint
+at <span class="path">src/payments/txn.rs</span>.</span>
+
+<span class="pin">RELEVANT DECISIONS</span>
+team rejected <span class="ref">Redis (2025-12)</span> due to deployment
+constraints — sidecars must stay stateless.
+
+<span class="pin sage">PATTERN · in use</span>
+the established caching pattern at this layer is
+<span class="ref">in-memory LRU + 30s TTL</span>, applied across
+all payment-side services.
+
+<span class="pin warn">PRIOR FAILURE · 2026-02</span>
+<span class="warn">⚠ race-condition history in this module —</span>
+the team chose <span class="warn">lock-free atomics</span> over mutex on
+the txn lock. do <span class="warn">NOT</span> introduce a mutex here."</pre>
+        </div>
+
+        <div class="inst-foot">
+          <span><b>+120</b> tokens of context</span>
+          <span class="pass">✓ same prompt · richer signal</span>
+          <span class="right">→ generated first-try</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §01 — THE SHIFT
+     ============================================================ -->
+<section id="shift">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 01</span> the shift</span>
+    <div class="sec-head">
+      <h2>for thirty years we versioned the right thing. <em>the abstraction just moved.</em></h2>
+      <p class="blurb">humans wrote source. compilers produced binaries. <b>git versioned the source</b> because that was the artifact carrying human intent. then AI coding agents arrived. labor moved upward. <b>prompts became the new source — agents now produce the binaries</b>. the industry's tooling is still one layer behind.</p>
+    </div>
+
+    <div class="shift">
+      <p class="quote">
+        humans now write prompts. agents produce source code. <em>the source code is the new binary equivalent.</em> the prompt — and the reasoning that produced it — is the new source.
+      </p>
+      <div class="body">
+        <p>and yet we still version the binaries. teams commit code to git and discard the prompts that produced it. <b>reasoning evaporates into <code style="font-family:'Geist Mono','JetBrains Mono',monospace;background:var(--bg);padding:1px 5px;border:1px solid var(--border);color:var(--amber);font-size:13px;">~/.claude/projects/&lt;hash&gt;.jsonl</code></b> files on individual laptops. architectural decisions made on Tuesday are invisible to the agent on Friday.</p>
+        <p>every AI agent on a team behaves like a brand-new hire who has never read the codebase's history. <b>illuminate is the catch-up</b> — the version control, collaboration, and intelligence layer for the thing humans now actually write.</p>
+        <p class="pull">in 3 years, what teams version, review, and share will not be code. it will be <em>prompts plus the context that produced them.</em></p>
+      </div>
+    </div>
+
+    <div class="swap" aria-label="What was versioned vs what should be versioned">
+      <div class="swap-side was">
+        <div class="era">pre-AI era · 30 years</div>
+        <h4>humans wrote <b>source</b>. compilers produced <b>binaries</b>.</h4>
+        <div class="pair">
+          <div class="cell kept"><span class="k">versioned</span><span class="v">source code</span></div>
+          <div class="cell gone"><span class="k">discarded</span><span class="v">binary output</span></div>
+        </div>
+        <p>The artifact worth preserving was human intent. Everything downstream was regeneratable. Git, GitHub, SCM — all built on this premise.</p>
+      </div>
+
+      <div class="swap-arrow" aria-hidden="true">⟶</div>
+
+      <div class="swap-side now">
+        <div class="era">AI era · now</div>
+        <h4>humans write <b>prompts</b>. agents produce <b>source code</b>.</h4>
+        <div class="pair">
+          <div class="cell gone"><span class="k">still versioned</span><span class="v">source code</span></div>
+          <div class="cell should"><span class="k">should be</span><span class="v">prompts + reasoning</span></div>
+        </div>
+        <p>We're versioning the binaries. The premise inverted — and the tooling never caught up. Illuminate is the catch-up, built local-first.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §02 — PIPELINE
+     ============================================================ -->
+<section id="pipeline">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 02</span> the pipeline</span>
+    <div class="sec-head">
+      <h2>four stages around every coding session. <em>two guard rails</em> in the background.</h2>
+      <p class="blurb">the four stages are sequential and visible to the developer. the two guard rails run silently. <b>publish writes back into the team repo</b> — and that repo seeds enrich for everyone else on the team. the loop compounds.</p>
+    </div>
+
+    <div class="pipeline">
+      <div class="pipe-row">
+        <div class="stage">
+          <span class="n"><i>i</i> enrich</span>
+          <h4>before the prompt reaches the <em>agent.</em></h4>
+          <p>intercept the prompt. query the team graph for relevant decisions, patterns, prior failures. weave them inline. deterministic — no LLM in the path.</p>
+          <div class="where"><b>pre-LLM</b> · local · &lt;100 ms</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage">
+          <span class="n"><i>ii</i> generate</span>
+          <h4>the agent does <em>the work.</em></h4>
+          <p>enriched prompt goes to Claude Code, Cursor, or Codex. the agent produces code with the team's accumulated context already in scope. <b>first-try output is materially better.</b></p>
+          <div class="where"><b>agent runtime</b> · LLM</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage">
+          <span class="n"><i>iii</i> capture</span>
+          <h4>session captured, <em>silently.</em></h4>
+          <p>prompt, response, tool calls, file edits — captured locally as jsonl in <code style="font-family:'Geist Mono','JetBrains Mono',monospace;background:var(--bg);padding:1px 4px;border:1px solid var(--border);color:var(--amber);font-size:12px;">.illuminate/trail/</code>. gitignored. never auto-uploaded.</p>
+          <div class="where"><b>local trail</b> · &lt;1% cpu · inotify</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage">
+          <span class="n"><i>iv</i> publish</span>
+          <h4>explicit gesture — or <em>discard.</em></h4>
+          <p>at commit time, illuminate asks: publish this session? the dev chooses — full, summary, decision-only, or discard. <b>nothing reaches the team repo without it.</b></p>
+          <div class="where"><b>git-style consent</b> · one keystroke</div>
+        </div>
+      </div>
+
+      <div class="pipe-loop">
+        <div class="repo-box">
+          <span class="role">substrate</span>
+          <span class="name">team-illuminate · the repo</span>
+          <p class="desc">a versioned, browseable, searchable record of every published session — markdown + structured data in a git repository the team owns. <b>github for agents.</b></p>
+        </div>
+
+        <div class="pipe-link">
+          <div class="ar"><span>seeds</span><span class="ln"></span><b>enrich</b></div>
+          <div class="ar back"><span class="ln"></span><span>publish writes back</span></div>
+          <div class="ar"><span>feeds</span><span class="ln"></span><b>audit</b></div>
+        </div>
+
+        <div class="guards">
+          <div class="guard audit">
+            <div class="label">guard rail · a</div>
+            <div class="name">audit · the linter</div>
+            <p class="desc">cross-reference proposed changes against the graph. catch drift the enrichment didn't prevent. agent course-corrects before code is written.</p>
+          </div>
+          <div class="guard reflect">
+            <div class="label">guard rail · b</div>
+            <div class="name">reflect · failure capture</div>
+            <p class="desc">when generated code fails — test, incident, runtime error — the failure context is captured and added to the graph. future agents see the warning during enrichment.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §03 — TWO SURFACES
+     ============================================================ -->
+<section id="surfaces">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 03</span> two surfaces · one substrate</span>
+    <div class="sec-head">
+      <h2>enrich is the daily wedge. <em>repo is the compounding moat.</em></h2>
+      <p class="blurb">both products run on the same prompt index and bi-temporal knowledge graph. <b>enrich</b> produces visible quality lift on every prompt — the install reason. <b>repo</b> is the team-shared substrate that makes enrich smarter over time — the keep reason. neither requires the other; together they form the loop.</p>
+    </div>
+
+    <div class="surfaces">
+
+      <article class="surface wedge">
+        <div class="sbar">
+          <span class="tag">§ wedge</span>
+          <span>illuminate · enrich</span>
+          <span class="right">pre-LLM rewriter</span>
+        </div>
+        <div class="sbody">
+          <h3>the <em>visible</em> daily win.</h3>
+          <p class="pdesc">before a dev's prompt reaches Claude Code, Cursor, or Codex, <b>illuminate intercepts, queries the team graph, and rewrites it</b> — specific files, cited decisions, established patterns, prior failures. The agent produces materially better code, on the first try, with no follow-up iteration. Deterministic, no LLM in the path.</p>
+
+          <pre class="pdemo"><span class="dim">[enrich]</span> intercept · 38ms · local
+  identify("caching")             → <span class="ref">Decision::NoRedis</span>
+  identify("txn endpoint")        → <span class="ref">src/payments/txn.rs</span>
+  query(module = txn.rs)          → <span class="warn">Failure::RaceCondition</span>
+  query(intent = "caching")       → <span class="ref">Pattern::LRU30s</span>
+
+<span class="dim">[enrich]</span> rewrite · <span class="ok">+120 tokens of context</span>
+<span class="dim">[enrich]</span> → handing to claude-code · <span class="ok">✓</span></pre>
+
+          <div class="pwhy">
+            <div class="cell"><span class="k">visible</span><span class="v">better gens · every prompt</span></div>
+            <div class="cell"><span class="k">deterministic</span><span class="v">no LLM in the enrich path</span></div>
+            <div class="cell"><span class="k">free lift</span><span class="v">no model upgrade or fine-tune</span></div>
+            <div class="cell"><span class="k">bottom-up</span><span class="v">devs install it for themselves</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="surface substrate">
+        <div class="sbar">
+          <span class="tag">§ substrate</span>
+          <span>illuminate · repo</span>
+          <span class="right">team-shared decision graph</span>
+        </div>
+        <div class="sbody">
+          <h3>the <em>compounding</em> moat.</h3>
+          <p class="pdesc">a versioned, browseable, searchable record of every prompt the team has chosen to publish — the reasoning, the resulting code, the decisions that emerged. <b>git log for prompts.</b> git blame for "why does this code exist?" Lives as markdown + structured data in a git repo the team owns. <b>Six months of history can't be ported.</b></p>
+
+          <pre class="pdemo">$ illuminate browse <span class="ref">payments-service</span>
+
+<span class="hash">3a8c9d1</span>  <span class="ok">✓ published</span>   2m   rohan
+   <span class="h">Add LRU caching to txn endpoint</span>
+   ↳ <span class="ref">Decision::NoRedis</span> · <span class="ref">Pattern::LRU30s</span>
+
+<span class="hash">7e0a4d8</span>  <span class="ok">✓ published</span>   3h   priya
+   <span class="h">Pattern: lock-free atomics in payment paths</span>
+
+<span class="hash">9d4a712</span>  <span class="ok">✓ published</span>   3mo  priya
+   <span class="h">Decision: no Redis in payments</span></pre>
+
+          <div class="pwhy">
+            <div class="cell"><span class="k">onboarding</span><span class="v">new hires productive on day two</span></div>
+            <div class="cell"><span class="k">pr review</span><span class="v">the missing prompt-layer context</span></div>
+            <div class="cell"><span class="k">compounds</span><span class="v">every publish makes enrich smarter</span></div>
+            <div class="cell"><span class="k">sticky</span><span class="v">6mo of history can't be ported</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §04 — TRUST MODEL
+     ============================================================ -->
+<section id="trust">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 04</span> trust model</span>
+    <div class="sec-head">
+      <h2>get this wrong and devs <em>won't install it.</em></h2>
+      <p class="blurb">illuminate's value depends on developers trusting it with their unfiltered work. that means three commitments, <b>baked into the architecture, not just the marketing</b>. local-first isn't a feature. it's the only way the compounding-knowledge thesis works.</p>
+    </div>
+
+    <div class="trust">
+      <article class="tcol local">
+        <span class="seal">⌂ stays local · always</span>
+        <h4>your <em>unfiltered</em> work, untouched.</h4>
+        <ul>
+          <li><span class="mk">·</span><div><b>Every session.</b> Captured silently to <code class="mono" style="background:var(--bg);padding:1px 4px;border:1px solid var(--border);color:var(--amber);font-size:12.5px;">.illuminate/trail/</code>. Gitignored. Never auto-uploaded.</div></li>
+          <li><span class="mk">·</span><div><b>Personal scratch.</b> Half-formed thoughts, dead ends, debugging spirals, embarrassing prompts — all stay local.</div></li>
+          <li><span class="mk">·</span><div><b>Enrichment queries.</b> Run locally against a local mirror of the team graph. No network call in the prompt path.</div></li>
+          <li><span class="mk">·</span><div><b>Failure context.</b> Captured by <code class="mono" style="background:var(--bg);padding:1px 4px;border:1px solid var(--border);color:var(--amber);font-size:12.5px;">reflect</code>. Stays in your trail unless you publish.</div></li>
+        </ul>
+        <p class="footnote">no telemetry. no "anonymized usage data." no admin opt-out checkbox you missed.</p>
+      </article>
+
+      <article class="tcol shared">
+        <span class="seal">✓ published · with consent</span>
+        <h4>only what you <em>explicitly</em> ship.</h4>
+        <ul>
+          <li><span class="mk">·</span><div><b>Curated sessions.</b> You choose the format — full, summary, decision-only — and the redaction level. Default is summary; one-keystroke skip.</div></li>
+          <li><span class="mk">·</span><div><b>Decisions &amp; patterns.</b> Surfaced from your published sessions. Written to the team repo as standard markdown.</div></li>
+          <li><span class="mk">·</span><div><b>Failures.</b> Documented through <code class="mono" style="background:var(--bg);padding:1px 4px;border:1px solid var(--border);color:var(--amber);font-size:12.5px;">reflect</code> only after you explicitly publish them.</div></li>
+          <li><span class="mk">·</span><div><b>A git repo you own.</b> Standard markdown + json. No proprietary format. Self-hosted or hosted — your choice. Could literally be a github private repo.</div></li>
+        </ul>
+        <p class="footnote">if your github account is secure, your illuminate data is secure — same threat model, same controls.</p>
+      </article>
+
+      <article class="tcol never">
+        <span class="seal">✕ never built</span>
+        <h4>the things we will <em>not</em> ship.</h4>
+        <ul>
+          <li><span class="mk">·</span><div><b>No individual scoring.</b> Illuminate will not produce dashboards rating developers by prompt quality. Period.</div></li>
+          <li><span class="mk">·</span><div><b>No management surveillance.</b> No "see what your team is prompting" admin view. Not now, not later.</div></li>
+          <li><span class="mk">·</span><div><b>No prompt leaderboards.</b> Aggregate team trends only if a team explicitly opts in and the data is genuinely anonymized at source.</div></li>
+          <li><span class="mk">·</span><div><b>No data sale.</b> Your prompts are not training data, not marketing fodder, not a growth lever.</div></li>
+        </ul>
+        <p class="footnote">if a competitor builds the surveillance version, that's a different product. the moment illuminate enables it, devs game it, sabotage it, refuse it — and the thesis collapses.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §05 — DAY IN THE LIFE
+     ============================================================ -->
+<section id="day">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 05</span> a day in the life</span>
+    <div class="sec-head">
+      <h2>both products in motion. <em>a single dev, a single day.</em></h2>
+      <p class="blurb">Rohan, working on <code class="mono" style="background:var(--bg);padding:1px 5px;border:1px solid var(--border);color:var(--amber);font-size:13.5px;">payments-service</code> at a fictional fintech. illuminate has been installed for three months. the team repo holds 47 published sessions, 12 decisions, 8 patterns, and 5 documented failures.</p>
+    </div>
+
+    <div class="day">
+      <div class="when"><span class="nu">09:00</span>open editor</div>
+      <div class="ev">
+        <h4>Claude Code opens. <em>the trail daemon notices.</em></h4>
+        <p>The <code>illuminate-trail</code> daemon detects a new session in <code>payments-service</code>. Capture begins silently. Nothing uploaded. Nothing shared. The dev doesn't think about it.</p>
+        <div class="term"><span class="dim">[trail]</span> session opened · <span class="pr">claude-code/abc12</span><br><span class="dim">[trail]</span> capture → <span class="ok">.illuminate/trail/2026-05-25-abc12.jsonl</span></div>
+      </div>
+
+      <div class="when"><span class="nu">09:15</span>type a prompt</div>
+      <div class="ev amber">
+        <h4>"Add caching to the txn endpoint." <em>enrich intercepts.</em></h4>
+        <p>Before Claude sees the prompt, <code>illuminate-enrich</code> runs. It identifies <code>caching</code> → <code>Decision::NoRedis</code>. It identifies <code>txn endpoint</code> → <code>src/payments/txn.rs</code>. It queries the module's history → <code>Failure::RaceCondition</code>. Then it queries intent → <code>Pattern::LRU30s</code>. <b>The prompt is rewritten in 38ms.</b></p>
+        <div class="term"><span class="dim">[enrich]</span> intercept · "add caching to the txn endpoint"
+<span class="dim">[enrich]</span> graph query · <span class="ok">3 hits</span>
+  <span class="ref">Decision::NoRedis</span>      wiki/decisions/2025-12-no-redis-payments.md
+  <span class="ref">Pattern::LRU30s</span>       wiki/patterns/lru-cache-with-ttl.md
+  <span class="warn">Failure::RaceCondition</span>  wiki/failures/2026-02-race-condition-payments.md
+<span class="dim">[enrich]</span> rewrite · +120 tokens · <span class="ok">38ms</span>
+<span class="dim">[enrich]</span> → <span class="ok">handing to claude-code ✓</span></div>
+        <p style="margin-top:12px;">Claude receives the enriched prompt and produces code that uses the team's LRU pattern, in the right file, addressing the race-condition history. <b>Right on the first try.</b></p>
+      </div>
+
+      <div class="when"><span class="nu">09:30</span>git commit</div>
+      <div class="ev sage">
+        <h4>the pre-commit hook asks: <em>publish?</em></h4>
+        <p>The dev clicks "publish summary." Illuminate writes a structured markdown page to the team repo, links it to the commit, and updates the graph. <b>The team's accumulated thinking just got slightly larger.</b></p>
+        <div class="evcard">
+          <span class="k">wrote</span>
+          <div class="v"><b>team-illuminate/sessions/2026-05-25-add-caching.md</b><br>summary mode · 412 words · linked to <code>3a8c9d1</code> · graph: +2 nodes, +4 edges</div>
+          <span class="k">consent</span>
+          <div class="v">summary · <b>1-key opt-out</b> · nothing else shared</div>
+        </div>
+      </div>
+
+      <div class="when"><span class="nu">11:00</span>different repo</div>
+      <div class="ev">
+        <h4>different dev, different editor. <em>same loop.</em></h4>
+        <p>Priya opens Cursor on <code>billing-gateway</code>. Same daemon, separate per-repo trail. Same enrichment pipeline. The team graph flows across repos through the team repo; each repo's local graph indexes the team repo's published content.</p>
+      </div>
+
+      <div class="when"><span class="nu">15:00</span>flaky test</div>
+      <div class="ev rust">
+        <h4>a flaky test surfaces an <em>old race condition.</em></h4>
+        <p>The dev fixes it, writes a brief post-mortem. <code>illuminate-reflect</code> picks it up and adds the failure to the graph. <b>From now on, any agent touching the affected module sees the warning during enrich</b>, before the prompt is even sent.</p>
+      </div>
+
+      <div class="when"><span class="nu">next wk</span>new hire</div>
+      <div class="ev lilac">
+        <h4>new hire arrives. <em>onboarding stops being broken.</em></h4>
+        <p>They <code>cd</code> into the team repo, run <code>illuminate browse</code>, and read the team's published sessions in order: decisions made, patterns adopted, failures avoided.</p>
+        <p>They ask: "Why does payments use in-memory caching instead of Redis?" The repo answers in one click — original prompt, full reasoning, alternatives considered, the LRU pattern that emerged. <b>They didn't ping Slack. They're productive on day two.</b></p>
+      </div>
+
+      <div class="when"><span class="nu">3 mo</span>compound</div>
+      <div class="ev amber">
+        <h4>the graph has <em>200+ decisions.</em></h4>
+        <p>Every prompt is enriched with the right slice. Every agent operates with the equivalent of senior-engineer institutional knowledge. <b>Switching off illuminate would mean losing six months of accumulated thinking.</b> Lock-in the team chose, not the kind you regret.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §06 — ARCHITECTURE
+     ============================================================ -->
+<section id="arch">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 06</span> architecture · performance</span>
+    <div class="sec-head">
+      <h2>twelve rust crates. one binary. <em>one sqlite file</em> per repo.</h2>
+      <p class="blurb">built on <code class="mono" style="background:var(--bg);padding:1px 5px;border:1px solid var(--border);color:var(--amber);font-size:13.5px;">ctxgraph</code> — a bi-temporal knowledge graph with <b>2.4× F1 vs Graphiti and ~250× faster ingestion</b>. all extraction runs locally via ONNX (GLiNER + GLiREL + MiniLM). LLM fallback used in ~30% of ingestion paths only — never in queries. <b>enrichment and audit are deterministic, fast, and free at runtime.</b></p>
+    </div>
+
+    <div class="arch">
+      <div class="crates">
+        <div class="hd">
+          <span class="title">crate layout</span>
+          <span class="meta"><b>12</b> crates · <b>1</b> static binary · <b>0</b> python · <b>0</b> docker</span>
+        </div>
+        <div class="body">
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>core</div><div class="desc"><b>Graph API on top of ctxgraph.</b> Entity and relationship types, bi-temporal invariants.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>trail</div><div class="desc"><b>Session capture daemon.</b> Claude Code, Cursor, Codex — inotify-driven, &lt;1% cpu.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>enrich</div><div class="desc"><b>Pre-LLM prompt enrichment</b> — the wedge. Deterministic, local, sub-100ms.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>publish</div><div class="desc"><b>Explicit publish gesture.</b> Writes structured markdown + json to the team repo.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>extract</div><div class="desc"><b>Local NER pipeline.</b> GLiNER + GLiREL via ONNX. No external API calls.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>embed</div><div class="desc"><b>Local embeddings.</b> all-MiniLM-L6-v2 — 90MB model, runs on cpu.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>index</div><div class="desc"><b>Code structure indexer.</b> tree-sitter, narrow scope: rust, ts, python, go.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>audit</div><div class="desc"><b>Policy engine + drift detection.</b> Cross-references proposed changes against the graph.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>reflect</div><div class="desc"><b>Failure capture.</b> Ingests test failures, sentry alerts, manual post-mortems into the graph.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>route</div><div class="desc"><b>LLM fallback router.</b> Used in ~30% of ingestion paths — never in queries.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>mcp</div><div class="desc"><b>JSON-RPC server.</b> Exposes the audit + query tools to any MCP-aware agent.</div></div>
+          <div class="crate"><div class="id"><span class="pre">illuminate-</span>cli</div><div class="desc"><b>User-facing binary.</b> <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);color:var(--amber);font-size:11.5px;">init · enrich · publish · browse · audit · reflect</code></div></div>
+        </div>
+      </div>
+
+      <aside class="perf">
+        <div class="panel">
+          <span class="k">enrich latency · p50</span>
+          <div class="v"><b>38</b><span class="u">ms</span></div>
+          <div class="bar"><i style="width:32%"></i></div>
+          <div class="note">target &lt;100ms. all-local. no LLM in the prompt path.</div>
+        </div>
+        <div class="panel">
+          <span class="k">capture overhead</span>
+          <div class="v"><b>&lt;1</b><span class="u">%</span></div>
+          <div class="bar"><i style="width:6%"></i></div>
+          <div class="note">inotify-driven. zero polling. unnoticeable to the dev.</div>
+        </div>
+        <div class="panel">
+          <span class="k">ingestion cost · per 1k sessions</span>
+          <div class="v"><b>$0.30</b></div>
+          <div class="note">mostly local ONNX. LLM fallback only when local NER confidence is low.</div>
+        </div>
+        <div class="panel">
+          <span class="k">query path</span>
+          <div class="v"><b>$0</b><span class="u">· deterministic</span></div>
+          <div class="note">enrichment and audit run entirely local. free at runtime.</div>
+        </div>
+        <div class="panel">
+          <span class="k">storage</span>
+          <div class="v"><b>&lt;100</b><span class="u">MB / yr</span></div>
+          <div class="note">one sqlite file per repo. portable, greppable, backed up by git.</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §07 — AUDIENCES
+     ============================================================ -->
+<section id="aud">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 07</span> audiences</span>
+    <div class="sec-head">
+      <h2>same product. <em>sized to the listener.</em></h2>
+      <p class="blurb">illuminate has the rare property that <b>every constituency gets a clean, true headline</b> — from the IC who installs it for personal lift to the regulated-industry buyer who needs it self-hosted. the substrate doesn't change between audiences. only the framing does.</p>
+    </div>
+
+    <div class="aud">
+      <div class="aud-row">
+        <span class="who"><b>i. developer</b>installs it themselves</span>
+        <span class="msg">your AI agent stops asking dumb questions. <em>better generations on the first try, every time.</em></span>
+      </div>
+      <div class="aud-row">
+        <span class="who"><b>ii. staff eng</b>tech leads</span>
+        <span class="msg">your team's architectural decisions, captured once and applied to every prompt. <em>no more re-explaining the same patterns in code review.</em></span>
+      </div>
+      <div class="aud-row">
+        <span class="who"><b>iii. eng manager</b>VPs of eng</span>
+        <span class="msg">new hires productive on day two. drift caught before it ships. <em>knowledge that compounds instead of evaporating.</em></span>
+      </div>
+      <div class="aud-row">
+        <span class="who"><b>iv. investor</b>thesis-stage</span>
+        <span class="msg">prompts are the new source code. illuminate is the version control + intelligence layer for them. <em>github for agents.</em></span>
+      </div>
+      <div class="aud-row">
+        <span class="who"><b>v. security &amp; regulated</b>healthcare · legal · finance</span>
+        <span class="msg">local-first. self-hosted. <em>your prompts and your team's reasoning never leave your infrastructure.</em> a git repo your security team already knows how to audit.</span>
+      </div>
+      <div class="aud-row">
+        <span class="who"><b>vi. researcher</b>devx · ai tooling</span>
+        <span class="msg">the first practical implementation of "agent context engineering" — <em>a new category</em> with a clean substrate (ctxgraph) underneath.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §08 — LANDSCAPE
+     ============================================================ -->
+<section id="landscape">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 08</span> the landscape</span>
+    <div class="sec-head">
+      <h2>nobody ships the full loop. <em>yet.</em></h2>
+      <p class="blurb">components exist independently — prompt-to-code lineage tools, spec-driven workflow kits, knowledge graphs, session-capture utilities, code structure mappers. <b>illuminate is the integration</b> — the enrich → capture → publish → audit → reflect cycle as one coherent system, with the team-shared substrate it produces.</p>
+    </div>
+
+    <div class="landscape">
+      <div class="lrow head">
+        <div>tool · category</div><div>what it does</div><div>vs illuminate</div><div>relation</div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">Git AI<span class="url">usegitai.com · prompt-to-code lineage</span></span></div>
+        <div>Tracks AI-authored lines with git notes. Has an <code class="mono" style="background:var(--bg);padding:1px 4px;border:1px solid var(--border);color:var(--amber);font-size:12px;">/ask</code> skill for future agents to query original intent.</div>
+        <div>Narrower scope. No graph, no enrichment, no publish gesture. Cloud-first by default.</div>
+        <div><span class="tag diff">different</span></div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">blameprompt<span class="url">Ekaanth/blameprompt · oss</span></span></div>
+        <div>Open-source git-blame for prompts. Local-first capture utility.</div>
+        <div>Capture-only. No graph layer, no enrichment, no team-shared substrate.</div>
+        <div><span class="tag diff">different</span></div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">spec-kit<span class="url">github/spec-kit · 95k ★</span></span></div>
+        <div>Structured pre-code workflow — spec → plan → tasks → code. GitHub-official.</div>
+        <div>Captures intent <i>before</i> code is written. Illuminate captures actual reality <i>during &amp; after</i>. They compose.</div>
+        <div><span class="tag compose">composes</span></div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">code-review-graph<span class="url">tirth8205 · python</span></span></div>
+        <div>Structural code graph for token-efficient review.</div>
+        <div>Complementary substrate. <code class="mono" style="background:var(--bg);padding:1px 4px;border:1px solid var(--border);color:var(--amber);font-size:12px;">illuminate-index</code> is the narrow rust-native subset for audit queries.</div>
+        <div><span class="tag adj">adjacent</span></div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">Codeburn<span class="url">getagentseal · session parser</span></span></div>
+        <div>Multi-tool session parser for cost observability. Same session data, different output.</div>
+        <div>Produces cost dashboards. Useful reference for session-format reverse-engineering.</div>
+        <div><span class="tag ref">reference</span></div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">Langfuse · PromptLayer · Braintrust<span class="url">prompt management for production APIs</span></span></div>
+        <div>Production API prompt management. Versions and observes prompts shipped to end users.</div>
+        <div>Different artifact entirely. Illuminate handles development-time coding sessions, not shipped prompts.</div>
+        <div><span class="tag diff">different</span></div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">Helicone · LangSmith<span class="url">agent observability</span></span></div>
+        <div>Runtime monitoring of agents in production.</div>
+        <div>Reactive observability. Illuminate is proactive context engineering — different time slot.</div>
+        <div><span class="tag diff">different</span></div>
+      </div>
+
+      <div class="lrow">
+        <div><span class="who">CodeRabbit · Qodo<span class="url">AI code review</span></span></div>
+        <div>Reviews diffs after code is written.</div>
+        <div>Adjacent in time; misses the prompt layer entirely. Illuminate owns the layer that exists before review.</div>
+        <div><span class="tag diff">different</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §09 — WHAT IT IS NOT
+     ============================================================ -->
+<section id="not">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 09</span> scope discipline</span>
+    <div class="sec-head">
+      <h2>what illuminate <em>is not.</em></h2>
+      <p class="blurb">the boundary matters as much as the feature set. these are <b>structural commitments</b>, not features awaiting prioritization. if you need them, illuminate is the wrong tool.</p>
+    </div>
+
+    <div class="nots">
+      <div class="not"><div class="x">×</div><div><h5>Not surveillance software.</h5><p>No individual scoring. No management dashboards rating developers by prompt quality. No prompt leaderboards. If a competitor builds that, it's a different product.</p></div></div>
+      <div class="not"><div class="x">×</div><div><h5>Not a replacement for git or GitHub.</h5><p>Runs alongside them. The team-shared layer can literally live in a GitHub private repo.</p></div></div>
+      <div class="not"><div class="x">×</div><div><h5>Not a hosted SaaS by default.</h5><p>Local-first. Self-hostable. Hosted <code class="mono" style="background:var(--bg);padding:1px 4px;border:1px solid var(--border);color:var(--amber);font-size:12.5px;">illuminate.sh</code> is an optional convenience layer added later — not the product.</p></div></div>
+      <div class="not"><div class="x">×</div><div><h5>Not prompt management for production APIs.</h5><p>Langfuse, PromptLayer, Braintrust handle production prompts shipped to end users. Illuminate handles development-time coding sessions — a different artifact.</p></div></div>
+      <div class="not"><div class="x">×</div><div><h5>Not a generic AI-powered wiki.</h5><p>The wiki is a byproduct of the loop, not the product. The product is the prompt-versioning + enrichment system that produces it.</p></div></div>
+      <div class="not"><div class="x">×</div><div><h5>Not a code review tool.</h5><p>Adjacent space, different artifact. Illuminate owns the prompt + reasoning trail, not the review verdict.</p></div></div>
+      <div class="not"><div class="x">×</div><div><h5>Not competing with spec-kit.</h5><p>spec-kit handles work <i>before</i> code is written. Illuminate handles work <i>during and after</i>. They compose — illuminate ingests spec-kit's constitution and specs as decision sources.</p></div></div>
+      <div class="not"><div class="x">×</div><div><h5>Not a feature in your IDE.</h5><p>Runs as a local daemon and CLI. Editor extensions are thin clients over the same surface. The substrate is the source of truth.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §10 — BUILD PLAN
+     ============================================================ -->
+<section id="plan">
+  <div class="container">
+    <span class="sec-marker"><span class="num">§ 10</span> build plan</span>
+    <div class="sec-head">
+      <h2>vertical slices, end to end. <em>not "build everything, then ship."</em></h2>
+      <p class="blurb">ship as open-source rust crates + a single static binary. one HN launch post: <i>"prompts are the new source code. we built the GitHub for them."</i> design partners first, then OSS. hosted comes after 50+ active teams — not before.</p>
+    </div>
+
+    <div class="plan">
+      <div class="pcol now">
+        <div class="hdr"><span class="ver">v<em>0.1</em></span><span class="when">10–12 wks · now</span></div>
+        <span class="stage-name">the closed loop</span>
+        <ul>
+          <li><code>illuminate-core</code> · graph &amp; sqlite</li>
+          <li><code>illuminate-trail</code> · claude code capture</li>
+          <li><code>illuminate-enrich</code> · the wedge</li>
+          <li><code>illuminate-extract</code> · local NER</li>
+          <li><code>illuminate-publish</code> · explicit gesture</li>
+          <li><code>illuminate-index</code> · narrow tree-sitter</li>
+          <li><code>illuminate-cli</code> · init · enrich · publish · browse · audit</li>
+          <li>standard markdown wiki rendering</li>
+        </ul>
+      </div>
+      <div class="pcol">
+        <div class="hdr"><span class="ver">v<em>0.2</em></span><span class="when">+6–8 wks</span></div>
+        <span class="stage-name">broaden capture</span>
+        <ul>
+          <li>cursor + codex hooks</li>
+          <li><code>illuminate-reflect</code> · failure ingestion</li>
+          <li>LLM-assisted distill · human-in-the-loop</li>
+          <li>per-repo <code>illuminate.toml</code> policies</li>
+          <li><code>spec-kit-illuminate</code> extension</li>
+        </ul>
+      </div>
+      <div class="pcol">
+        <div class="hdr"><span class="ver">v<em>0.3</em></span><span class="when">ongoing</span></div>
+        <span class="stage-name">polish &amp; adoption</span>
+        <ul>
+          <li>pre-write audit hook · deterministic</li>
+          <li>PR-time CI integration · github action</li>
+          <li>wiki search · semantic + grep + graph traversal</li>
+          <li>bootstrap helpers · ADR &amp; CLAUDE.md parsers</li>
+          <li>personal self-coaching dashboards · local-only</li>
+        </ul>
+      </div>
+      <div class="pcol">
+        <div class="hdr"><span class="ver">v<em>1.0+</em></span><span class="when">50+ teams</span></div>
+        <span class="stage-name">optional cloud</span>
+        <ul>
+          <li>hosted <code>illuminate.sh</code> · faster search</li>
+          <li>cross-repo decision sharing · consent-gated</li>
+          <li>enterprise SSO + audit logs</li>
+          <li>multi-team graph federation</li>
+          <li>strictly opt-in. self-hosted always first-class.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============================================================
+     CLOSER
+     ============================================================ -->
+<section class="closer" id="install">
+  <div class="container">
+    <span class="hero-eyebrow"><span class="pulse"></span> open-source rust · v0.1 in 10–12 wks</span>
+    <h2 style="margin-top:26px;">prompts are the new source code. illuminate is their <em>git, blame, and senior engineer.</em></h2>
+    <p class="closer-sub">install the daemon. open Claude Code as usual. <b>your next prompt is enriched with three months of team decisions</b> you'd otherwise have to remember. nothing leaves your machine. nothing is shared without your explicit gesture. the team graph compounds with every publish.</p>
+
+    <div class="closer-actions">
+      <code class="install-block" data-copy="cargo install illuminate"><span class="pr">$</span> cargo install illuminate <span style="opacity:.55;">⎘</span></code>
+      <a class="btn primary" href="#shift">Read the manifesto <span class="arrow">→</span></a>
+      <a class="btn" href="#">github.com/illuminate-sh</a>
+    </div>
+
+    <div class="wordmark" aria-hidden="true">
+      ill<span class="dot"></span>u<span class="dot"></span>min<span class="dot"></span><em>ate</em>
+    </div>
+
+    <footer class="foot">
+      <div class="copy">
+        the version control, collaboration layer, and intelligence engine for the thing humans now actually write — prompts.
+        <span>illuminate.sh · v4 · 2026-05-25 · built on ctxgraph</span>
+      </div>
+      <div>
+        <b>Project</b>
+        <a href="#">github</a>
+        <a href="#">docs</a>
+        <a href="#shift">manifesto</a>
+        <a href="#trust">trust model</a>
+      </div>
+      <div>
+        <b>Install</b>
+        <a href="#" data-copy="cargo install illuminate">cargo</a>
+        <a href="#">homebrew</a>
+        <a href="#">curl | sh</a>
+        <a href="#">release notes</a>
+      </div>
+      <div>
+        <b>Substrate</b>
+        <a href="#">ctxgraph (engine)</a>
+        <a href="#">spec-kit ext.</a>
+        <a href="#">claude code</a>
+        <a href="#">cursor · codex</a>
+      </div>
+    </footer>
+  </div>
+</section>
+
+<div class="toast" id="toast">copied</div>
+<script src="illuminate-v4.js" defer></script>
+</body>
+</html>

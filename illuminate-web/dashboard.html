@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>illuminate · dashboard — payments-service</title>
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+    <rect width="200" height="200" fill="#0d0c10"/>
+    <g transform="translate(40,60)" fill="none" stroke="#ffb547" stroke-width="2">
+      <rect x="0"  y="0" width="120" height="22"/>
+      <rect x="0" y="30" width="76" height="14"/>
+      <rect x="86" y="30" width="34" height="14"/>
+      <rect x="0" y="52" width="40" height="36"/>
+      <rect x="46" y="52" width="40" height="36"/>
+      <rect x="92" y="52" width="28" height="36"/>
+    </g>
+  </svg>
+</template>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="illuminate-v4.css" />
+<link rel="stylesheet" href="illuminate-dashboard.css" />
+</head>
+<body>
+
+<a class="skip-link" href="#overview">Skip to content</a>
+
+<!-- ============================================================
+     LEFT RAIL — dashboard sections
+     ============================================================ -->
+<aside class="rail" aria-label="Dashboard sections">
+  <div class="mark" aria-hidden="true"></div>
+  <div class="sep"></div>
+  <nav class="vnav">
+    <a href="#overview"  class="active" aria-current="page" title="Overview" aria-label="Overview">OV</a>
+    <a href="#live"      title="Live enrich feed" aria-label="Live enrich feed">LV</a>
+    <a href="#sessions"  title="Published sessions" aria-label="Published sessions">SE</a>
+    <a href="#knowledge" title="Decisions · patterns · failures" aria-label="Decisions, patterns and failures">KN</a>
+    <a href="#graph"     title="Knowledge graph" aria-label="Knowledge graph">GR</a>
+    <a href="#audit"     title="Audit &amp; reflect" aria-label="Audit and reflect">AU</a>
+  </nav>
+  <div class="footer">illuminate · v0.1 · <b>local</b></div>
+</aside>
+
+<!-- ============================================================
+     TOP STATUS STRIP
+     ============================================================ -->
+<header class="topbar">
+  <div class="system">
+    <span class="dot"></span>
+    <span>localhost<b>:4747</b></span>
+    <span class="pipe">/</span>
+    <span>illuminate-serve</span>
+    <span class="pipe">/</span>
+    <span data-clock>—</span>
+  </div>
+  <div class="metrics">
+    <div class="metric"><span class="k">enrich p50</span><span class="v amber" data-metric="enrich">38ms</span></div>
+    <div class="metric"><span class="k">capture cpu</span><span class="v" data-metric="capture">0.8%</span></div>
+    <div class="metric"><span class="k">graph nodes</span><span class="v" data-metric="graph" data-bind="stats.entities">1,247</span></div>
+  </div>
+  <nav class="links">
+    <a href="index.html">landing</a>
+    <a href="#">docs</a>
+    <a href="#">github</a>
+  </nav>
+  <a class="install" data-copy="illuminate publish"><span class="pr">$</span> illuminate publish <span style="opacity:.5;">⎘</span></a>
+</header>
+
+<main>
+<div class="dash">
+
+  <!-- ===== PAGE HEADER ===== -->
+  <header class="dash-head">
+    <div class="where">
+      <div class="crumbs">
+        <a href="#">team-illuminate</a>
+        <span class="sep">/</span>
+        <a href="#">repos</a>
+        <span class="sep">/</span>
+        <span class="now">payments-service</span>
+      </div>
+      <h1>Overview <span class="repo">payments-service</span></h1>
+    </div>
+    <div class="search">
+      <input type="text" aria-label="Search sessions, decisions, files" placeholder="Search sessions, decisions, files…" />
+      <span class="kbd" aria-hidden="true">⌘ K</span>
+    </div>
+    <button class="repo-switch">
+      <span>main</span><span class="ch">⌄</span>
+    </button>
+    <div class="user">
+      <span class="av">R</span>
+      <span>rohan</span>
+      <span class="ch" style="color:var(--muted);">⌄</span>
+    </div>
+  </header>
+
+  <!-- ===== KPI STRIP ===== -->
+  <section class="kpis" id="overview" aria-label="Key indicators">
+
+    <div class="kpi amber">
+      <div class="k"><span>prompts enriched · today</span><span class="trend">▲ 12%</span></div>
+      <div class="v">147<span class="u">/day</span></div>
+      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
+        <polyline fill="none" stroke="#ffb547" stroke-width="1.5"
+          points="0,22 8,18 16,20 24,14 32,16 40,10 48,12 56,8 64,11 72,6 80,9 88,5 96,7"/>
+        <polyline fill="rgba(255,181,71,0.12)" stroke="none"
+          points="0,22 8,18 16,20 24,14 32,16 40,10 48,12 56,8 64,11 72,6 80,9 88,5 96,7 96,28 0,28"/>
+      </svg>
+      <div class="note"><b>avg +120 tokens</b> of context per prompt · 38ms p50</div>
+    </div>
+
+    <div class="kpi sage">
+      <div class="k"><span>published this week</span><span class="trend">▲ 4</span></div>
+      <div class="v">23<span class="u">sessions</span></div>
+      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
+        <g fill="#95c486">
+          <rect x="0"  y="20" width="10" height="8"/>
+          <rect x="14" y="16" width="10" height="12"/>
+          <rect x="28" y="22" width="10" height="6"/>
+          <rect x="42" y="14" width="10" height="14"/>
+          <rect x="56" y="10" width="10" height="18"/>
+          <rect x="70" y="18" width="10" height="10"/>
+          <rect x="84" y="6"  width="10" height="22"/>
+        </g>
+      </svg>
+      <div class="note">publish rate · <b>61%</b> of sessions promoted to repo</div>
+    </div>
+
+    <div class="kpi teal">
+      <div class="k"><span>decision graph</span><span class="trend">▲ 8 nodes</span></div>
+      <div class="v" data-bind-prepend="stats.entities">1,247<span class="u">nodes</span></div>
+      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
+        <polyline fill="none" stroke="#6ed1c8" stroke-width="1.5"
+          points="0,26 12,22 24,20 36,17 48,15 60,12 72,9 84,6 96,4"/>
+      </svg>
+      <div class="note"><span data-bind-tmpl="{stats.decisions} decisions · {stats.patterns} patterns · {stats.failures} failures">12 decisions · 8 patterns · 5 failures</span> · <b>compounding</b></div>
+    </div>
+
+    <div class="kpi rust">
+      <div class="k"><span>drift caught · audit</span><span class="trend down">▼ 1</span></div>
+      <div class="v">3<span class="u">this wk</span></div>
+      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
+        <g fill="#e07a4f">
+          <rect x="6"  y="20" width="4" height="8"/>
+          <rect x="22" y="16" width="4" height="12"/>
+          <rect x="38" y="22" width="4" height="6"/>
+          <rect x="54" y="14" width="4" height="14"/>
+          <rect x="70" y="18" width="4" height="10"/>
+          <rect x="86" y="12" width="4" height="16"/>
+        </g>
+      </svg>
+      <div class="note">2 blocked · 1 warned · agent course-corrected before write</div>
+    </div>
+
+    <div class="kpi lilac">
+      <div class="k"><span>local trail · private</span><span class="trend">⌂ on disk</span></div>
+      <div class="v">82<span class="u">sessions</span></div>
+      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
+        <polyline fill="none" stroke="#b89bd9" stroke-width="1.5"
+          points="0,18 14,17 28,16 42,15 56,14 70,13 84,12 96,11"/>
+      </svg>
+      <div class="note">never auto-uploaded · <b>34 MB</b> · gitignored</div>
+    </div>
+
+  </section>
+
+  <!-- ===== LIVE FEED + ACTIVITY ===== -->
+  <section class="grid-2" id="live">
+
+    <div class="panel amber">
+      <div class="ph">
+        <span class="label">live</span>
+        <span class="title">enrich feed</span>
+        <span class="sub">streaming · last 60 min</span>
+        <span class="live"><span class="dot"></span>recording</span>
+        <div class="right">
+          <span class="seg">
+            <button class="on">all</button>
+            <button>mine</button>
+            <button>team</button>
+          </span>
+          <button>pause ⏸</button>
+        </div>
+      </div>
+      <div class="pb tight">
+        <div class="feed" id="feed">
+          <div class="feed-row new">
+            <span class="ts">14:22:41</span>
+            <span class="session">cc/abc12</span>
+            <span class="who">rohan</span>
+            <span class="prompt">"add caching to the txn endpoint"</span>
+            <span class="ctx">
+              <span class="ctag dec">+3</span>
+              <span class="ctag pat">+1</span>
+              <span class="ctag fail">⚠1</span>
+              <span class="lat">38ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">14:21:58</span>
+            <span class="session">cc/abc12</span>
+            <span class="who">rohan</span>
+            <span class="prompt">"refactor the rate-limiter to use atomic counters"</span>
+            <span class="ctx">
+              <span class="ctag dec">+2</span>
+              <span class="ctag pat">+2</span>
+              <span class="lat">41ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">14:19:03</span>
+            <span class="session">cu/9f3d</span>
+            <span class="who">priya</span>
+            <span class="prompt">"why does this module use lock-free atomics over mutex?"</span>
+            <span class="ctx">
+              <span class="ctag dec">+1</span>
+              <span class="ctag fail">⚠1</span>
+              <span class="lat">29ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">14:15:22</span>
+            <span class="session">cc/abc12</span>
+            <span class="who">rohan</span>
+            <span class="prompt">"add a retry policy to the webhook dispatcher"</span>
+            <span class="ctx">
+              <span class="ctag pat">+1</span>
+              <span class="lat">35ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">14:12:08</span>
+            <span class="session">cu/9f3d</span>
+            <span class="who">priya</span>
+            <span class="prompt">"explain the data flow in src/payments/settlement.rs"</span>
+            <span class="ctx">
+              <span class="ctag dec">+2</span>
+              <span class="ctag pat">+1</span>
+              <span class="lat">44ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">14:08:51</span>
+            <span class="session">cc/7b2a</span>
+            <span class="who">marcus</span>
+            <span class="prompt">"convert the legacy webhook handler to the new pattern"</span>
+            <span class="ctx">
+              <span class="ctag dec">+1</span>
+              <span class="ctag pat">+3</span>
+              <span class="ctag fail">⚠2</span>
+              <span class="lat">52ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">14:04:33</span>
+            <span class="session">cc/abc12</span>
+            <span class="who">rohan</span>
+            <span class="prompt">"add structured logging to the auth service"</span>
+            <span class="ctx">
+              <span class="ctag pat">+2</span>
+              <span class="lat">31ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">13:58:12</span>
+            <span class="session">cu/9f3d</span>
+            <span class="who">priya</span>
+            <span class="prompt">"what's the team's policy on adding new dependencies?"</span>
+            <span class="ctx">
+              <span class="ctag dec">+4</span>
+              <span class="lat">26ms</span>
+            </span>
+          </div>
+          <div class="feed-row">
+            <span class="ts">13:51:47</span>
+            <span class="session">cc/7b2a</span>
+            <span class="who">marcus</span>
+            <span class="prompt">"is there a way to test this without hitting the live API?"</span>
+            <span class="ctx">
+              <span class="ctag pat">+1</span>
+              <span class="lat">33ms</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="pf">
+        <span>showing <b>9 of 147</b></span>
+        <span>·</span>
+        <span>avg latency <b>37 ms</b> · all-local · no LLM in path</span>
+        <span class="right">view full log →</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <span class="label">activity</span>
+        <span class="title">prompts · last 24h</span>
+        <div class="right">
+          <span class="seg">
+            <button>24h</button>
+            <button class="on">7d</button>
+            <button>30d</button>
+          </span>
+        </div>
+      </div>
+      <div class="pb tight">
+        <div class="activity">
+          <div class="top">
+            <div class="big">412<span class="u">prompts</span></div>
+            <div class="lbl">+27% vs last week<br><b>peak · 14:00 UTC</b></div>
+          </div>
+          <div class="bars" aria-label="Hourly prompt counts">
+            <i style="height: 14%"></i><i style="height: 8%"></i><i style="height: 6%"></i><i style="height: 4%"></i>
+            <i style="height: 6%"></i><i style="height: 10%"></i><i style="height: 22%"></i><i style="height: 48%"></i>
+            <i style="height: 62%"></i><i style="height: 78%"></i><i style="height: 88%"></i><i style="height: 72%"></i>
+            <i style="height: 80%"></i><i style="height: 95%"></i><i style="height: 86%"></i><i style="height: 64%"></i>
+            <i style="height: 52%"></i><i style="height: 38%"></i><i style="height: 24%"></i><i style="height: 18%"></i>
+            <i style="height: 12%; opacity:.4" class="dim"></i><i style="height: 8%; opacity:.4" class="dim"></i>
+            <i style="height: 6%; opacity:.4" class="dim"></i><i style="height: 4%; opacity:.4" class="dim"></i>
+          </div>
+          <div class="labels">
+            <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
+          </div>
+
+          <div class="breakdown">
+            <div class="row amber">
+              <span class="k">enrich · p50</span>
+              <span class="v">38<span class="u">ms</span></span>
+            </div>
+            <div class="row">
+              <span class="k">enrich · p99</span>
+              <span class="v">112<span class="u">ms</span></span>
+            </div>
+            <div class="row sage">
+              <span class="k">hit rate</span>
+              <span class="v">94<span class="u">%</span></span>
+            </div>
+            <div class="row">
+              <span class="k">tokens added</span>
+              <span class="v">49.4<span class="u">k</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ===== TOKEN SAVINGS (live · /api/dashboard tokens.*) ===== -->
+  <section class="panel teal" id="tokens" style="margin-bottom: 24px;">
+    <div class="ph">
+      <span class="label">measured · c</span>
+      <span class="title">token savings</span>
+      <span class="sub">from captured trails · all-local</span>
+      <span class="live"><span class="dot"></span>on disk</span>
+      <div class="right"><a href="#">how it's measured →</a></div>
+    </div>
+    <div class="pb tight">
+      <div class="tokens">
+        <div class="tk-hero">
+          <div class="tk-big">
+            <span data-bind-tmpl="{tokens.cache_saved_pct}%">63.0%</span>
+          </div>
+          <div class="tk-lbl">
+            of input served from <b>cache</b><br>
+            across <span data-bind="tokens.sessions">82</span> captured sessions
+          </div>
+        </div>
+        <div class="tk-grid">
+          <div class="tk-cell amber">
+            <span class="k">input</span>
+            <span class="v" data-bind="tokens.input">1.84M</span>
+            <span class="u">tokens</span>
+          </div>
+          <div class="tk-cell sage">
+            <span class="k">output</span>
+            <span class="v" data-bind="tokens.output">421k</span>
+            <span class="u">tokens</span>
+          </div>
+          <div class="tk-cell teal">
+            <span class="k">cache · read</span>
+            <span class="v" data-bind="tokens.cache_read">3.13M</span>
+            <span class="u">tokens reused</span>
+          </div>
+          <div class="tk-cell lilac">
+            <span class="k">cache · created</span>
+            <span class="v" data-bind="tokens.cache_creation">52k</span>
+            <span class="u">tokens written</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pf">
+      <span>cache-read displaces fresh input · <b>lower cost, lower latency</b></span>
+      <span class="right">never auto-uploaded · folded from <code>.illuminate/trail</code></span>
+    </div>
+  </section>
+
+  <!-- ===== SESSIONS LOG ===== -->
+  <section class="panel" id="sessions" style="margin-bottom: 24px;">
+    <div class="ph">
+      <span class="label">recent</span>
+      <span class="title">published sessions</span>
+      <span class="sub">team-illuminate · branch main</span>
+      <div class="right">
+        <a href="#">browse all →</a>
+      </div>
+    </div>
+    <div class="pb tight">
+      <!-- The row template is cloned once per recent_sessions[] item by
+           illuminate-v4.js (data-bind-rows). {token} fields resolve against
+           each row object (id/title/type/status/ago). When /api/dashboard is
+           offline the authored static rows below survive exactly as written —
+           the same graceful-degradation contract as the audit-rows panel. -->
+      <template data-bind-rows="recent_sessions">
+        <div class="s-row">
+          <span class="hash" data-bind-cell="id">—</span>
+          <span class="stamp pub">●</span>
+          <span class="body">
+            <span class="title" data-bind-cell="title">—</span>
+            <span class="meta">
+              <span class="ref" data-bind-cell="type">—</span>
+              <span>·</span>
+              <span data-bind-cell="status">—</span>
+            </span>
+          </span>
+          <span class="when" data-bind-cell="ago">—</span>
+        </div>
+      </template>
+      <div class="session-log">
+
+        <div class="s-row">
+          <span class="hash">3a8c9d1</span>
+          <span class="stamp pub">✓</span>
+          <span class="body">
+            <span class="title">Add LRU caching to txn endpoint</span>
+            <span class="meta">
+              <span>"add caching to the txn endpoint"</span>
+              <span class="who">@rohan</span>
+              <span>↳</span>
+              <span class="ref">Decision::NoRedis</span>
+              <span>·</span>
+              <span class="ref">Pattern::LRU30s</span>
+            </span>
+          </span>
+          <span class="when">2m ago · published</span>
+        </div>
+
+        <div class="s-row">
+          <span class="hash">b1f4e72</span>
+          <span class="stamp draft">⏵</span>
+          <span class="body">
+            <span class="title">Refactor session capture daemon to flush on SIGTERM</span>
+            <span class="meta">
+              <span>"make the trail daemon write atomically on shutdown"</span>
+              <span class="who">@rohan</span>
+            </span>
+          </span>
+          <span class="when">23m ago · draft</span>
+        </div>
+
+        <div class="s-row">
+          <span class="hash">7e0a4d8</span>
+          <span class="stamp dec">◆</span>
+          <span class="body">
+            <span class="title">Pattern: prefer lock-free atomics over mutex in payment paths</span>
+            <span class="meta">
+              <span>derived from 3 sessions on src/payments/*</span>
+              <span class="who">@priya</span>
+              <span>↳</span>
+              <span class="ref">Pattern::LockFreeAtomics</span>
+            </span>
+          </span>
+          <span class="when">3h ago · pattern</span>
+        </div>
+
+        <div class="s-row">
+          <span class="hash">c2b9381</span>
+          <span class="stamp local">⌂</span>
+          <span class="body">
+            <span class="title">Debug spiral · rate limiter (kept local)</span>
+            <span class="meta">
+              <span>6 prompts · 4 failed attempts · 1 resolution</span>
+              <span class="who">@rohan</span>
+              <span class="ref" style="color:var(--lilac);">private</span>
+            </span>
+          </span>
+          <span class="when">5h ago · local only</span>
+        </div>
+
+        <div class="s-row">
+          <span class="hash">f5e2c08</span>
+          <span class="stamp fail">!</span>
+          <span class="body">
+            <span class="title">Reflect: race-condition surfaced in payments/txn.rs</span>
+            <span class="meta">
+              <span>flaky test → root cause → graph update</span>
+              <span class="who">@ci</span>
+              <span>↳</span>
+              <span class="ref" style="color:var(--rust);">Failure::RaceCondition</span>
+            </span>
+          </span>
+          <span class="when">yesterday · failure</span>
+        </div>
+
+        <div class="s-row">
+          <span class="hash">9d4a712</span>
+          <span class="stamp pub">✓</span>
+          <span class="body">
+            <span class="title">Decision: no Redis in payments — deploy constraints</span>
+            <span class="meta">
+              <span>"why aren't we using redis here?"</span>
+              <span class="who">@priya</span>
+              <span>↳</span>
+              <span class="ref">Decision::NoRedis</span>
+            </span>
+          </span>
+          <span class="when">3 months ago · published</span>
+        </div>
+
+      </div>
+    </div>
+    <div class="pf">
+      <span><b>23</b> sessions this week</span>
+      <span>·</span>
+      <span><b>14</b> published · <b>6</b> drafts · <b>3</b> failures · <b>82</b> local</span>
+      <span class="right">↳ <b>9d4a712</b> still cited in 14 enrichments / week</span>
+    </div>
+  </section>
+
+  <!-- ===== KNOWLEDGE · 3 columns ===== -->
+  <section class="grid-3" id="knowledge">
+
+    <div class="panel teal">
+      <div class="ph">
+        <span class="label">team</span>
+        <span class="title">decisions</span>
+        <span class="sub" data-bind-tmpl="{stats.decisions} total">12 total</span>
+        <div class="right"><a href="#">browse →</a></div>
+      </div>
+      <div class="pb tight">
+        <!-- The row template is cloned once per recent_decisions[] item by
+             illuminate-v4.js (data-bind-rows), newest-first. {field} cells
+             resolve against each row object (title → .name, id → .ref). When
+             /api/dashboard is offline the authored static rows below survive
+             exactly as written — the same graceful-degradation contract as the
+             sessions + audit-rows panels. -->
+        <template data-bind-rows="recent_decisions">
+          <div class="card-row dec">
+            <div class="body">
+              <span class="name" data-bind-cell="title">—</span>
+              <div class="meta">
+                <span class="badge">decision</span>
+                <span class="ref" data-bind-cell="id">—</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v" data-bind-cell="ago">—</span>
+              <span class="l">updated</span>
+            </div>
+          </div>
+        </template>
+        <div class="card-list">
+
+          <div class="card-row dec">
+            <div class="body">
+              <span class="name">No Redis in payments service</span>
+              <span class="summary">Deploy constraints require stateless sidecars. Use in-memory caching with TTL instead.</span>
+              <div class="meta">
+                <span class="badge">decision</span>
+                <span class="ref">2025-12-no-redis</span>
+                <span>· @priya</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">38</span>
+              <span class="l">enrichments</span>
+            </div>
+          </div>
+
+          <div class="card-row dec">
+            <div class="body">
+              <span class="name">Lock-free atomics over mutex on payment paths</span>
+              <span class="summary">Race conditions in 2026-02 incident showed mutex contention. Chose atomics. Applied across payment-side code.</span>
+              <div class="meta">
+                <span class="badge">decision</span>
+                <span class="ref">2026-02-atomics</span>
+                <span>· @priya</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">22</span>
+              <span class="l">enrichments</span>
+            </div>
+          </div>
+
+          <div class="card-row dec">
+            <div class="body">
+              <span class="name">No new runtime dependencies without ADR</span>
+              <span class="summary">Any new crate or package must come with a one-page ADR. Reduces drift; keeps cargo.lock small.</span>
+              <div class="meta">
+                <span class="badge">decision</span>
+                <span class="ref">2025-11-dep-policy</span>
+                <span>· @rohan</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">14</span>
+              <span class="l">enrichments</span>
+            </div>
+          </div>
+
+          <div class="card-row dec">
+            <div class="body">
+              <span class="name">Structured logging via tracing crate</span>
+              <span class="summary">Logs are spans + events. No println, no eprintln in non-CLI code. <em>span!</em> at every public boundary.</span>
+              <div class="meta">
+                <span class="badge">decision</span>
+                <span class="ref">2025-09-tracing</span>
+                <span>· @marcus</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">11</span>
+              <span class="l">enrichments</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="panel sage">
+      <div class="ph">
+        <span class="label">team</span>
+        <span class="title">patterns</span>
+        <span class="sub" data-bind-tmpl="{stats.patterns} total">8 total</span>
+        <div class="right"><a href="#">browse →</a></div>
+      </div>
+      <div class="pb tight">
+        <div class="card-list">
+
+          <div class="card-row pat">
+            <div class="body">
+              <span class="name">LRU cache · 30s TTL</span>
+              <span class="summary">In-memory LRU with TTL. Used at the API edge. Implemented via <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:11px;color:var(--amber);">moka::sync::Cache</code>.</span>
+              <div class="meta">
+                <span class="badge">pattern · in use</span>
+                <span class="ref">lru-cache-with-ttl</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">31</span>
+              <span class="l">applied</span>
+            </div>
+          </div>
+
+          <div class="card-row pat">
+            <div class="body">
+              <span class="name">Result&lt;T, AppError&gt; everywhere</span>
+              <span class="summary">No <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:11px;color:var(--amber);">unwrap()</code> in non-test code. Errors bubble via <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:11px;color:var(--amber);">?</code> to the request boundary, mapped to HTTP.</span>
+              <div class="meta">
+                <span class="badge">pattern · in use</span>
+                <span class="ref">errors-as-values</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">87</span>
+              <span class="l">applied</span>
+            </div>
+          </div>
+
+          <div class="card-row pat">
+            <div class="body">
+              <span class="name">Atomic settlement transitions</span>
+              <span class="summary">Settlement state changes use <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:11px;color:var(--amber);">AtomicU8</code> with <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:11px;color:var(--amber);">compare_exchange</code>. No mutex; ordering = AcqRel.</span>
+              <div class="meta">
+                <span class="badge">pattern · in use</span>
+                <span class="ref">atomic-state-transitions</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">9</span>
+              <span class="l">applied</span>
+            </div>
+          </div>
+
+          <div class="card-row pat">
+            <div class="body">
+              <span class="name">Tracing span at every public fn</span>
+              <span class="summary"><code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:11px;color:var(--amber);">#[instrument]</code> on every pub fn in lib crates. Auto-records args. Skipped only for hot-path fns.</span>
+              <div class="meta">
+                <span class="badge">pattern · in use</span>
+                <span class="ref">trace-public-boundaries</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">42</span>
+              <span class="l">applied</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="panel rust">
+      <div class="ph">
+        <span class="label">team</span>
+        <span class="title">failures · documented</span>
+        <span class="sub" data-bind-tmpl="{stats.failures} total">5 total</span>
+        <div class="right"><a href="#">browse →</a></div>
+      </div>
+      <div class="pb tight">
+        <!-- Cloned once per recent_failures[] item by illuminate-v4.js
+             (data-bind-rows), newest-first; title → .name, id → .ref. An
+             offline / empty / non-array path leaves the authored static rows
+             below untouched (graceful degradation). -->
+        <template data-bind-rows="recent_failures">
+          <div class="card-row fail">
+            <div class="body">
+              <span class="name" data-bind-cell="title">—</span>
+              <div class="meta">
+                <span class="badge">failure</span>
+                <span class="ref" data-bind-cell="id">—</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v" data-bind-cell="ago">—</span>
+              <span class="l">updated</span>
+            </div>
+          </div>
+        </template>
+        <div class="card-list">
+
+          <div class="card-row fail">
+            <div class="body">
+              <span class="name">Race condition in txn lock path</span>
+              <span class="summary">Mutex acquired in two paths with inverted order. Production p99 spiked to 8s. Fixed via atomic transition.</span>
+              <div class="meta">
+                <span class="badge">failure · 2026-02</span>
+                <span class="ref">race-condition-payments</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">14</span>
+              <span class="l">warns/wk</span>
+            </div>
+          </div>
+
+          <div class="card-row fail">
+            <div class="body">
+              <span class="name">Webhook retry stampede</span>
+              <span class="summary">No jitter on exponential backoff caused 30k-rps thundering herd on partner outage. Added jitter, capped concurrency.</span>
+              <div class="meta">
+                <span class="badge">failure · 2025-11</span>
+                <span class="ref">webhook-stampede</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">6</span>
+              <span class="l">warns/wk</span>
+            </div>
+          </div>
+
+          <div class="card-row fail">
+            <div class="body">
+              <span class="name">Unbounded channel OOM</span>
+              <span class="summary"><code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:11px;color:var(--amber);">tokio::mpsc::unbounded_channel</code> consumed 12GB during burst. Switched to bounded(8192) + backpressure.</span>
+              <div class="meta">
+                <span class="badge">failure · 2025-08</span>
+                <span class="ref">unbounded-channel-oom</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">3</span>
+              <span class="l">warns/wk</span>
+            </div>
+          </div>
+
+          <div class="card-row fail">
+            <div class="body">
+              <span class="name">Cargo.lock not committed in lib</span>
+              <span class="summary">Reproducibility lost across CI runners. Now always committed; renovate handles updates via PR.</span>
+              <div class="meta">
+                <span class="badge">failure · 2025-06</span>
+                <span class="ref">cargo-lock-policy</span>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="v">2</span>
+              <span class="l">warns/wk</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ===== GRAPH VIZ ===== -->
+  <section class="panel teal" id="graph" style="margin-bottom: 24px;">
+    <div class="ph">
+      <span class="label">substrate</span>
+      <span class="title">knowledge graph · payments-service</span>
+      <span class="sub">decisions · patterns · failures · sessions</span>
+      <div class="right">
+        <span class="seg">
+          <button class="on">2d</button>
+          <button>3d</button>
+        </span>
+        <a href="#">open in browser →</a>
+      </div>
+    </div>
+    <div class="pb tight">
+      <div class="graph" aria-label="Knowledge graph visualization">
+        <div class="grid-bg"></div>
+
+        <svg viewBox="0 0 1000 360" preserveAspectRatio="xMidYMid meet">
+          <!-- repo at center, edges to clusters -->
+          <g stroke-width="1" fill="none">
+            <!-- decisions cluster (left) -->
+            <line x1="500" y1="180" x2="200" y2="100" stroke="#6ed1c8" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="160" y2="190" stroke="#6ed1c8" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="220" y2="270" stroke="#6ed1c8" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="100" y2="140" stroke="#6ed1c8" stroke-opacity="0.35"/>
+            <!-- patterns cluster (top right) -->
+            <line x1="500" y1="180" x2="780" y2="80"  stroke="#95c486" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="840" y2="130" stroke="#95c486" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="720" y2="160" stroke="#95c486" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="900" y2="200" stroke="#95c486" stroke-opacity="0.35"/>
+            <!-- failures cluster (bottom right) -->
+            <line x1="500" y1="180" x2="820" y2="280" stroke="#e07a4f" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="720" y2="300" stroke="#e07a4f" stroke-opacity="0.45"/>
+            <line x1="500" y1="180" x2="900" y2="320" stroke="#e07a4f" stroke-opacity="0.35"/>
+            <!-- session cluster (bottom left, recent) -->
+            <line x1="500" y1="180" x2="340" y2="320" stroke="#ffb547" stroke-opacity="0.55"/>
+            <line x1="500" y1="180" x2="420" y2="300" stroke="#ffb547" stroke-opacity="0.45"/>
+            <!-- cross-links: dec → fail (NoRedis informed by RaceCondition) -->
+            <line x1="160" y1="190" x2="720" y2="300" stroke="#6ed1c8" stroke-opacity="0.18" stroke-dasharray="3 4"/>
+            <!-- pat → fail (atomics ← race) -->
+            <line x1="720" y1="160" x2="820" y2="280" stroke="#95c486" stroke-opacity="0.22" stroke-dasharray="3 4"/>
+            <!-- session → decision -->
+            <line x1="340" y1="320" x2="160" y2="190" stroke="#ffb547" stroke-opacity="0.18"/>
+            <line x1="340" y1="320" x2="780" y2="80" stroke="#ffb547" stroke-opacity="0.18"/>
+          </g>
+        </svg>
+
+        <!-- repo node at center -->
+        <div class="node repo big" style="left: 50%; top: 50%;">
+          <span class="pt" style="width:22px; height:22px; background:#ffb547; border-color:#ffb547; box-shadow:0 0 24px #ffb547;"></span>
+          <span class="name" style="border-color:#ffb547; color:#ffb547; font-weight:600;">payments-service</span>
+        </div>
+
+        <!-- decision cluster -->
+        <div class="node dec"     style="left: 20%; top: 28%;"><span class="pt"></span><span class="name">NoRedis</span></div>
+        <div class="node dec"     style="left: 16%; top: 53%;"><span class="pt"></span><span class="name">LockFreeAtomics</span></div>
+        <div class="node dec"     style="left: 22%; top: 75%;"><span class="pt"></span><span class="name">NoNewDeps</span></div>
+        <div class="node dec"     style="left: 10%; top: 39%;"><span class="pt"></span><span class="name">Tracing</span></div>
+
+        <!-- patterns cluster -->
+        <div class="node pat big" style="left: 78%; top: 22%;"><span class="pt"></span><span class="name">LRU30s</span></div>
+        <div class="node pat"     style="left: 84%; top: 36%;"><span class="pt"></span><span class="name">ResultErr</span></div>
+        <div class="node pat"     style="left: 72%; top: 44%;"><span class="pt"></span><span class="name">AtomicState</span></div>
+        <div class="node pat"     style="left: 90%; top: 56%;"><span class="pt"></span><span class="name">SpanBoundary</span></div>
+
+        <!-- failures cluster -->
+        <div class="node fail big" style="left: 82%; top: 78%;"><span class="pt"></span><span class="name">RaceCondition</span></div>
+        <div class="node fail"     style="left: 72%; top: 83%;"><span class="pt"></span><span class="name">WebhookStampede</span></div>
+        <div class="node fail"     style="left: 90%; top: 89%;"><span class="pt"></span><span class="name">UnboundedChannel</span></div>
+
+        <!-- session cluster -->
+        <div class="node sess"     style="left: 34%; top: 89%;"><span class="pt"></span><span class="name">3a8c9d1</span></div>
+        <div class="node sess"     style="left: 42%; top: 83%;"><span class="pt"></span><span class="name">b1f4e72</span></div>
+
+        <!-- legend & stats -->
+        <div class="stats">
+          <div class="item"><span class="v amber" data-bind="stats.entities">1,247</span><span>nodes</span></div>
+          <div class="item"><span class="v teal" data-bind="stats.decisions">12</span><span>decisions</span></div>
+          <div class="item"><span class="v sage" data-bind="stats.patterns">8</span><span>patterns</span></div>
+          <div class="item"><span class="v rust" data-bind="stats.failures">5</span><span>failures</span></div>
+          <div class="item"><span class="v" data-bind="stats.edges">3,891</span><span>edges</span></div>
+        </div>
+
+        <div class="legend">
+          <span class="li sess"><i></i> sessions</span>
+          <span class="li dec"><i></i> decisions</span>
+          <span class="li pat"><i></i> patterns</span>
+          <span class="li fail"><i></i> failures</span>
+        </div>
+      </div>
+
+      <!-- Living architecture diagram (illuminate diagram · mermaid). Rendered
+           client-side from the `diagram` field of /api/dashboard when present,
+           else from the authored static fallback below. The mermaid renderer
+           is loaded lazily from a CDN by illuminate-v4.js; when the CDN is
+           blocked or offline the `.mermaid-fallback` block stays visible and NO
+           console error is raised (graceful degradation). -->
+      <div class="mermaid-panel" id="mermaid-graph" data-bind-diagram="diagram">
+        <div class="mermaid-head">
+          <span class="mermaid-eyebrow">living diagram</span>
+          <span class="mermaid-note">modules &amp; import edges · <code>illuminate diagram</code></span>
+        </div>
+        <div class="mermaid-fallback" aria-label="Architecture diagram (text fallback)">
+          <pre class="mermaid-src">flowchart TD
+  repo["payments-service"]
+  dec["decisions"]
+  pat["patterns"]
+  fail["failures"]
+  repo --&gt; dec
+  repo --&gt; pat
+  repo --&gt; fail
+  pat --&gt; fail</pre>
+        </div>
+      </div>
+    </div>
+    <div class="pf">
+      <span>last index · <b>14:18:32</b></span>
+      <span>·</span>
+      <span><b>3a8c9d1</b> added 2 nodes, 4 edges</span>
+      <span class="right">↳ <b>RaceCondition</b> is cited by 3 decisions, 2 patterns — load-bearing</span>
+    </div>
+  </section>
+
+  <!-- ===== AUDIT + REFLECT ===== -->
+  <section class="audit" id="audit">
+
+    <div class="panel sage">
+      <div class="ph">
+        <span class="label">guard rail · a</span>
+        <span class="title">audit · drift caught</span>
+        <span class="sub">last 7 days</span>
+        <div class="right"><a href="#">all events →</a></div>
+      </div>
+      <div class="pb tight">
+        <div class="audit-list">
+
+          <div class="a-row block">
+            <span class="ts">12:08</span>
+            <span class="ic">✕</span>
+            <span class="body">
+              <span class="title">Agent attempted to add <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:12px;color:var(--rust);">redis = "0.24"</code> to payments</span>
+              <span class="sub">blocked · cites <span class="ref">Decision::NoRedis</span> · agent rewrote with <span class="ref">moka</span></span>
+            </span>
+            <span class="tag">blocked</span>
+          </div>
+
+          <div class="a-row block">
+            <span class="ts">yesterday</span>
+            <span class="ic">✕</span>
+            <span class="body">
+              <span class="title">Agent proposed <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:12px;color:var(--rust);">Mutex&lt;Settlement&gt;</code> in settlement.rs</span>
+              <span class="sub">blocked · cites <span class="ref">Decision::LockFreeAtomics</span> + <span class="warn">Failure::RaceCondition</span></span>
+            </span>
+            <span class="tag">blocked</span>
+          </div>
+
+          <div class="a-row warn">
+            <span class="ts">Mon</span>
+            <span class="ic">!</span>
+            <span class="body">
+              <span class="title">Agent used <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:12px;color:var(--amber);">println!</code> in non-CLI code</span>
+              <span class="sub">warned · cites <span class="ref">Decision::Tracing</span> · agent rewrote with span!()</span>
+            </span>
+            <span class="tag">warned</span>
+          </div>
+
+          <div class="a-row pass">
+            <span class="ts">Mon</span>
+            <span class="ic">✓</span>
+            <span class="body">
+              <span class="title">147 enrichments today · all aligned with team graph</span>
+              <span class="sub">no drift detected · audit ran on 21 PRs · zero blocks</span>
+            </span>
+            <span class="tag">pass</span>
+          </div>
+
+          <div class="a-row pass">
+            <span class="ts">Sun</span>
+            <span class="ic">✓</span>
+            <span class="body">
+              <span class="title">CI run on PR #482 · no drift</span>
+              <span class="sub">audit passed · 14 files changed · 0 violations</span>
+            </span>
+            <span class="tag">pass</span>
+          </div>
+
+        </div>
+      </div>
+      <div class="pf">
+        <span><b>3</b> blocks · <b>1</b> warning · <b>47</b> passes this week</span>
+        <span class="right">precision · <b>100%</b> (no false blocks since v0.0.8)</span>
+      </div>
+    </div>
+
+    <div class="panel rust">
+      <div class="ph">
+        <span class="label">guard rail · b</span>
+        <span class="title">reflect · failures ingested</span>
+        <span class="sub">last 30 days</span>
+        <div class="right"><a href="#">graph →</a></div>
+      </div>
+      <div class="pb tight">
+        <div class="audit-list">
+
+          <div class="a-row warn">
+            <span class="ts">yesterday</span>
+            <span class="ic">⚠</span>
+            <span class="body">
+              <span class="title">Flaky test surfaced race in <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:12px;color:var(--rust);">payments::txn::lock</code></span>
+              <span class="sub">added to graph · <span class="ref">Failure::RaceCondition</span> · 6 enrichments since cite it</span>
+            </span>
+            <span class="tag">added</span>
+          </div>
+
+          <div class="a-row warn">
+            <span class="ts">3 days</span>
+            <span class="ic">⚠</span>
+            <span class="body">
+              <span class="title">Sentry alert · webhook retry queue depth ≥ 8k</span>
+              <span class="sub">linked to <span class="ref">Failure::WebhookStampede</span> · added jitter pattern</span>
+            </span>
+            <span class="tag">added</span>
+          </div>
+
+          <div class="a-row warn">
+            <span class="ts">5 days</span>
+            <span class="ic">⚠</span>
+            <span class="body">
+              <span class="title">Manual post-mortem · unbounded channel OOM</span>
+              <span class="sub">@marcus · written via <code style="font-family:'Geist Mono',monospace;background:var(--bg);padding:0 4px;border:1px solid var(--border);font-size:12px;color:var(--amber);">illuminate reflect</code></span>
+            </span>
+            <span class="tag">added</span>
+          </div>
+
+          <div class="a-row pass">
+            <span class="ts">last wk</span>
+            <span class="ic">↺</span>
+            <span class="body">
+              <span class="title">Failure::RaceCondition cited 14× across enrichments</span>
+              <span class="sub">3 prevented re-introductions · loop is closing</span>
+            </span>
+            <span class="tag">compound</span>
+          </div>
+
+          <div class="a-row pass">
+            <span class="ts">last mo</span>
+            <span class="ic">↺</span>
+            <span class="body">
+              <span class="title">5 failures documented · 0 re-occurrences</span>
+              <span class="sub">the graph is doing its job · agents see warnings before write</span>
+            </span>
+            <span class="tag">compound</span>
+          </div>
+
+        </div>
+      </div>
+      <div class="pf">
+        <span><b>5</b> documented failures · <b>23</b> warnings/wk surfaced via enrich</span>
+        <span class="right">re-occurrence rate · <b>0%</b> since reflect went live</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ===== AUDIT ROWS (live · /api/dashboard audit_rows[]) ===== -->
+  <section class="panel teal" id="audit-rows-panel" style="margin-bottom: 24px;">
+    <div class="ph">
+      <span class="label">substrate</span>
+      <span class="title">audit ledger</span>
+      <span class="sub">decisions &amp; failures the auditor reasons over</span>
+      <div class="right"><a href="#">open graph →</a></div>
+    </div>
+    <div class="pb tight">
+      <!-- The row template is cloned once per audit_rows[] item by
+           illuminate-v4.js (data-bind-rows). {token} fields resolve against
+           each row object. When the API is offline the authored placeholder
+           rows below are left exactly as written. -->
+      <template data-bind-rows="audit_rows">
+        <div class="ar-row">
+          <span class="ar-type" data-bind-cell="type">decision</span>
+          <span class="ar-body">
+            <span class="ar-title" data-bind-cell="title">—</span>
+            <span class="ar-meta">
+              <span class="ref" data-bind-cell="id">—</span>
+              <span>·</span>
+              <span data-bind-cell="status">—</span>
+            </span>
+          </span>
+          <span class="ar-ago" data-bind-cell="ago">—</span>
+        </div>
+      </template>
+      <div class="ar-list" id="audit-rows">
+        <div class="ar-row">
+          <span class="ar-type">decision</span>
+          <span class="ar-body">
+            <span class="ar-title">No Redis in payments service</span>
+            <span class="ar-meta">
+              <span class="ref">2025-12-no-redis</span>
+              <span>·</span>
+              <span>accepted</span>
+            </span>
+          </span>
+          <span class="ar-ago">3 months ago</span>
+        </div>
+        <div class="ar-row">
+          <span class="ar-type fail">failure</span>
+          <span class="ar-body">
+            <span class="ar-title">Race condition in txn lock path</span>
+            <span class="ar-meta">
+              <span class="ref">race-condition-payments</span>
+              <span>·</span>
+              <span>documented</span>
+            </span>
+          </span>
+          <span class="ar-ago">4 months ago</span>
+        </div>
+      </div>
+    </div>
+    <div class="pf">
+      <span>newest-first · the pages an auditor cross-references before write</span>
+      <span class="right">cited live by <b>enrich</b> + <b>audit</b></span>
+    </div>
+  </section>
+
+</div>
+</main>
+
+<div class="toast" id="toast">copied</div>
+<script src="illuminate-v4.js" defer></script>
+</body>
+</html>
