@@ -279,12 +279,35 @@
   }
 
   function applyBindings(data) {
+    /* Reflect the real project name in the tab title (the <title> element has
+     * no data-bind hook of its own). Falls back to the authored "…" only if the
+     * envelope omits `project`. */
+    if (data && typeof data.project === "string" && data.project) {
+      doc.title = "illuminate · dashboard — " + data.project;
+    }
     /* If the live envelope carries a `diagram` field, (re)render it; otherwise
-     * the offline fallback / static-source render already kicked off at init. */
+     * the offline fallback / static-source render already kicked off at init.
+     * When no live `diagram` is supplied but a real `project` is, substitute it
+     * into the authored fallback diagram source (`repo["…"]`) so the rendered
+     * mermaid label reflects the actual repo rather than the demo literal. */
     var mc = mermaidContainer();
     if (mc) {
       var live = diagramSource(mc, data);
-      if (live) loadMermaid(live);
+      if (live) {
+        loadMermaid(live);
+      } else if (data && typeof data.project === "string" && data.project) {
+        var srcEl = mc.querySelector(".mermaid-src");
+        if (srcEl) {
+          var patched = (srcEl.textContent || "").replace(
+            /repo\["[^"]*"\]/,
+            'repo["' + data.project + '"]'
+          );
+          if (patched && patched !== srcEl.textContent) {
+            srcEl.textContent = patched;
+            loadMermaid(patched);
+          }
+        }
+      }
     }
     /* data-bind="dotted.path" → element text = formatted value */
     var bound = doc.querySelectorAll("[data-bind]");

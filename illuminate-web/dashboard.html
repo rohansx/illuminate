@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>illuminate · dashboard — payments-service</title>
+<title>illuminate · dashboard — illuminate</title>
 <template id="__bundler_thumbnail">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
     <rect width="200" height="200" fill="#0d0c10"/>
@@ -57,8 +57,8 @@
     <span data-clock>—</span>
   </div>
   <div class="metrics">
-    <div class="metric"><span class="k">enrich p50</span><span class="v amber" data-metric="enrich">38ms</span></div>
-    <div class="metric"><span class="k">capture cpu</span><span class="v" data-metric="capture">0.8%</span></div>
+    <div class="metric"><span class="k">decisions</span><span class="v amber" data-metric="decisions" data-bind="stats.decisions">5</span></div>
+    <div class="metric"><span class="k">cache saved</span><span class="v" data-metric="cache" data-bind-tmpl="{tokens.cache_saved_pct}%">100%</span></div>
     <div class="metric"><span class="k">graph nodes</span><span class="v" data-metric="graph" data-bind="stats.entities">1,247</span></div>
   </div>
   <nav class="links">
@@ -80,9 +80,9 @@
         <span class="sep">/</span>
         <a href="#">repos</a>
         <span class="sep">/</span>
-        <span class="now">payments-service</span>
+        <span class="now" data-bind="project">illuminate</span>
       </div>
-      <h1>Overview <span class="repo">payments-service</span></h1>
+      <h1>Overview <span class="repo" data-bind="project">illuminate</span></h1>
     </div>
     <div class="search">
       <input type="text" aria-label="Search sessions, decisions, files" placeholder="Search sessions, decisions, files…" />
@@ -102,68 +102,33 @@
   <section class="kpis" id="overview" aria-label="Key indicators">
 
     <div class="kpi amber">
-      <div class="k"><span>prompts enriched · today</span><span class="trend">▲ 12%</span></div>
-      <div class="v">147<span class="u">/day</span></div>
-      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#ffb547" stroke-width="1.5"
-          points="0,22 8,18 16,20 24,14 32,16 40,10 48,12 56,8 64,11 72,6 80,9 88,5 96,7"/>
-        <polyline fill="rgba(255,181,71,0.12)" stroke="none"
-          points="0,22 8,18 16,20 24,14 32,16 40,10 48,12 56,8 64,11 72,6 80,9 88,5 96,7 96,28 0,28"/>
-      </svg>
-      <div class="note"><b>avg +120 tokens</b> of context per prompt · 38ms p50</div>
+      <div class="k"><span>decisions · captured</span></div>
+      <div class="v" data-bind="stats.decisions">5</div>
+      <div class="note">team decisions recorded in the graph</div>
     </div>
 
     <div class="kpi sage">
-      <div class="k"><span>published this week</span><span class="trend">▲ 4</span></div>
-      <div class="v">23<span class="u">sessions</span></div>
-      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
-        <g fill="#95c486">
-          <rect x="0"  y="20" width="10" height="8"/>
-          <rect x="14" y="16" width="10" height="12"/>
-          <rect x="28" y="22" width="10" height="6"/>
-          <rect x="42" y="14" width="10" height="14"/>
-          <rect x="56" y="10" width="10" height="18"/>
-          <rect x="70" y="18" width="10" height="10"/>
-          <rect x="84" y="6"  width="10" height="22"/>
-        </g>
-      </svg>
-      <div class="note">publish rate · <b>61%</b> of sessions promoted to repo</div>
+      <div class="k"><span>patterns · documented</span></div>
+      <div class="v" data-bind="stats.patterns">0</div>
+      <div class="note">reusable patterns derived from sessions</div>
     </div>
 
     <div class="kpi teal">
-      <div class="k"><span>decision graph</span><span class="trend">▲ 8 nodes</span></div>
+      <div class="k"><span>decision graph</span></div>
       <div class="v" data-bind-prepend="stats.entities">1,247<span class="u">nodes</span></div>
-      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#6ed1c8" stroke-width="1.5"
-          points="0,26 12,22 24,20 36,17 48,15 60,12 72,9 84,6 96,4"/>
-      </svg>
-      <div class="note"><span data-bind-tmpl="{stats.decisions} decisions · {stats.patterns} patterns · {stats.failures} failures">12 decisions · 8 patterns · 5 failures</span> · <b>compounding</b></div>
+      <div class="note"><span data-bind-tmpl="{stats.decisions} decisions · {stats.patterns} patterns · {stats.failures} failures">12 decisions · 8 patterns · 5 failures</span></div>
     </div>
 
     <div class="kpi rust">
-      <div class="k"><span>drift caught · audit</span><span class="trend down">▼ 1</span></div>
-      <div class="v">3<span class="u">this wk</span></div>
-      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
-        <g fill="#e07a4f">
-          <rect x="6"  y="20" width="4" height="8"/>
-          <rect x="22" y="16" width="4" height="12"/>
-          <rect x="38" y="22" width="4" height="6"/>
-          <rect x="54" y="14" width="4" height="14"/>
-          <rect x="70" y="18" width="4" height="10"/>
-          <rect x="86" y="12" width="4" height="16"/>
-        </g>
-      </svg>
-      <div class="note">2 blocked · 1 warned · agent course-corrected before write</div>
+      <div class="k"><span>failures · documented</span></div>
+      <div class="v" data-bind="stats.failures">0</div>
+      <div class="note">failures ingested so agents see them before write</div>
     </div>
 
     <div class="kpi lilac">
-      <div class="k"><span>local trail · private</span><span class="trend">⌂ on disk</span></div>
-      <div class="v">82<span class="u">sessions</span></div>
-      <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#b89bd9" stroke-width="1.5"
-          points="0,18 14,17 28,16 42,15 56,14 70,13 84,12 96,11"/>
-      </svg>
-      <div class="note">never auto-uploaded · <b>34 MB</b> · gitignored</div>
+      <div class="k"><span>captured sessions</span></div>
+      <div class="v" data-bind-prepend="tokens.sessions">82<span class="u">sessions</span></div>
+      <div class="note">on disk · <span data-bind-tmpl="{tokens.cache_saved_pct}% of input served from cache">100% of input served from cache</span></div>
     </div>
 
   </section>
@@ -525,10 +490,10 @@
       </div>
     </div>
     <div class="pf">
-      <span><b>23</b> sessions this week</span>
+      <span><b data-bind="tokens.sessions">82</b> captured sessions</span>
       <span>·</span>
-      <span><b>14</b> published · <b>6</b> drafts · <b>3</b> failures · <b>82</b> local</span>
-      <span class="right">↳ <b>9d4a712</b> still cited in 14 enrichments / week</span>
+      <span><b data-bind="stats.decisions">5</b> decisions · <b data-bind="stats.failures">0</b> failures</span>
+      <span class="right">newest-first · folded from <code>.illuminate/trail</code></span>
     </div>
   </section>
 
@@ -807,7 +772,7 @@
   <section class="panel teal" id="graph" style="margin-bottom: 24px;">
     <div class="ph">
       <span class="label">substrate</span>
-      <span class="title">knowledge graph · payments-service</span>
+      <span class="title">knowledge graph · <span data-bind="project">illuminate</span></span>
       <span class="sub">decisions · patterns · failures · sessions</span>
       <div class="right">
         <span class="seg">
@@ -854,7 +819,7 @@
         <!-- repo node at center -->
         <div class="node repo big" style="left: 50%; top: 50%;">
           <span class="pt" style="width:22px; height:22px; background:#ffb547; border-color:#ffb547; box-shadow:0 0 24px #ffb547;"></span>
-          <span class="name" style="border-color:#ffb547; color:#ffb547; font-weight:600;">payments-service</span>
+          <span class="name" style="border-color:#ffb547; color:#ffb547; font-weight:600;" data-bind="project">illuminate</span>
         </div>
 
         <!-- decision cluster -->
@@ -908,7 +873,7 @@
         </div>
         <div class="mermaid-fallback" aria-label="Architecture diagram (text fallback)">
           <pre class="mermaid-src">flowchart TD
-  repo["payments-service"]
+  repo["illuminate"]
   dec["decisions"]
   pat["patterns"]
   fail["failures"]
@@ -993,8 +958,8 @@
         </div>
       </div>
       <div class="pf">
-        <span><b>3</b> blocks · <b>1</b> warning · <b>47</b> passes this week</span>
-        <span class="right">precision · <b>100%</b> (no false blocks since v0.0.8)</span>
+        <span>drift caught before write · cites the team graph</span>
+        <span class="right">illustrative · audit history is not yet tracked</span>
       </div>
     </div>
 
@@ -1061,8 +1026,8 @@
         </div>
       </div>
       <div class="pf">
-        <span><b>5</b> documented failures · <b>23</b> warnings/wk surfaced via enrich</span>
-        <span class="right">re-occurrence rate · <b>0%</b> since reflect went live</span>
+        <span><b data-bind="stats.failures">5</b> documented failures in the graph</span>
+        <span class="right">surfaced to agents via <code>illuminate enrich</code></span>
       </div>
     </div>
 

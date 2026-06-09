@@ -57,11 +57,14 @@ test.describe("dashboard live data (/api/dashboard)", () => {
     // data-bind="stats.entities" → formatted with thousands separator.
     await expect(page.locator('[data-metric="graph"]')).toHaveText("2,048");
 
-    // graph panel stat tiles bound to live counts.
-    await expect(page.locator('[data-bind="stats.decisions"]')).toHaveText("31");
-    await expect(page.locator('[data-bind="stats.patterns"]')).toHaveText("17");
-    await expect(page.locator('[data-bind="stats.failures"]')).toHaveText("9");
-    await expect(page.locator('[data-bind="stats.edges"]')).toHaveText("5,120");
+    // graph panel stat tiles bound to live counts. These stat fields are now
+    // bound in several places (topbar metric, KPI tiles, footer counts), so
+    // scope to the graph panel's `.stats` strip to target the legend tiles.
+    const graphStats = page.locator("#graph .graph .stats");
+    await expect(graphStats.locator('[data-bind="stats.decisions"]')).toHaveText("31");
+    await expect(graphStats.locator('[data-bind="stats.patterns"]')).toHaveText("17");
+    await expect(graphStats.locator('[data-bind="stats.failures"]')).toHaveText("9");
+    await expect(graphStats.locator('[data-bind="stats.edges"]')).toHaveText("5,120");
 
     // data-bind-prepend keeps the trailing unit span ("nodes") intact.
     const kpi = page.locator('[data-bind-prepend="stats.entities"]');

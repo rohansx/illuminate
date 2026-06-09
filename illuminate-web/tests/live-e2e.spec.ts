@@ -103,7 +103,9 @@ test.describe("live e2e — dashboard hydrates from a real illuminate wiki serve
       await page.locator('[data-bind="stats.edges"]').textContent()
     )?.trim();
     const liveDecisions = (
-      await page.locator('[data-bind="stats.decisions"]').textContent()
+      await page
+        .locator('#graph .graph .stats [data-bind="stats.decisions"]')
+        .textContent()
     )?.trim();
 
     // At least one metric must differ from the authored static mock — only
