@@ -101,6 +101,16 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         ("GET", "/api/stats") => handle_api_stats(ctx),
         ("GET", "/api/dashboard") => handle_api_dashboard(ctx),
         ("GET", "/api/pages") => handle_api_pages(ctx, &params),
+        // Embedded illuminate-web front-end (landing + dashboard) — served so
+        // the single binary hosts the live dashboard from any directory.
+        ("GET", p) if crate::webapp::asset(p).is_some() => {
+            let (content_type, body) = crate::webapp::asset(p).expect("guard checked Some");
+            RouteResp {
+                status: 200,
+                content_type,
+                body: body.to_string(),
+            }
+        }
         ("GET", p) if p.starts_with("/api/page/") => {
             handle_api_page(ctx, p.trim_start_matches("/api/page/"))
         }
