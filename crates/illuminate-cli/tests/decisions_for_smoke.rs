@@ -87,6 +87,34 @@ fn decisions_for_with_no_matches_prints_empty() {
 }
 
 #[test]
+fn decisions_for_with_no_matches_json_is_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    setup_repo(repo);
+
+    let out = run(
+        repo,
+        &["decisions", "for", "src/totally-unrelated-path", "--json"],
+    );
+    assert!(
+        out.status.success(),
+        "no-match decisions for --json must still succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output must be valid JSON");
+    let arr = parsed
+        .get("decisions")
+        .and_then(|v| v.as_array())
+        .expect("expected decisions array key in JSON");
+    assert!(
+        arr.is_empty(),
+        "expected empty decisions array for unrelated path: {stdout}"
+    );
+}
+
+#[test]
 fn decisions_for_json_flag_emits_array() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();

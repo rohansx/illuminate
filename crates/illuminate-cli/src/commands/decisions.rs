@@ -66,7 +66,17 @@ pub fn for_path(path: PathBuf, json: bool) -> illuminate::Result<()> {
     let graph = open_graph()?;
     let path_str = path.to_string_lossy().to_string();
     let query = fts5_phrase_query(&path_str);
-    let results = graph.search(&query, QUERY_LIMIT)?;
+    let candidates = graph.search(&query, QUERY_LIMIT)?;
+    // FTS5 tokenizes on `/` and `-`, so a phrase query for `src/foo-bar`
+    // matches any episode sharing a token (e.g. `src`). Post-filter the
+    // coarse candidates down to episodes whose content literally contains
+    // the requested path (case-insensitive substring on the raw path, not
+    // the tokenized form) so an unrelated path returns no matches. Applied
+    // once here so the human and --json branches agree.
+    let results: Vec<_> = candidates
+        .into_iter()
+        .filter(|(ep, _score)| content_mentions_path(&ep.content, &path_str))
+        .collect();
 
     if json {
         let payload: Vec<DecisionRow> = results
@@ -115,6 +125,14 @@ fn fts5_phrase_query(input: &str) -> String {
     format!("\"{escaped}\"")
 }
 
+/// Whether `content` literally references `path` (case-insensitive substring
+/// on the raw, un-tokenized path). Used to post-filter the coarse FTS5
+/// candidate set so a path that merely shares an FTS5 token with an episode
+/// (e.g. `src`) is not reported as a match.
+fn content_mentions_path(content: &str, path: &str) -> bool {
+    content.to_lowercase().contains(&path.to_lowercase())
+}
+
 fn preview(s: &str, max: usize) -> String {
     let one_line = s.replace('\n', " ");
     if one_line.chars().count() <= max {
@@ -143,7 +161,29 @@ struct JsonOutput<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{fts5_phrase_query, preview};
+    use super::{content_mentions_path, fts5_phrase_query, preview};
+
+    #[test]
+    fn content_mentions_path_matches_exact_substring() {
+        assert!(content_mentions_path(
+            "Chose Stripe over Braintree for src/payments after review.",
+            "src/payments"
+        ));
+    }
+
+    #[test]
+    fn content_mentions_path_rejects_token_only_overlap() {
+        // Shares the FTS5 `src` token but not the literal path.
+        assert!(!content_mentions_path(
+            "Chose Stripe over Braintree for src/payments after review.",
+            "src/totally-unrelated-path"
+        ));
+    }
+
+    #[test]
+    fn content_mentions_path_is_case_insensitive() {
+        assert!(content_mentions_path("Touched SRC/Payments today.", "src/payments"));
+    }
 
     #[test]
     fn fts5_phrase_query_quotes_paths() {
