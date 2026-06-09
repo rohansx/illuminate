@@ -148,6 +148,19 @@ impl CodeIndex {
         storage::symbol_count(&self.conn)
     }
 
+    /// Distinct file paths with at least one indexed symbol, sorted
+    /// lexicographically. Used by `illuminate diagram` to build a deterministic
+    /// node set.
+    pub fn list_files(&self) -> Result<Vec<String>> {
+        storage::list_files(&self.conn)
+    }
+
+    /// All `imports`-kind edges, sorted lexicographically. Used by
+    /// `illuminate diagram` to build a deterministic edge set.
+    pub fn list_import_edges(&self) -> Result<Vec<crate::edges::Edge>> {
+        storage::list_import_edges(&self.conn)
+    }
+
     /// Enrich an anchor with symbol information.
     ///
     /// Given an anchor with just a file_path, finds the best matching symbol

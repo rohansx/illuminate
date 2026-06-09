@@ -221,6 +221,35 @@ pub fn edge_count(conn: &Connection) -> Result<usize> {
     Ok(count as usize)
 }
 
+/// Distinct file paths that have at least one indexed symbol, sorted
+/// lexicographically. Backs [`crate::indexer::CodeIndex::list_files`] and the
+/// `illuminate diagram` node set. Sorting in SQL keeps the output stable so two
+/// runs over the same index produce byte-identical diagrams.
+pub fn list_files(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT file_path FROM symbols ORDER BY file_path",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
+}
+
+/// All `imports`-kind edges, sorted lexicographically by
+/// (source_qualified, target_qualified, line). Backs
+/// [`crate::indexer::CodeIndex::list_import_edges`] and the `illuminate diagram`
+/// edge set. Sorting in SQL keeps the output deterministic.
+pub fn list_import_edges(conn: &Connection) -> Result<Vec<Edge>> {
+    let mut stmt = conn.prepare(
+        "SELECT source_qualified, target_qualified, kind, file_path, line
+         FROM edges
+         WHERE kind = 'imports'
+         ORDER BY source_qualified, target_qualified, line",
+    )?;
+    let rows = stmt.query_map([], row_to_edge)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
+}
+
 /// Outgoing edges for a qualified name.
 pub fn lookup_outgoing(conn: &Connection, source: &str) -> Result<Vec<Edge>> {
     let mut stmt = conn.prepare(
@@ -343,4 +372,94 @@ pub fn impact_radius(
         impacted,
         truncated,
     })
+}
+
+#[cfg(test)]
+mod diagram_reader_tests {
+    use super::*;
+    use crate::symbols::{Symbol, SymbolType, Visibility};
+
+    fn open() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        conn
+    }
+
+    fn sym(file: &str, name: &str) -> Symbol {
+        Symbol {
+            file_path: file.to_string(),
+            name: name.to_string(),
+            symbol_type: SymbolType::Function,
+            signature: None,
+            visibility: Visibility::Public,
+            line_start: 1,
+            line_end: 2,
+            hash: format!("{file}:{name}"),
+            language: "rust".to_string(),
+        }
+    }
+
+    fn import_edge(src_file: &str, target: &str) -> Edge {
+        Edge {
+            source_qualified: format!("file::{src_file}"),
+            target_qualified: target.to_string(),
+            kind: EdgeKind::Imports,
+            file_path: src_file.to_string(),
+            line: 1,
+        }
+    }
+
+    #[test]
+    fn diagram_list_files_returns_distinct_sorted_paths() {
+        let conn = open();
+        // Insert out of order, with two symbols sharing a file.
+        upsert_symbols(&conn, "src/zeta.rs", &[sym("src/zeta.rs", "z")]).unwrap();
+        upsert_symbols(
+            &conn,
+            "src/alpha.rs",
+            &[sym("src/alpha.rs", "a"), sym("src/alpha.rs", "b")],
+        )
+        .unwrap();
+
+        let files = list_files(&conn).unwrap();
+        assert_eq!(files, vec!["src/alpha.rs", "src/zeta.rs"]);
+    }
+
+    #[test]
+    fn diagram_list_files_empty_index_is_empty() {
+        let conn = open();
+        assert!(list_files(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn diagram_list_import_edges_only_imports_sorted() {
+        let conn = open();
+        // A call edge that must NOT be returned by the imports reader.
+        let call = Edge {
+            source_qualified: "src/a.rs::f".to_string(),
+            target_qualified: "g".to_string(),
+            kind: EdgeKind::Calls,
+            file_path: "src/a.rs".to_string(),
+            line: 3,
+        };
+        upsert_edges(
+            &conn,
+            "src/a.rs",
+            &[import_edge("src/a.rs", "zlib"), import_edge("src/a.rs", "alib"), call],
+        )
+        .unwrap();
+
+        let imports = list_import_edges(&conn).unwrap();
+        assert_eq!(imports.len(), 2, "only the two imports edges, not the call");
+        assert!(imports.iter().all(|e| e.kind == EdgeKind::Imports));
+        // Sorted by (source, target): "alib" before "zlib".
+        assert_eq!(imports[0].target_qualified, "alib");
+        assert_eq!(imports[1].target_qualified, "zlib");
+    }
+
+    #[test]
+    fn diagram_list_import_edges_empty_when_no_imports() {
+        let conn = open();
+        assert!(list_import_edges(&conn).unwrap().is_empty());
+    }
 }

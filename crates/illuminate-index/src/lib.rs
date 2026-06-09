@@ -4,6 +4,8 @@
 //! and import statements. Creates stable symbol hashes for anchoring decisions
 //! to code locations.
 
+pub mod diagram;
+pub mod doc_decay;
 pub mod edge_extract;
 pub mod edges;
 pub mod indexer;
