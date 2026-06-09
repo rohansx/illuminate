@@ -30,6 +30,9 @@ use serde::{Deserialize, Serialize};
 use illuminate::{Episode, Graph};
 use illuminate_trail::TrailRecord;
 
+pub mod as_doc;
+pub use as_doc::{draft_design_doc, write_design_doc};
+
 /// How much of the captured session to share with the team.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -209,6 +212,15 @@ illuminate publish \
     f.write_all(script.as_bytes())?;
     set_executable(&hook_path)?;
     Ok(hook_path)
+}
+
+/// Read a single-line trail jsonl file into a [`TrailRecord`].
+///
+/// The canonical reader for `.illuminate/trail/<file>.jsonl` (one JSON document
+/// per file). Exposed so sibling paths like [`write_design_doc`] share the same
+/// parse semantics instead of re-implementing them. Read-only — no write.
+pub fn read_trail_file(path: &Path) -> Result<TrailRecord> {
+    read_trail(path)
 }
 
 // ─────────────────────────── internals ───────────────────────────

@@ -294,6 +294,47 @@ impl LocalMarkdownAdapter {
     }
 }
 
+/// Opt-in configuration for the local-markdown adapter, mirrored from the
+/// `[ingest.local-docs]` table in `illuminate.toml`.
+///
+/// The crate's documented trust-model invariant is **no defaults that
+/// auto-fetch** — pointing the config at a directory is not enough. The
+/// operator must set `enabled = true` explicitly; otherwise
+/// [`adapter_from_config`] / [`LocalMarkdownAdapter::from_config`] return
+/// `None` and nothing is ever read from disk.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LocalDocsConfig {
+    /// Explicit opt-in gate. `false` (the default) means the adapter is
+    /// inert: `adapter_from_config` returns `None` and no doc is ever fetched.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Local directories and/or single files to walk for `*.md` content.
+    /// Only consulted when `enabled == true`.
+    #[serde(default)]
+    pub roots: Vec<PathBuf>,
+}
+
+impl LocalMarkdownAdapter {
+    /// Build an adapter from an opt-in [`LocalDocsConfig`].
+    ///
+    /// Returns `Some(adapter)` only when `cfg.enabled == true`; otherwise
+    /// `None`, honoring the crate's no-auto-fetch invariant. The adapter is
+    /// strictly read-only — it only ever reads the configured local tree and
+    /// never mutates, pushes, or commits back to the source.
+    pub fn from_config(cfg: &LocalDocsConfig) -> Option<Self> {
+        if !cfg.enabled {
+            return None;
+        }
+        Some(Self::new(cfg.roots.clone()))
+    }
+}
+
+/// Free-function alias for [`LocalMarkdownAdapter::from_config`] — returns a
+/// configured, read-only adapter only when `cfg.enabled == true`, else `None`.
+pub fn adapter_from_config(cfg: &LocalDocsConfig) -> Option<LocalMarkdownAdapter> {
+    LocalMarkdownAdapter::from_config(cfg)
+}
+
 fn default_skip_dirs() -> Vec<String> {
     [
         "node_modules",
@@ -635,6 +676,32 @@ mod tests {
                 .map(|(e, _)| (e.source.clone(), e.content.clone()))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn from_config_gates_on_enabled() {
+        let dir = tmp();
+        let root = dir.path().to_path_buf();
+        write(&root, "docs/x.md", "# X");
+
+        // Disabled (also the Default) → no adapter, regardless of roots.
+        let off = LocalDocsConfig {
+            enabled: false,
+            roots: vec![root.join("docs")],
+        };
+        assert!(LocalMarkdownAdapter::from_config(&off).is_none());
+        assert!(adapter_from_config(&off).is_none());
+        assert!(adapter_from_config(&LocalDocsConfig::default()).is_none());
+
+        // Enabled → an adapter that carries the configured roots.
+        let on = LocalDocsConfig {
+            enabled: true,
+            roots: vec![root.join("docs")],
+        };
+        let adapter = adapter_from_config(&on).expect("enabled → adapter");
+        let docs = adapter.fetch_all().expect("fetch");
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].title, "X");
     }
 
     #[test]

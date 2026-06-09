@@ -15,10 +15,12 @@ pub mod normalize;
 pub mod raw;
 pub mod record;
 pub mod repo;
+pub mod savings;
 pub mod storage;
 pub mod watcher;
 
 pub use record::{AgentKind, Message, MessageRole, ToolInvocation, TrailRecord};
+pub use savings::{TokenTotals, aggregate_tokens};
 pub use watcher::{ImportCallback, WatcherOpts, run_watcher};
 
 use thiserror::Error;
