@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use illuminate::Graph;
 use illuminate_embed::EmbedEngine;
+use illuminate_index::indexer::CodeIndex;
 
 // FTS5 sanitizer lives in `illuminate-core` (v0.20+). Re-export so existing
 // importers of `illuminate_route::sanitize_for_fts5` keep working.
@@ -43,9 +44,32 @@ pub struct FileEntry {
 /// Uses RRF (Reciprocal Rank Fusion) across FTS5 and semantic search.
 /// FTS5 sanitization happens inside [`Graph::search`] / [`Graph::search_fused`]
 /// (since v0.20) — this function just hands the raw subject through.
+///
+/// This is the no-index convenience wrapper. It delegates to
+/// [`route_with_index`] with no code index, so `FileEntry.symbols` stays empty.
+/// Callers that have an [`CodeIndex`] available should call
+/// [`route_with_index`] to populate symbols from the code graph.
 pub fn route(
     graph: &Graph,
     embed: Option<&EmbedEngine>,
+    subject: &str,
+    limit: usize,
+) -> illuminate::Result<ReadingPlan> {
+    route_with_index(graph, embed, None, subject, limit)
+}
+
+/// Generate a reading plan, optionally enriching each routed file with the
+/// symbols the code graph ([`CodeIndex`]) extracted for that path.
+///
+/// When `index` is `Some`, every routed [`FileEntry`] has its `symbols` field
+/// populated from [`CodeIndex::lookup_file`] (the indexed symbol names for that
+/// path). When `index` is `None`, `symbols` stays empty.
+///
+/// Token estimates are content-aware: see [`estimate_tokens_for_file`].
+pub fn route_with_index(
+    graph: &Graph,
+    embed: Option<&EmbedEngine>,
+    index: Option<&CodeIndex>,
     subject: &str,
     limit: usize,
 ) -> illuminate::Result<ReadingPlan> {
@@ -94,9 +118,10 @@ pub fn route(
                     && !code_files.iter().any(|f: &FileEntry| f.path == path)
                 {
                     let estimated_tokens = estimate_tokens_for_file(path);
+                    let symbols = symbols_for_path(index, path);
                     code_files.push(FileEntry {
                         path: path.to_string(),
-                        symbols: Vec::new(),
+                        symbols,
                         priority: 2,
                         estimated_tokens,
                     });
@@ -115,10 +140,33 @@ pub fn route(
     })
 }
 
-/// Rough token estimate for a file based on path.
+/// Average characters per token for source-code-like content.
+///
+/// GPT-family BPE tokenizers average roughly 4 characters per token on English
+/// prose and source code; we use the same divisor so the estimate is grounded
+/// in a documented, real measure rather than a per-extension guess.
+const CHARS_PER_TOKEN: usize = 4;
+
+/// Estimate how many tokens reading a file would cost.
+///
+/// When the file exists and is readable, the estimate is derived from the file's
+/// real character count divided by [`CHARS_PER_TOKEN`] — so a large file
+/// estimates materially more tokens than a small one, regardless of extension.
+/// Empty-but-readable files round up to one token.
+///
+/// When the file is missing or unreadable (e.g. a path recorded in decision
+/// history that no longer exists on disk), we fall back to the per-extension
+/// heuristic so the plan still carries a non-zero budget for that file.
 fn estimate_tokens_for_file(path: &str) -> usize {
-    // Rough estimate: average code file is ~200 lines, ~4 chars/token
-    // This is a placeholder — real implementation would stat the file
+    match std::fs::read_to_string(path) {
+        Ok(content) => (content.chars().count() / CHARS_PER_TOKEN).max(1),
+        Err(_) => extension_token_heuristic(path),
+    }
+}
+
+/// Per-extension fallback token estimate, used only when the file content is
+/// unavailable. These are coarse averages for a "typical" file of each kind.
+fn extension_token_heuristic(path: &str) -> usize {
     let ext = path.rsplit('.').next().unwrap_or("");
     match ext {
         "rs" | "go" | "java" | "c" | "cpp" => 800,
@@ -126,6 +174,21 @@ fn estimate_tokens_for_file(path: &str) -> usize {
         "py" => 500,
         "toml" | "yaml" | "json" => 200,
         _ => 400,
+    }
+}
+
+/// Resolve the indexed symbol names for a routed file path from the code graph.
+///
+/// Returns the names of the symbols [`CodeIndex`] extracted for `path`. When no
+/// index is supplied, or the lookup fails, or the path has no indexed symbols,
+/// this returns an empty vec — never an error — so routing degrades gracefully.
+fn symbols_for_path(index: Option<&CodeIndex>, path: &str) -> Vec<String> {
+    let Some(index) = index else {
+        return Vec::new();
+    };
+    match index.lookup_file(path) {
+        Ok(symbols) => symbols.into_iter().map(|s| s.name).collect(),
+        Err(_) => Vec::new(),
     }
 }
 

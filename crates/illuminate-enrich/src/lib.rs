@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use illuminate::Graph;
 use illuminate_embed::EmbedEngine;
-use illuminate_route::route;
+use illuminate_route::{DecisionEntry, route};
 
 // Re-export so downstream tools (and tests) can sanitize without depending
 // on illuminate-route directly. The canonical home is `illuminate-route`.
@@ -71,6 +71,11 @@ pub enum InjectionSource {
     Module,
     CodePath,
     TrailEpisode,
+    /// A highly-similar prior prompt or `docs/prompts/` cookbook entry, surfaced
+    /// as a "you've prompted this shape before — here's the proven pattern"
+    /// suggestion (v3.3 prompt-cookbook auto-suggest). Tagged distinctly so the
+    /// consumer can render it as guidance rather than as recorded knowledge.
+    CookbookSuggestion,
     Other,
 }
 
@@ -83,6 +88,7 @@ impl InjectionSource {
             Self::Module => "module",
             Self::CodePath => "code_path",
             Self::TrailEpisode => "trail_episode",
+            Self::CookbookSuggestion => "cookbook_suggestion",
             Self::Other => "other",
         }
     }
@@ -187,6 +193,16 @@ pub fn enrich_prompt(
         });
     }
 
+    // 3b. Prompt-cookbook auto-suggest (v3.3): if a sufficiently-similar prior
+    //     prompt or `docs/prompts/` cookbook entry is already in the routed
+    //     results, surface EXACTLY ONE distinct cookbook-suggestion injection.
+    //     The similarity is a deterministic token-overlap over route() results —
+    //     no new LLM, no new query. Below the threshold, nothing is added, so
+    //     the output is byte-identical to the pre-G5 path.
+    if let Some(suggestion) = best_cookbook_suggestion(&req.raw_prompt, &plan.decisions) {
+        injections.push(suggestion);
+    }
+
     // 4. Apply the byte budget and deterministic ordering.
     inject_sort(&mut injections);
     let injections = apply_budget(injections, req.max_bytes);
@@ -257,6 +273,7 @@ fn heading_for(s: InjectionSource) -> &'static str {
         InjectionSource::Module => "Modules",
         InjectionSource::CodePath => "Code paths mentioned",
         InjectionSource::TrailEpisode => "Prior session context",
+        InjectionSource::CookbookSuggestion => "Prompt cookbook (similar prior prompt)",
         InjectionSource::Other => "Other context",
     }
 }
@@ -330,6 +347,128 @@ pub fn extract_code_paths(text: &str) -> Vec<String> {
     re.captures_iter(text)
         .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
         .collect()
+}
+
+// ───────────────────────── cookbook auto-suggest ─────────────────────────
+
+/// Minimum token-overlap (Jaccard) similarity for a routed cookbook/prior-prompt
+/// entry to be surfaced as a suggestion. Tuned so a clearly-on-topic prompt
+/// (sharing the bulk of its meaningful tokens with a cookbook entry) clears it,
+/// while an unrelated prompt sharing zero meaningful tokens does not.
+const COOKBOOK_SIMILARITY_THRESHOLD: f64 = 0.15;
+
+/// Byte budget for the single cookbook-suggestion injection's content. Capped so
+/// the suggestion can never dominate the overall prompt budget; the outer
+/// [`apply_budget`] still enforces the total `max_bytes` contract.
+const COOKBOOK_CONTENT_BUDGET: usize = 240;
+
+/// Pick the single best cookbook / prior-prompt suggestion from the already
+/// routed results, if any clears [`COOKBOOK_SIMILARITY_THRESHOLD`].
+///
+/// Deterministic: the candidates and their similarity are pure functions of the
+/// prompt text and the routed entries' content — no new query, no LLM, no clock.
+/// Returns at most one injection (the highest-similarity candidate, ties broken
+/// by id for stability).
+fn best_cookbook_suggestion(prompt: &str, decisions: &[DecisionEntry]) -> Option<Injection> {
+    let prompt_tokens = token_set(prompt);
+    if prompt_tokens.is_empty() {
+        return None;
+    }
+
+    let mut best: Option<(f64, &DecisionEntry)> = None;
+    for d in decisions {
+        if !is_cookbook_candidate(d.source.as_deref(), &d.content) {
+            continue;
+        }
+        let sim = jaccard(&prompt_tokens, &token_set(&d.content));
+        if sim < COOKBOOK_SIMILARITY_THRESHOLD {
+            continue;
+        }
+        let better = match best {
+            None => true,
+            // Higher similarity wins; ties broken by id for determinism.
+            Some((best_sim, best_entry)) => {
+                sim > best_sim || (sim == best_sim && d.id < best_entry.id)
+            }
+        };
+        if better {
+            best = Some((sim, d));
+        }
+    }
+
+    best.map(|(sim, d)| Injection {
+        source: InjectionSource::CookbookSuggestion,
+        id: d.id.clone(),
+        wiki_url: cookbook_wiki_url(d.source.as_deref(), &d.id),
+        content: truncate_content(&d.content, COOKBOOK_CONTENT_BUDGET),
+        score_bucket: bucket_score(sim),
+    })
+}
+
+/// True when a routed entry looks like a `docs/prompts/` cookbook entry or a
+/// captured prior prompt — the two things the cookbook auto-suggest surfaces.
+///
+/// Cookbook entries are ingested with `source: ingested:*` and a content prefix
+/// `[doc-prompt-...]` (`illuminate-ingest` stamps `[doc-prompt-cookbook-<id>]`).
+/// Prior prompts arrive as trail episodes (`source: trail:*`).
+fn is_cookbook_candidate(source: Option<&str>, content: &str) -> bool {
+    let trimmed = content.trim_start();
+    if trimmed.starts_with("[doc-prompt-") {
+        return true;
+    }
+    matches!(source, Some(s) if s.starts_with("trail:"))
+}
+
+/// Reconstruct a wiki/doc URL for a cookbook suggestion when the source carries
+/// an ingested-doc path; otherwise `None` (prior prompts have no doc URL).
+fn cookbook_wiki_url(source: Option<&str>, id: &str) -> Option<String> {
+    match source {
+        Some(s) if s.starts_with("ingested:") => {
+            Some(format!("docs/prompts/{}.md", sanitize_url_segment(id)))
+        }
+        _ => None,
+    }
+}
+
+fn sanitize_url_segment(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+/// The set of meaningful, lowercased tokens in `text`, using the same rules as
+/// `sanitize_for_fts5` (split on non-alphanumeric/`_`, drop tokens < 3 chars and
+/// stopwords). A `BTreeSet` keeps membership cheap and ordering irrelevant —
+/// only set membership matters for Jaccard.
+fn token_set(text: &str) -> std::collections::BTreeSet<String> {
+    sanitize_for_fts5(text)
+        .split(" OR ")
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .collect()
+}
+
+/// Jaccard similarity |A∩B| / |A∪B| between two token sets. Returns 0.0 when
+/// either set is empty (never NaN).
+fn jaccard(
+    a: &std::collections::BTreeSet<String>,
+    b: &std::collections::BTreeSet<String>,
+) -> f64 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let inter = a.intersection(b).count();
+    if inter == 0 {
+        return 0.0;
+    }
+    let union = a.len() + b.len() - inter;
+    inter as f64 / union as f64
 }
 
 #[cfg(test)]
@@ -483,6 +622,97 @@ mod tests {
         assert_eq!(a.enriched_prompt, b.enriched_prompt);
         assert_eq!(a.graph_state_hash, b.graph_state_hash);
         assert_eq!(a.injections, b.injections);
+    }
+
+    #[test]
+    fn jaccard_is_overlap_over_union() {
+        let a = token_set("add a new rest api endpoint with validation");
+        let b = token_set("adding a new rest api endpoint and validation handler");
+        let sim = jaccard(&a, &b);
+        assert!(sim > 0.0 && sim <= 1.0, "sim out of range: {sim}");
+        // Identical sets → 1.0; disjoint → 0.0; no NaN on empties.
+        assert_eq!(jaccard(&a, &a), 1.0);
+        assert_eq!(jaccard(&token_set("zzz qqq"), &token_set("redis cache")), 0.0);
+        assert_eq!(
+            jaccard(
+                &std::collections::BTreeSet::new(),
+                &token_set("anything here")
+            ),
+            0.0
+        );
+    }
+
+    #[test]
+    fn token_set_drops_stopwords_and_short_tokens() {
+        let toks = token_set("add the new rest api endpoint");
+        // "add"/"the"/"new" are stopwords; "api" is 3 chars (kept).
+        assert!(toks.contains("rest"));
+        assert!(toks.contains("api"));
+        assert!(toks.contains("endpoint"));
+        assert!(!toks.contains("add"));
+        assert!(!toks.contains("the"));
+        assert!(!toks.contains("new"));
+    }
+
+    #[test]
+    fn cookbook_candidate_recognizes_prompt_docs_and_trail() {
+        assert!(is_cookbook_candidate(
+            Some("ingested:local-docs"),
+            "[doc-prompt-cookbook-x] title\n\nbody"
+        ));
+        assert!(is_cookbook_candidate(
+            Some("trail:claude-code"),
+            "some captured prompt"
+        ));
+        // A plain decision episode is NOT a cookbook candidate.
+        assert!(!is_cookbook_candidate(
+            Some("wiki:decisions:dec-no-redis"),
+            "[dec-no-redis] do not use Redis"
+        ));
+        // A non-prompt ingested doc is NOT a candidate (only [doc-prompt-...]).
+        assert!(!is_cookbook_candidate(
+            Some("ingested:local-docs"),
+            "[doc-runbook-deploy] deploy steps"
+        ));
+    }
+
+    #[test]
+    fn cookbook_suggestion_fires_only_above_threshold() {
+        let entry = DecisionEntry {
+            id: "adding-api-endpoint".to_string(),
+            content: "[doc-prompt-cookbook-adding-api-endpoint] Adding an API endpoint\n\n\
+                      define the route handler, wire validation, register the route, and \
+                      add an integration test for the endpoint"
+                .to_string(),
+            source: Some("ingested:local-docs".to_string()),
+            score: 1.0,
+        };
+
+        // On-topic prompt → fires, tagged distinctly, doc URL reconstructed.
+        let hit = best_cookbook_suggestion(
+            "add a new api endpoint route handler with validation and an integration test",
+            std::slice::from_ref(&entry),
+        )
+        .expect("should fire above threshold");
+        assert_eq!(hit.source, InjectionSource::CookbookSuggestion);
+        assert_eq!(hit.id, "adding-api-endpoint");
+        assert_eq!(
+            hit.wiki_url.as_deref(),
+            Some("docs/prompts/adding-api-endpoint.md")
+        );
+
+        // Unrelated prompt sharing no meaningful tokens → no suggestion.
+        assert!(
+            best_cookbook_suggestion(
+                "optimize the kubernetes pod scheduler bin-packing heuristic",
+                std::slice::from_ref(&entry),
+            )
+            .is_none(),
+            "unrelated prompt must not fire a cookbook suggestion"
+        );
+
+        // Empty prompt → no suggestion (no tokens to compare).
+        assert!(best_cookbook_suggestion("", std::slice::from_ref(&entry)).is_none());
     }
 
     #[test]
