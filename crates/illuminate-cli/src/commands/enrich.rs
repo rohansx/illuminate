@@ -18,6 +18,7 @@ pub fn run(
     files: Vec<PathBuf>,
     max_bytes: usize,
     format: String,
+    semantic: bool,
 ) -> illuminate::Result<()> {
     let graph = open_graph()?;
 
@@ -27,10 +28,16 @@ pub fn run(
         max_bytes,
     };
 
-    // `embed: None` keeps the CLI dependency-light. FTS5 + sanitizer is
-    // sufficient for the v3.0 wedge demo. Semantic top-k will land via
-    // a `--semantic` flag in v3.1 once embed loading is gated on a flag.
-    let resp = enrich_prompt(&graph, None, &req).map_err(|e| match e {
+    // FTS5-only by default (`embed: None`). With `--semantic`, load the embed
+    // engine (same `ILLUMINATE_NO_EMBED` gate as `audit`) so `enrich_prompt`
+    // routes via RRF over FTS5 + semantic. If the engine can't load, `embed`
+    // stays `None` and the FTS5-only path is byte-identical to the default.
+    let embed = if semantic {
+        super::audit::try_load_embed_pub()
+    } else {
+        None
+    };
+    let resp = enrich_prompt(&graph, embed.as_deref(), &req).map_err(|e| match e {
         illuminate_enrich::EnrichError::Graph(g) => g,
         illuminate_enrich::EnrichError::Regex(r) => {
             illuminate::IlluminateError::InvalidInput(format!("regex: {r}"))

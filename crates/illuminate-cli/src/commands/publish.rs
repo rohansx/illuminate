@@ -11,19 +11,26 @@ use std::path::{Path, PathBuf};
 
 use illuminate_publish::{
     PublishRequest, RedactionLevel, TeamRepoTarget, install_pre_commit_hook, publish,
+    write_design_doc,
 };
 
 use super::open_graph;
 
 /// Run the `publish` subcommand.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     trail: Option<PathBuf>,
     redaction: String,
     team_repo: Option<PathBuf>,
     commit_sha: Option<String>,
     install_hook: bool,
+    as_doc: Option<PathBuf>,
     json_output: bool,
 ) -> illuminate::Result<()> {
+    if let Some(target) = as_doc {
+        return run_as_doc(trail, target, json_output);
+    }
+
     if install_hook {
         let team = team_repo.ok_or_else(|| {
             illuminate::IlluminateError::InvalidInput(
@@ -77,6 +84,36 @@ pub fn run(
                 println!("redaction: {}", resp.redaction.as_str());
             }
         }
+    }
+    Ok(())
+}
+
+/// `--as-doc <path>` path: deterministically draft a design-doc markdown from
+/// the trail and write it to the caller-named `target` (template-based, no LLM).
+/// Does not touch the graph and does not require `--team-repo`.
+fn run_as_doc(
+    trail: Option<PathBuf>,
+    target: PathBuf,
+    json_output: bool,
+) -> illuminate::Result<()> {
+    let trail_path = trail.ok_or_else(|| {
+        illuminate::IlluminateError::InvalidInput(
+            "--as-doc requires --trail (path to a .illuminate/trail/*.jsonl file)".to_string(),
+        )
+    })?;
+
+    let record = illuminate_publish::read_trail_file(&trail_path).map_err(map_publish_err)?;
+    let written = write_design_doc(&record, &target).map_err(map_publish_err)?;
+
+    if json_output {
+        let payload = serde_json::json!({
+            "session_id": record.session_id,
+            "as_doc": true,
+            "written_path": written.display().to_string(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+    } else {
+        println!("wrote design doc → {}", written.display());
     }
     Ok(())
 }

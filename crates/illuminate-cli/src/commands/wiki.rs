@@ -236,7 +236,27 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         })
     };
 
-    illuminate_wiki::serve::serve_with(&dir, port, project_name, Some(auditor), Some(graph_search))
+    // Token-savings source for the dashboard tile. Folds the repo's captured
+    // prompt-trails through aggregate_tokens on every request so the panel
+    // reflects newly-captured sessions without a server restart. Resolved from
+    // the repo root rather than the wiki dir so it works regardless of cwd.
+    let tokens: std::sync::Arc<illuminate_wiki::serve::TokensFn> = {
+        let root = repo_root()?;
+        std::sync::Arc::new(move || -> serde_json::Value {
+            let records = super::trail_tokens::load_records_from(&root);
+            let totals = illuminate_trail::aggregate_tokens(&records);
+            super::stats::tokens_json(&totals)
+        })
+    };
+
+    illuminate_wiki::serve::serve_with(
+        &dir,
+        port,
+        project_name,
+        Some(auditor),
+        Some(graph_search),
+        Some(tokens),
+    )
 }
 
 /// Construct an `Auditor` and run a single audit. Wrapped in a function so the

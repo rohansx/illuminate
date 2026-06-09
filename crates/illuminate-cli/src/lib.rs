@@ -210,6 +210,22 @@ enum Commands {
         limit: usize,
     },
 
+    /// Emit a living architecture diagram (mermaid) from the code index
+    Diagram {
+        /// Output format (only `mermaid` is supported today)
+        #[arg(long, default_value = "mermaid")]
+        format: String,
+
+        /// Write the diagram to this path instead of stdout (parent dirs are created)
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+
+        /// Reserved for future node-set filtering; currently the diagram always
+        /// reflects the whole indexed graph
+        #[arg(long, num_args = 0..)]
+        roots: Vec<PathBuf>,
+    },
+
     /// Export the decision graph
     Export {
         /// Output format: json or csv
@@ -224,6 +240,30 @@ enum Commands {
         limit: usize,
     },
 
+    /// Generate a deterministic onboarding brief from the decision graph
+    Onboard {
+        /// Emit a stable JSON object with decisions/patterns/failures/modules arrays
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate a deterministic incident brief for a service from the decision graph
+    Oncall {
+        /// Service or path to brief on (matched case-insensitively against
+        /// episode titles, content, and sources)
+        service: String,
+
+        /// Emit a stable JSON object with failures/decisions/modules arrays
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Build a Claude Code skill pack (SKILL.md) from the decision graph
+    Skill {
+        #[command(subcommand)]
+        cmd: SkillCmd,
+    },
+
     /// Check a plan against the decision graph and policies
     Audit {
         /// Agent's proposed plan
@@ -236,6 +276,10 @@ enum Commands {
         /// Path to index.db (default: <repo>/.illuminate/index.db)
         #[arg(long)]
         index_db: Option<PathBuf>,
+
+        /// Optional rationale, folded into the plan before auditing
+        #[arg(long)]
+        rationale: Option<String>,
 
         /// Output as JSON
         #[arg(long)]
@@ -314,6 +358,28 @@ enum Commands {
         json: bool,
     },
 
+    /// Flag markdown-doc references to code symbols that no longer exist in the index
+    DocDecay {
+        /// Markdown files or directories to scan; defaults to docs/,
+        /// ARCHITECTURE.md, AGENTS.md, CLAUDE.md, README.md when omitted
+        #[arg(long, num_args = 0..)]
+        roots: Vec<PathBuf>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Flag doc paragraphs that affirmatively recommend a concept a recorded decision rejected
+    AuditDocs {
+        /// Markdown doc to audit against recorded decisions
+        file: PathBuf,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Ask a natural-language question across decisions, patterns, failures, sessions, and ingested docs
     Ask {
         /// The question, as a single string
@@ -326,6 +392,12 @@ enum Commands {
         /// Output format: human (default) or json
         #[arg(long, default_value = "human", value_parser = ["human", "json"])]
         format: String,
+
+        /// Append an optional LLM synthesis step over the retrieved hits.
+        /// Degrades gracefully (prints a notice, exits 0) when no LLM provider
+        /// is configured; absent, the output is the retrieval-only report.
+        #[arg(long)]
+        synthesize: bool,
     },
 
     /// Browse published sessions in a team repo
@@ -368,6 +440,12 @@ enum Commands {
         #[arg(long)]
         install_hook: bool,
 
+        /// Draft a deterministic, template-based design-doc markdown (no LLM)
+        /// to this path from the --trail session, instead of a session publish.
+        /// Writes ONLY to the named path. Does not require --team-repo.
+        #[arg(long, value_name = "PATH")]
+        as_doc: Option<PathBuf>,
+
         /// Emit the PublishResponse as JSON instead of a human-readable summary
         #[arg(long)]
         json: bool,
@@ -389,6 +467,12 @@ enum Commands {
         /// Output format: human (default) | prompt | json
         #[arg(long, default_value = "human", value_parser = ["human", "prompt", "json"])]
         format: String,
+
+        /// Use semantic search (RRF over FTS5 + embeddings) instead of FTS5
+        /// only. Loads the embed engine; falls back to FTS5 if it can't load
+        /// (or ILLUMINATE_NO_EMBED=1).
+        #[arg(long)]
+        semantic: bool,
     },
 
     /// Explain why a file matters (which decisions, patterns, failures touch it)
@@ -403,6 +487,12 @@ enum Commands {
 
     /// PreToolUse hook - auto-audit Write/Edit calls (reads from stdin)
     AuditHook,
+
+    /// Manage host-agent hook integration (Cursor / Codex / Claude)
+    Hook {
+        #[command(subcommand)]
+        cmd: HookCmd,
+    },
 
     /// Capture and inspect Claude Code prompt-trails
     Trail {
@@ -441,6 +531,12 @@ enum Commands {
         cmd: commands::failure::FailureCmd,
     },
 
+    /// Trust-model commands (off-host write-target config linter)
+    Trust {
+        #[command(subcommand)]
+        cmd: TrustCmd,
+    },
+
     /// Show local installation state
     Status,
 
@@ -464,6 +560,40 @@ enum Commands {
         /// Severity: low, medium, high, critical
         #[arg(long)]
         severity: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillCmd {
+    /// Emit a deterministic SKILL.md summarizing the team's decision graph
+    Build {
+        /// Write the SKILL.md to this path instead of stdout (parent dirs are created)
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum TrustCmd {
+    /// Lint illuminate.toml for off-host write targets missing explicit consent
+    Check {
+        /// Emit a stable {ok, findings:[...]} JSON envelope instead of text
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum HookCmd {
+    /// Write a local agent config wiring `illuminate audit-hook` on edits
+    Install {
+        /// Host agent to configure: cursor, codex, or claude
+        #[arg(long)]
+        agent: String,
+
+        /// Config root directory (default: current directory)
+        #[arg(long, value_name = "PATH")]
+        dir: Option<PathBuf>,
     },
 }
 
@@ -550,7 +680,17 @@ enum DecisionsAction {
     },
 }
 
-fn main() {
+/// Parse the CLI arguments and dispatch the matched subcommand.
+///
+/// This is the single shared entry point for every binary the crate emits
+/// (`illuminate` and its `ilm` shorthand alias). Both `src/main.rs` and
+/// `src/bin/ilm.rs` are one-line shims that call `run()`, so the two binaries
+/// share one clap command tree and one dispatch — they can never drift.
+///
+/// On a command error this prints `error: <msg>` to stderr and exits with code
+/// 1 (so the behavior — including the process exit — is identical regardless of
+/// which binary name invoked it).
+pub fn run() {
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
@@ -648,15 +788,29 @@ fn main() {
             symbol_type,
             limit,
         } => commands::symbols::run(name, symbol_type, limit),
+        Commands::Diagram {
+            format,
+            out,
+            roots,
+        } => commands::diagram::run(format, out, roots),
         Commands::Export { format } => commands::export::run(&format),
         Commands::Summary { limit } => commands::summary::run(limit),
+        Commands::Onboard { json } => commands::onboard::run(json),
+        Commands::Oncall { service, json } => commands::oncall::run(service, json),
+        Commands::Skill { cmd } => match cmd {
+            SkillCmd::Build { out } => commands::skill::run(out),
+        },
         Commands::AuditHook => commands::hook::run_audit_hook(),
+        Commands::Hook { cmd } => match cmd {
+            HookCmd::Install { agent, dir } => commands::hook_install::run(&agent, dir),
+        },
         Commands::Audit {
             plan,
             files,
             index_db,
+            rationale,
             json,
-        } => commands::audit::run(plan, files, index_db, json),
+        } => commands::audit::run(plan, files, index_db, rationale, json),
         Commands::AuditDiff {
             base,
             index_db,
@@ -677,11 +831,14 @@ fn main() {
             json,
         } => commands::impact::run(files, index_db, depth, max_nodes, json),
         Commands::Ingest { roots, json } => commands::ingest::run(roots, json),
+        Commands::DocDecay { roots, json } => commands::doc_decay::run(roots, json),
+        Commands::AuditDocs { file, json } => commands::audit_docs::run(file, json),
         Commands::Ask {
             question,
             limit,
             format,
-        } => commands::ask::run(question, limit, format),
+            synthesize,
+        } => commands::ask::run(question, limit, format, synthesize),
         Commands::Browse {
             show,
             team_repo,
@@ -694,14 +851,24 @@ fn main() {
             team_repo,
             commit_sha,
             install_hook,
+            as_doc,
             json,
-        } => commands::publish::run(trail, redaction, team_repo, commit_sha, install_hook, json),
+        } => commands::publish::run(
+            trail,
+            redaction,
+            team_repo,
+            commit_sha,
+            install_hook,
+            as_doc,
+            json,
+        ),
         Commands::Enrich {
             prompt,
             files,
             max_bytes,
             format,
-        } => commands::enrich::run(prompt, files, max_bytes, format),
+            semantic,
+        } => commands::enrich::run(prompt, files, max_bytes, format, semantic),
         Commands::Explain { path, json } => commands::explain::run(path, json),
         Commands::Trail { cmd } => {
             commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io)
@@ -715,6 +882,9 @@ fn main() {
         }
         Commands::Failure { cmd } => commands::failure::run(cmd),
         Commands::Patterns { cmd } => commands::patterns::run(cmd),
+        Commands::Trust { cmd } => match cmd {
+            TrustCmd::Check { json } => commands::trust_check::run(json),
+        },
         Commands::Status => commands::status::run().map_err(illuminate::IlluminateError::Io),
         Commands::Reflect {
             failure,

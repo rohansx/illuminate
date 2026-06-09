@@ -23,8 +23,13 @@ pub fn run(
     plan_text: String,
     files: Vec<PathBuf>,
     index_db: Option<PathBuf>,
+    rationale: Option<String>,
     json: bool,
 ) -> illuminate::Result<()> {
+    // Fold any caller-supplied rationale into the plan so the auditor
+    // considers it (shared with the MCP `illuminate_audit` tool).
+    let plan_text = illuminate_audit::fold_rationale(&plan_text, rationale.as_deref());
+
     let graph = open_graph()?;
 
     // Load policies and audit-pipeline config from illuminate.toml if present.

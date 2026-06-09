@@ -6,9 +6,20 @@ license.workspace = true
 repository.workspace = true
 description = "CLI for illuminate — local-first context graph engine"
 
+[lib]
+name = "illuminate_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "illuminate"
 path = "src/main.rs"
+
+# `ilm` — shorthand alias for `illuminate` (v3.2 roadmap). Shares the crate's
+# library dispatch (`illuminate_cli::run`) so it is behaviorally identical with
+# no duplicated command logic.
+[[bin]]
+name = "ilm"
+path = "src/bin/ilm.rs"
 
 [dependencies]
 illuminate = { version = "0.22.0", path = "../illuminate-core" }

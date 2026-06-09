@@ -3,8 +3,14 @@
 //! v0.22 ships a **retrieval-only** answer: sanitized FTS5 + semantic search
 //! across decisions / patterns / failures / sessions / ingested docs / trail,
 //! grouped by inferred kind and rendered as a structured markdown report.
-//! No LLM synthesis (that's v3.3 — adds an optional final-rewrite step that
-//! consumes this exact structured output).
+//!
+//! v3.3 adds an *optional, gated* final-synthesis step (`--synthesize`) that
+//! consumes this exact structured output. The synthesis step is degrade-only
+//! here: when no LLM provider is configured (the only path we test — never a
+//! live network call), the command prints the same retrieval report plus a
+//! clearly-marked `synthesis unavailable` notice and still exits 0. The
+//! synthesis prompt itself is assembled deterministically by the pure
+//! `assemble_synthesis_prompt` so it can be unit-tested without any network.
 
 use std::io::Write;
 
@@ -15,7 +21,7 @@ use super::open_graph;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-enum HitKind {
+pub(crate) enum HitKind {
     Decision,
     Pattern,
     Failure,
@@ -27,7 +33,7 @@ enum HitKind {
 }
 
 impl HitKind {
-    fn heading(self) -> &'static str {
+    pub(crate) fn heading(self) -> &'static str {
         match self {
             Self::Decision => "Decisions",
             Self::Pattern => "Patterns",
@@ -42,26 +48,31 @@ impl HitKind {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct Hit {
-    kind: HitKind,
-    id: String,
-    title: String,
-    snippet: String,
-    source: Option<String>,
-    score_bucket: String,
+pub(crate) struct Hit {
+    pub(crate) kind: HitKind,
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) snippet: String,
+    pub(crate) source: Option<String>,
+    pub(crate) score_bucket: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct AskResponse {
-    question: String,
-    hits: Vec<Hit>,
-    hit_count: usize,
+pub(crate) struct AskResponse {
+    pub(crate) question: String,
+    pub(crate) hits: Vec<Hit>,
+    pub(crate) hit_count: usize,
     /// Names of empty kinds — useful for the human report's "no results in X"
     /// callouts and for future LLM synthesis prompts.
-    empty_kinds: Vec<String>,
+    pub(crate) empty_kinds: Vec<String>,
 }
 
-pub fn run(question: String, limit: usize, format: String) -> illuminate::Result<()> {
+pub fn run(
+    question: String,
+    limit: usize,
+    format: String,
+    synthesize: bool,
+) -> illuminate::Result<()> {
     let graph = open_graph()?;
     let resp = build_answer(&graph, &question, limit)?;
 
@@ -74,6 +85,21 @@ pub fn run(question: String, limit: usize, format: String) -> illuminate::Result
         }
         _ => {
             render_human(&mut out, &resp).map_err(illuminate::IlluminateError::Io)?;
+            // The synthesis step is gated by `--synthesize`. When the flag is
+            // ABSENT the output above is byte-identical to the retrieval-only
+            // path. When set, we assemble the deterministic synthesis prompt;
+            // when no provider is configured we degrade: print a clearly-marked
+            // notice (so the retrieval report is never lost) and exit 0 — never
+            // error, never make a network call.
+            if synthesize {
+                // Build the prompt regardless so the assembly path is exercised
+                // and ready for the provider call once one is wired in.
+                let _prompt = super::ask_synthesize::assemble_synthesis_prompt(&resp);
+                if super::ask_synthesize::llm_provider().is_none() {
+                    super::ask_synthesize::render_synthesis_unavailable(&mut out)
+                        .map_err(illuminate::IlluminateError::Io)?;
+                }
+            }
         }
     }
     Ok(())
