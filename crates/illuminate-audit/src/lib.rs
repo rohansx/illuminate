@@ -176,7 +176,7 @@ impl Auditor {
         let policy_violations = self.check_policies(&plan_entities, plan_text);
 
         // 2. Check decision graph for conflicts
-        let decision_violations = self.check_graph_conflicts(&plan_entities)?;
+        let decision_violations = self.check_graph_conflicts(&plan_entities, plan_text)?;
 
         // 3. Determine overall status
         let all_violations: Vec<&response::Severity> = policy_violations
@@ -299,6 +299,25 @@ impl Auditor {
     ) -> illuminate::Result<AuditResult> {
         let mut result = self.audit(plan_text)?;
         result.impact = self.compute_impact(files);
+
+        // Conventions are path-aware, so they run here (where the touched-file
+        // list is available) rather than in the plan-text-only `check_policies`.
+        let convention_violations = self.check_conventions(files);
+        if !convention_violations.is_empty() {
+            let has_error = convention_violations
+                .iter()
+                .any(|v| v.severity == response::Severity::Error);
+            let has_warning = convention_violations
+                .iter()
+                .any(|v| v.severity == response::Severity::Warning);
+            result.policy_violations.extend(convention_violations);
+            if has_error {
+                result.status = AuditStatus::Violation;
+            } else if has_warning && result.status == AuditStatus::Pass {
+                result.status = AuditStatus::Warning;
+            }
+        }
+
         Ok(result)
     }
 
@@ -496,7 +515,11 @@ impl Auditor {
                     severity,
                     decision_ref,
                 } => {
-                    if plan_text.to_lowercase().contains(&pattern.to_lowercase()) {
+                    // Negation-aware: a pattern that is directly negated within
+                    // its clause ("we will not use Redis") is NOT an intent to
+                    // use the rejected thing, so it does not fire a violation —
+                    // while an affirmative mention ("add a Redis cache") does.
+                    if mentions_as_intent(&plan_text.to_lowercase(), &pattern.to_lowercase()) {
                         violations.push(PolicyViolation {
                             policy_name: name.clone(),
                             expected: None,
@@ -514,7 +537,10 @@ impl Auditor {
                     }
                 }
                 IntentPolicy::Convention { .. } => {
-                    // Convention checks are more complex, skip for now
+                    // Conventions are path-aware and need the touched-file
+                    // list, so they are enforced in `check_conventions`
+                    // (called from `audit_with_files`), not in this
+                    // plan-text-only policy pass.
                 }
             }
         }
@@ -522,10 +548,88 @@ impl Auditor {
         violations
     }
 
-    fn check_graph_conflicts(&self, entities: &[PlanEntity]) -> illuminate::Result<Vec<Violation>> {
+    /// Enforce [`IntentPolicy::Convention`] rules against the touched files.
+    ///
+    /// A convention is path-aware: `scope` selects which files the rule
+    /// applies to (Frozen-style — trailing `/**` and `/*` are stripped, then
+    /// the normalized path is matched by substring), and `pattern` is a regex
+    /// every in-scope file's path must satisfy. An in-scope file whose path
+    /// does not match `pattern` yields a [`PolicyViolation`] at the policy's
+    /// severity. A `pattern` that fails to compile is logged and skipped so a
+    /// malformed policy never breaks the audit.
+    fn check_conventions<P: AsRef<Path>>(&self, files: &[P]) -> Vec<PolicyViolation> {
         let mut violations = Vec::new();
 
+        for policy in &self.policies {
+            let IntentPolicy::Convention {
+                name,
+                pattern,
+                scope,
+                severity,
+            } = policy
+            else {
+                continue;
+            };
+
+            let regex = match Regex::new(pattern) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(
+                        "illuminate-audit: convention '{name}' has an invalid pattern \
+                         regex ('{pattern}': {e}); skipping"
+                    );
+                    continue;
+                }
+            };
+
+            let scope_base = scope.trim_end_matches("/**").trim_end_matches("/*");
+
+            for f in files {
+                let path = normalize_path(f.as_ref(), &self.repo_root);
+                let in_scope = scope_base.is_empty() || path.contains(scope_base);
+                if in_scope && !regex.is_match(&path) {
+                    violations.push(PolicyViolation {
+                        policy_name: name.clone(),
+                        expected: Some(pattern.clone()),
+                        found: Some(path.clone()),
+                        reason: format!(
+                            "file '{path}' in scope '{scope}' does not follow the \
+                             required convention '{pattern}'"
+                        ),
+                        severity: severity.clone(),
+                        // Conventions don't carry a decision_ref.
+                        decision_ref: None,
+                        evidence: Some(format!(
+                            "path '{path}' does not match convention pattern '{pattern}'"
+                        )),
+                        // Rule-based path + regex match. Conventions are
+                        // advisory by default, a notch below the path-prefix
+                        // tier. See docs/AUDIT.md for the scoring matrix.
+                        confidence: 0.8,
+                    });
+                }
+            }
+        }
+
+        violations
+    }
+
+    fn check_graph_conflicts(
+        &self,
+        entities: &[PlanEntity],
+        plan_text: &str,
+    ) -> illuminate::Result<Vec<Violation>> {
+        let mut violations = Vec::new();
+        let plan_lower = plan_text.to_lowercase();
+
         for entity in entities {
+            // Negation-aware: if the plan only *negates* this entity ("we will
+            // not use Redis"), it is not an intent to use it, so a decision
+            // rejecting it is not a real conflict — skip it.
+            if !mentions_as_intent(&plan_lower, &entity.name.to_lowercase()) {
+                continue;
+            }
+
             // Search for episodes mentioning this entity
             let results = self.graph.search(&entity.name, 20)?;
 
@@ -706,6 +810,20 @@ fn open_index_connection(path: &Path) -> Option<Mutex<Connection>> {
 /// after `lookup_file` resolves which symbols live in each touched file —
 /// they are the ones that let the BFS traverse Calls edges in addition to
 /// Imports edges.
+/// Fold an optional rationale into a plan string for auditing.
+///
+/// Both the CLI `audit` command and the MCP `illuminate_audit` tool accept a
+/// caller-supplied rationale (the project CLAUDE.md directive asks agents to
+/// pass one). Folding it into the plan text means the auditor actually
+/// considers it — policy and decision-conflict matching run over the combined
+/// text. A `None` or whitespace-only rationale is a no-op.
+pub fn fold_rationale(plan: &str, rationale: Option<&str>) -> String {
+    match rationale {
+        Some(r) if !r.trim().is_empty() => format!("{plan}\n\nRationale: {r}"),
+        _ => plan.to_string(),
+    }
+}
+
 fn build_seed_qualifiers<P: AsRef<Path>>(files: &[P], repo_root: &Option<PathBuf>) -> Vec<String> {
     files
         .iter()
@@ -763,6 +881,85 @@ fn derive_wiki_url(
         return Some(format!("{WIKI_DECISIONS_DIR}/{}.md", rd.episode_id));
     }
     None
+}
+
+/// Negators that, when they precede a rejected pattern *within the same
+/// clause*, flip the mention from "intent to use" to "intent to avoid".
+///
+/// Kept deliberately small and high-precision: each is a standalone word the
+/// auditor recognizes as expressing avoidance ("no Redis", "without Redis").
+/// "don't" / "do not" collapse to the `not` entry after apostrophe folding in
+/// [`mentions_as_intent`].
+const NEGATORS: &[&str] = &["no", "not", "never", "avoid", "without"];
+
+/// Characters that terminate a clause for the purposes of negation scoping.
+///
+/// A negator only shields a rejected pattern if no clause boundary sits
+/// between them — so "no Redis, use Postgres" suppresses the Redis hit (same
+/// clause), but "Do not refactor auth. Add Redis." does not (the `not` lives
+/// in the prior sentence/clause).
+const CLAUSE_BOUNDARIES: &[char] = &['.', ',', ';', ':', '!', '?', '\n'];
+
+/// Decide whether `pattern_lower` appears in `plan_lower` as an *intent to
+/// use* the thing, rather than an intent to avoid it.
+///
+/// Both arguments must already be lowercased. The matcher scans every
+/// occurrence of `pattern_lower`; an occurrence is treated as a use-intent
+/// unless a [`NEGATORS`] word directly precedes it *within the same clause*
+/// (no [`CLAUSE_BOUNDARIES`] char between the negator and the pattern). If
+/// *any* occurrence is an un-negated use-intent, the whole plan counts as
+/// intending to use the pattern (returns `true`); only when every occurrence
+/// is negated does it return `false`.
+///
+/// This fixes the substring-matcher false-positive where a plan saying
+/// "we will not use Redis" tripped a Redis `rejected_pattern`, while keeping
+/// "add a Redis cache" a genuine violation.
+///
+/// Exposed publicly so sibling commands (e.g. `illuminate audit-docs`) can
+/// reuse the exact same clause-local negation classification when auditing doc
+/// prose against recorded decisions, rather than re-deriving the rules.
+pub fn mentions_as_intent(plan_lower: &str, pattern_lower: &str) -> bool {
+    if pattern_lower.is_empty() {
+        return false;
+    }
+    // Fold apostrophes to spaces so contracted negators tokenize cleanly:
+    // "don't" -> "don t", letting "do not"/"do n't" both reach the `not`
+    // negator entry via whole-word matching in `clause_is_negated`.
+    let normalized = plan_lower.replace('\'', " ");
+
+    let mut search_from = 0usize;
+    while let Some(rel) = normalized[search_from..].find(pattern_lower) {
+        let start = search_from + rel;
+        search_from = start + pattern_lower.len();
+
+        // The clause preceding this occurrence: walk back to the nearest
+        // clause boundary (or the start of the plan).
+        let clause_start = normalized[..start]
+            .rfind(CLAUSE_BOUNDARIES)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let preceding = &normalized[clause_start..start];
+
+        if !clause_is_negated(preceding) {
+            // An un-negated use-intent occurrence — the plan intends to use it.
+            return true;
+        }
+    }
+
+    // No occurrences (caller's substring check should have screened this) or
+    // every occurrence negated → not a use-intent.
+    false
+}
+
+/// Whether the text *preceding* a rejected-pattern occurrence (already scoped
+/// to a single clause) contains a negator as a standalone word.
+fn clause_is_negated(preceding_clause: &str) -> bool {
+    preceding_clause
+        .split(|c: char| c.is_whitespace())
+        .any(|tok| {
+            let t = tok.trim_matches(|c: char| !c.is_alphanumeric());
+            NEGATORS.contains(&t)
+        })
 }
 
 static REJECTION_INDICATORS: &[&str] = &[
