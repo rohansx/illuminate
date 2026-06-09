@@ -7,3 +7,8 @@ target/
 *.db-shm
 *.db-wal
 .fastembed_cache/
+
+# local autonomous-run + editor tooling artifacts (not part of the project)
+.autonomous/
+.opencode/
+opencode.jsonc
