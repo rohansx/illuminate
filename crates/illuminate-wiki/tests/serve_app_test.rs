@@ -26,10 +26,12 @@ fn serves_dashboard_app_at_app() {
         "ct={}",
         r.content_type
     );
-    // dashboard markup markers (loads illuminate-v4.js + uses data-bind hooks)
+    // The dashboard is now a Vite single-file build that fetches the live
+    // endpoint and renders only real data — assert markers that are actually
+    // in that build (the fetch target + the illuminate branding/title).
     assert!(
-        r.body.contains("illuminate-v4.js") && r.body.contains("data-bind"),
-        "expected dashboard html body"
+        r.body.contains("/api/dashboard") && r.body.contains("illuminate"),
+        "expected single-file dashboard app body (fetches /api/dashboard)"
     );
 }
 

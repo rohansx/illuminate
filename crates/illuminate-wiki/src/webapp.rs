@@ -13,7 +13,10 @@
 //! at `/index.html`.
 
 const INDEX_HTML: &str = include_str!("../../../illuminate-web/index.html");
-const DASHBOARD_HTML: &str = include_str!("../../../illuminate-web/dashboard.html");
+// The dashboard is now a Vite + TypeScript app that fetches /api/dashboard and
+// renders ONLY live data — built to ONE self-contained file (all JS+CSS
+// inlined). Regenerate with `cd illuminate-web/app && npm run build`.
+const DASHBOARD_HTML: &str = include_str!("../../../illuminate-web/app/dist/index.html");
 const V4_CSS: &str = include_str!("../../../illuminate-web/illuminate-v4.css");
 const DASHBOARD_CSS: &str = include_str!("../../../illuminate-web/illuminate-dashboard.css");
 const V4_JS: &str = include_str!("../../../illuminate-web/illuminate-v4.js");
@@ -44,7 +47,14 @@ mod tests {
     #[test]
     fn dashboard_and_assets_resolve() {
         assert_eq!(asset("/app").unwrap().0, HTML_CT);
-        assert!(asset("/app").unwrap().1.contains("data-bind"));
+        // The Vite single-file build fetches the live endpoint and carries no
+        // demo data — assert the real markers, not the old dashboard's hooks.
+        let app = asset("/app").unwrap().1;
+        assert!(
+            app.contains("/api/dashboard"),
+            "app must fetch the live endpoint"
+        );
+        assert!(app.contains("illuminate"), "app title/branding present");
         assert_eq!(asset("/illuminate-v4.css").unwrap().0, CSS_CT);
         assert!(
             asset("/illuminate-v4.js")

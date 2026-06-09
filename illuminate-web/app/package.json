@@ -1,0 +1,17 @@
+{
+  "name": "illuminate-dashboard-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Data-driven illuminate dashboard — renders only live /api/dashboard data, built to a single self-contained dist/index.html.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.1.0"
+  }
+}

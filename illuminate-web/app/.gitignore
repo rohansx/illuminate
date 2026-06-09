@@ -1,0 +1,12 @@
+# Dependencies — never committed
+node_modules/
+
+# Vite caches / logs
+.vite/
+node_modules/.vite/
+*.log
+npm-debug.log*
+
+# IMPORTANT: dist/ is NOT ignored.
+# dist/index.html is the embed source `include_str!`d by
+# crates/illuminate-wiki/src/webapp.rs and MUST be committable.
