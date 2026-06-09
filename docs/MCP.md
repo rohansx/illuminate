@@ -1,6 +1,6 @@
 # Illuminate — MCP Server
 
-The MCP (Model Context Protocol) server is the agent-facing surface. It exposes the audit, explain, and search tools as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call.
+The MCP (Model Context Protocol) server is the agent-facing surface. It exposes twelve `illuminate_*` tools — `ask`, `audit`, `decisions_for`, `enrich`, `explain`, `failures_for`, `get_wiki_page`, `impact`, `reflect`, `route`, `stats`, and `symbols` — as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call. (The graph-primitive tools `add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, and `export_graph` are also registered.)
 
 For the audit engine itself, see `AUDIT.md`. For CLI usage, see `CLI.md`.
 
@@ -210,15 +210,15 @@ Shipped in v0.19 as the first half of the v3 two-product positioning (see `PRODU
 
 **Determinism guarantee.** Same `(prompt, graph state)` → byte-identical `enriched_prompt`. Test coverage in `crates/illuminate-enrich/src/lib.rs::determinism_property_same_input_yields_identical_output`.
 
-### `illuminate_search`
+### `search`
 
-Combined FTS5 + semantic search.
+Combined FTS5 + semantic search. Registered as the graph-primitive `search` tool (no `illuminate_` prefix).
 
 **Request:**
 
 ```json
 {
-  "method": "illuminate_search",
+  "method": "search",
   "params": {
     "query": "caching strategy",
     "limit": 5,
@@ -313,12 +313,15 @@ This complements the tool surface: tools are *queries*, resources are *fetches*.
 
 The server registers a small set of prompts that agents can invoke:
 
-| Prompt | Purpose |
-|--------|---------|
-| `illuminate_audit_check` | Templated prompt: "Before writing any code, call illuminate_audit with your plan and the files you intend to modify." |
-| `illuminate_summarize_failures` | Walk recent failures and summarize lessons relevant to the current session. |
+| Prompt | Arguments | Purpose |
+|--------|-----------|---------|
+| `illuminate_audit_check` | — | Templated prompt: "Before writing any code, call illuminate_audit with your plan and the files you intend to modify." |
+| `illuminate_summarize_failures` | `topic` (optional) | Walk recent failures (optionally filtered by `topic`) and summarize lessons relevant to the current session. |
+| `illuminate_session_start` | `task` (optional) | Warm-start prompt: at session open, call `illuminate_route` + `illuminate_enrich` + `illuminate_failures_for` to ground the first action in routed files, prior decisions, and past failures. The optional `task` argument is interpolated into the prompt to scope those queries. |
 
 These are optional. The audit tool is the primary integration; prompts are convenience wrappers.
+
+`prompts/get` returns the standard MCP envelope — `{ description, messages: [{ role: "user", content: { type: "text", text } }] }` — and an unknown prompt name returns an `INVALID_PARAMS` error.
 
 ---
 

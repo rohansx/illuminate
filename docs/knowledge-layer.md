@@ -2,7 +2,7 @@
 
 **Companion doc to** [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md). Captures the docs-as-first-class-content decision and what it unlocks. Lands as the v3.2+ scope on the v3 [`ROADMAP.md`](ROADMAP.md).
 
-> **Note on commands:** `ilm` in this document is the planned **shorthand alias** for the `illuminate` CLI (landing alongside `illuminate ask` / `illuminate browse` in v3.2). Until that ships, every `ilm <subcommand>` example is equivalent to `illuminate <subcommand>`.
+> **Note on commands:** `ilm` is the **shorthand alias** for the `illuminate` CLI (v3.2). It ships as a second binary from `illuminate-cli` that shares the exact same command tree and dispatch, so every `ilm <subcommand>` is behaviorally identical to `illuminate <subcommand>` — `ilm ask`, `ilm onboard`, and `ilm ingest` all resolve to the same handlers.
 
 ---
 

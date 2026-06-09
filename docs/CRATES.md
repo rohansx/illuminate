@@ -6,7 +6,9 @@ Crate-by-crate breakdown: responsibility, public API surface, dependencies, and 
 
 ## Workspace layout
 
-**Shipped through v0.18 — 14 crates:**
+The workspace ships **17 crates** today (all directories under `crates/`).
+
+**Core (shipped through v0.18):**
 
 ```
 crates/
@@ -34,11 +36,11 @@ crates/
 └── illuminate-publish    # explicit publish gesture (Stage 4) — shipped v0.21
 ```
 
-**Planned for v3.2 — 1 additional crate (`knowledge-layer.md`):**
+**Shipped — 1 additional crate (`knowledge-layer.md`):**
 
 ```
 crates/
-└── illuminate-ingest     # read-only adapters for confluence/notion/github-wiki/google-docs/spec-kit
+└── illuminate-ingest     # read-only knowledge ingestion (local markdown today; confluence/notion/github-wiki/google-docs/spec-kit on the roadmap)
 ```
 
 The `illuminate-cli` crate is the only binary. Everything else is a library.
@@ -421,18 +423,24 @@ When `embed: Some(_)` is supplied, `route` runs `Graph::search_fused` (RRF over 
 
 ## `illuminate-mcp`
 
-**Responsibility.** JSON-RPC server speaking the MCP protocol. Exposes audit, explain, search, decisions, failures.
+**Responsibility.** JSON-RPC server speaking the MCP protocol. Exposes the twelve `illuminate_*` tools below plus the graph-primitive tools (`add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, `export_graph`).
 
-**Tools exposed.**
+**Tools exposed (the twelve `illuminate_*` tools).**
 
 | Tool | Calls |
 |------|-------|
+| `illuminate_ask` | cross-corpus Q&A over the decision graph |
 | `illuminate_audit` | `Auditor::audit` |
-| `illuminate_explain` | `Auditor::explain` |
-| `illuminate_search` | `GraphStore::semantic_search` + FTS5 |
 | `illuminate_decisions_for` | path → list of decisions |
+| `illuminate_enrich` | `enrich_prompt` (Stage 1 pre-LLM enrichment) |
+| `illuminate_explain` | `Auditor::explain` |
 | `illuminate_failures_for` | path → list of failures |
 | `illuminate_get_wiki_page` | id → markdown content |
+| `illuminate_impact` | code-graph blast-radius for a symbol/file |
+| `illuminate_reflect` | `ReflexionStore::record_in` (failure capture) |
+| `illuminate_route` | subject → ranked reading plan (FTS5 + semantic RRF) |
+| `illuminate_stats` | graph + token-savings stats |
+| `illuminate_symbols` | tree-sitter symbols for a path |
 
 See `MCP.md` for the full protocol surface.
 

@@ -52,7 +52,7 @@ Both ride on the same substrate: local trail capture, a bi-temporal decision gra
 
 Every prompt flows through four stages: **enrich → generate → capture → curate**. The team repo (Stage 4 output) feeds back into enrichment (Stage 1 input), so the loop tightens with use. After three months your graph knows what your team rejected, what failed, and what to surface before code is written.
 
-> **Status (v0.18):** capture, audit, reflect, and the wiki dashboard ship today. The dedicated **enrich** and **publish** crates that close the two-product loop are planned for v3.0 — see [docs/ROADMAP.md](docs/ROADMAP.md). The substrate is already useful: install today for audit + the dashboard.
+> **Status (v0.22):** capture, audit, reflect, enrich, route, and the wiki dashboard ship today. The full **enrich → generate → capture → curate** loop is wired end-to-end — see [docs/ROADMAP.md](docs/ROADMAP.md). The substrate is already useful: install today for audit + the dashboard.
 
 ---
 
@@ -250,7 +250,7 @@ See [docs/SCHEMA.md](docs/SCHEMA.md) for the wiki page schema.
 
 ## Architecture
 
-Fourteen crates shipped, two planned for v3.0, one binary:
+Seventeen crates, one binary:
 
 | Crate | Responsibility | Status |
 |-------|---------------|--------|
@@ -262,14 +262,15 @@ Fourteen crates shipped, two planned for v3.0, one binary:
 | `illuminate-index` | tree-sitter symbols + edges (Rust/Go/TS/Python/Java/C) | ✅ shipped |
 | `illuminate-audit` | Policy engine + graph queries + semantic top-k | ✅ shipped |
 | `illuminate-bootstrap` | 5 bootstrap sources | ✅ shipped |
+| `illuminate-ingest` | Read-only adapters for external knowledge sources (local markdown, confluence, notion, github-wiki) | ✅ shipped |
 | `illuminate-watch` | Daemon harness + git/GitHub ingestion | ✅ shipped |
 | `illuminate-reflect` | Reflexion store (failure capture) | ✅ shipped |
 | `illuminate-route` | Reading-plan generator (FTS5 + semantic RRF) | ✅ shipped |
 | `illuminate-wiki` | Markdown layer + the serve dashboard | ✅ shipped |
 | `illuminate-mcp` | JSON-RPC MCP server (stdio + HTTP) | ✅ shipped |
 | `illuminate-cli` | The binary | ✅ shipped |
-| `illuminate-enrich` | Pre-LLM prompt enrichment (Stage 1 of the v3 pipeline) | 📋 planned (v3.0) |
-| `illuminate-publish` | Explicit publish gesture, redaction-level chooser (Stage 4) | 📋 planned (v3.0) |
+| `illuminate-enrich` | Pre-LLM prompt enrichment (Stage 1 of the pipeline) | ✅ shipped |
+| `illuminate-publish` | Explicit publish gesture, redaction-level chooser (Stage 4) | ✅ shipped |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the two-graph diagram (code graph ↔ decision graph) and the audit lifecycle, and [docs/CRATES.md](docs/CRATES.md) for per-crate API detail.
 

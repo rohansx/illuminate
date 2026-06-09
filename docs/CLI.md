@@ -1,6 +1,6 @@
 # Illuminate — CLI Reference
 
-The `illuminate` CLI is the single binary that ships with the project. All other components are libraries it composes.
+The `illuminate` CLI is the primary binary that ships with the project. All other components are libraries it composes. A second binary, `ilm`, is a shorthand alias that shares the exact same command tree and dispatch — every `ilm <subcommand>` is behaviorally identical to `illuminate <subcommand>` (e.g. `ilm ask`, `ilm onboard`, `ilm ingest`).
 
 For agent-side tooling, see `MCP.md`. For configuration, see `illuminate.toml.example` at the repo root.
 
@@ -89,6 +89,25 @@ Shows:
 - Pending review queue size.
 - Configured LLM provider (or "none").
 
+### `illuminate hook install`
+
+Wire the `illuminate audit-hook` PreToolUse hook into a host agent's local config
+— the same hook `illuminate init --hooks` installs for Claude, but for Cursor and
+Codex too. Local config writes only; no network.
+
+```
+illuminate hook install --agent cursor|codex|claude [--dir PATH]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--agent X` | (required) | Host agent to configure: `cursor`, `codex`, or `claude`. |
+| `--dir PATH` | current directory | Config root directory. The agent file is written under it: `<dir>/.cursor/hooks.json`, `<dir>/.codex/hooks.json`, or `<dir>/.claude/settings.json`. |
+
+Idempotent — merges into any existing config (preserving unrelated hooks) and
+skips when an `illuminate` hook is already present, so re-running is byte-identical.
+An unknown agent errors and writes nothing.
+
 ---
 
 ## Audit commands
@@ -134,6 +153,22 @@ illuminate audit-pr <pr-number> [--repo OWNER/REPO]
 ```
 
 With `--comment`, posts the audit findings as a PR comment via the GitHub API.
+
+### `illuminate audit-docs`
+
+Audit a markdown doc's prose against recorded decisions. For each decision that
+rejects a concept (e.g. a `no-redis` decision), flags any doc paragraph that
+*affirmatively recommends* the rejected concept — reusing the same clause-local
+negation logic as `audit`, so `do not use Redis` is fine while `use Redis for
+caching` is flagged.
+
+```
+illuminate audit-docs <file> [--json]
+```
+
+Exits 1 when ≥1 contradiction is found (with a `─── illuminate audit-docs ───`
+report), exit 0 + `no decision contradictions found` when clean. Deterministic;
+no network or LLM.
 
 ### `illuminate explain`
 
@@ -224,6 +259,7 @@ Cross-corpus retrieval over decisions / patterns / failures / sessions / ingeste
 illuminate ask "<question>"
                [--limit N]
                [--format human|json]
+               [--synthesize]
 ```
 
 | Flag | Default | Effect |
@@ -231,10 +267,11 @@ illuminate ask "<question>"
 | `<question>` | (required) | Natural-language question, as one string. |
 | `--limit N` | `20` | Max hits across all kinds combined. |
 | `--format X` | `human` | `human` renders a structured markdown report grouped by hit kind; `json` emits an envelope with `{question, hits, hit_count, empty_kinds}` suitable for piping or LLM synthesis. |
+| `--synthesize` | off | Append an optional LLM synthesis step over the retrieved hits. **Degrades gracefully** — when no LLM provider is configured (no `ILLUMINATE_LLM_PROVIDER` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`), it prints a `── synthesis unavailable (no LLM provider configured) ──` notice after the unchanged retrieval report and exits `0`. When the flag is absent, the output is **byte-identical** to the retrieval-only report. No network call is ever made on the degrade path. |
 
 **Pipeline.** `graph.search` (sanitized via the v0.20 FTS5 fix) → classify each hit by `source` prefix + `[id-prefix-...]` content token → group by kind (Decisions / Patterns / Failures / Modules / Published sessions / Ingested docs / Trail / Other) → render.
 
-**v0.22 ships retrieval-only.** No LLM synthesis call — the structured envelope is the answer. v3.3 will add an optional final-rewrite step that consumes this exact envelope, so the `--format json` shape is stable.
+**v0.22 ships retrieval-only by default.** Without `--synthesize` there is no LLM call — the structured envelope is the answer. The optional `--synthesize` step (v3.3) consumes this exact envelope, so the `--format json` shape is stable; until a provider is wired it degrades to the retrieval-only output unchanged.
 
 **Examples.**
 
@@ -331,6 +368,39 @@ ILLUMINATE_PUBLISH_REDACTION=full git commit -m "ship the LRU cache"
 
 ---
 
+### `illuminate trust check`
+
+Deterministic config linter for **off-host write targets**. Reads `illuminate.toml` (the nearest `.illuminate/illuminate.toml`, then `./illuminate.toml`) and flags any remote / off-host write target that is configured **without a paired explicit consent flag** — the v3.0 trust-model exit criterion (`docs/ROADMAP.md`, `docs/trust-model.md`). Pure and deterministic: reads config only, no network, no graph access.
+
+```
+illuminate trust check [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--json` | off | Emit a stable `{ok, findings:[...]}` envelope. Each finding carries `{target, message, key}`. |
+
+**What it lints.**
+
+- `[publish]` with `kind = "git_remote"` (matching `TeamRepoTarget::GitRemote`) or any `url`-bearing remote shape — must carry a paired `consent = true`. A `local_path` target (or a bare `path`) is on-host and always clean.
+- `[cloud.sync] enabled = true` (v3-cloud) — must carry a paired `consent = true`, per "no auto-upload" in `docs/trust-model.md`.
+
+A default config (project block only, or a local-path target) passes clean.
+
+**Exit codes.** `0` when clean; `4` when one or more off-host targets are configured without consent.
+
+**Examples.**
+
+```bash
+# Lint the current repo's config (run from anywhere inside the repo):
+illuminate trust check
+
+# Machine-readable for CI gating:
+illuminate trust check --json | jq '.ok'
+```
+
+---
+
 ## Decision / pattern / failure commands
 
 ### `illuminate decisions`
@@ -377,6 +447,87 @@ illuminate failure log [--title TITLE]
 Without flags, opens an editor with a template. With flags, runs non-interactively.
 
 Output: writes `wiki/failures/<date>-<slug>.md` and a graph entity.
+
+---
+
+## Knowledge-brief commands
+
+These read the decision graph (`.illuminate/graph.db`) and emit **deterministic**
+briefs — same graph state in, byte-identical output out. No network, no LLM, no
+clock; each section is sorted and capped so two runs (and two machines on the
+same graph) agree.
+
+### `illuminate summary`
+
+Show a summary of the project's decision history.
+
+```
+illuminate summary
+```
+
+A compact overview of the captured graph (decision/pattern/failure counts and
+recent highlights). Use `illuminate stats` for raw counts and `illuminate
+onboard` for a fuller orientation brief.
+
+### `illuminate onboard`
+
+Generate a deterministic onboarding brief for a new dev: the top decisions,
+patterns, failures, modules, and **prompt-cookbook** recipes, plus how to query
+the graph.
+
+```
+illuminate onboard [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--json` | off | Emit a stable JSON object `{project, decisions[], patterns[], failures[], modules[], cookbook[], query_verbs[]}` (each entry `{id, title, source, preview}`). |
+
+The human render adds a **Prompt cookbook** section listing ingested
+`docs/prompts/*.md` recipes (pages ingested as `DocKind::PromptCookbook`), and
+the `--json` envelope carries the same entries in a `cookbook[]` array. Each
+section is capped at 10 entries and sorted (title, then id). An empty graph
+prints a graceful "no knowledge captured yet" notice and exits `0`. The human
+footer names the real query verbs (`illuminate ask`, `illuminate decisions for`,
+`illuminate search`, `illuminate summary`).
+
+### `illuminate oncall`
+
+Generate a deterministic incident brief for a service: recent failures,
+decisions, and modules that mention the named service or path.
+
+```
+illuminate oncall <service> [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `<service>` | (required) | Service or path to brief on. Matched case-insensitively against episode titles, content, and sources. |
+| `--json` | off | Emit a stable JSON object `{service, failures[], decisions[], modules[], query_verbs[]}` (each entry `{id, title, source, preview}`). |
+
+Sections are capped at 10 and sorted (title, then id). A service with no recorded
+context prints `no recorded context for "<service>"` and exits `0` (never errors).
+The footer substitutes the queried service into the follow-up verbs (e.g.
+`illuminate decisions for <service>`, `illuminate failures list`).
+
+### `illuminate skill build`
+
+Emit a Claude Code **skill pack** (`SKILL.md`) summarizing the team's decision
+graph, so an agent can be pre-loaded with the team's decisions/patterns/failures.
+
+```
+illuminate skill build [--out PATH]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--out PATH` | (stdout) | Write the `SKILL.md` to this path instead of stdout. Parent dirs are created. |
+
+The emitted markdown has YAML front-matter (`name`, `description`), a "Before you
+act" block instructing the agent to call `illuminate_audit` / `illuminate audit`
+first, then `## Top decisions` / `## Patterns` / `## Failures to avoid`. An empty
+graph still produces a well-formed skeleton. Two runs over the same graph are
+byte-identical.
 
 ---
 
@@ -474,6 +625,58 @@ illuminate index [--enrich] [--lang rust,ts,py]
 
 `--enrich` runs deeper analysis (slower, more accurate). Use after large refactors or when cross-references seem stale.
 
+### `illuminate diagram`
+
+Emit a living architecture diagram from the code index — a deterministic Mermaid `flowchart TD` of file/module nodes and import edges.
+
+```
+illuminate diagram [--format mermaid] [--out PATH]
+```
+
+Reads `.illuminate/index.db` (run `illuminate index` first). Nodes and edges are sorted lexicographically and capped, so two runs produce byte-identical output — safe to commit and diff. `--out` writes the Mermaid to a file (parent dirs are created); the default writes to stdout.
+
+### `illuminate symbols`
+
+Search code symbols and their linked decisions.
+
+```
+illuminate symbols "<query>" [--limit N] [--format json|text]
+```
+
+Reads the code index and surfaces matching symbols (functions, types, …) along
+with any decisions that reference them — the bridge from "where is this defined"
+to "why is it this way".
+
+### `illuminate impact`
+
+Inspect a file's blast-radius via the code graph (read-only).
+
+```
+illuminate impact <path>
+```
+
+Walks the import/calls edges to report what a change to `<path>` could affect.
+Useful before a refactor.
+
+### `illuminate doc-decay`
+
+Flag markdown-doc references to code symbols that no longer exist in the index —
+i.e. documentation that has decayed against the code it describes.
+
+```
+illuminate doc-decay [--roots PATH ...] [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--roots PATH ...` | `docs/`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`, `README.md` (those that exist) | Markdown files or directories to scan. |
+| `--json` | off | Emit `{stale:[{file, line, symbol, raw}], count}` instead of the human report. |
+
+Reads `.illuminate/index.db` (run `illuminate index` first). A clean repo prints
+`no stale doc references` and exits `0`; any reference to a deleted/renamed symbol
+prints a `─── illuminate doc-decay ───` report (`STALE <file>:<line> → ...`) and
+exits `1`. Deterministic; no network or LLM.
+
 ---
 
 ## Search commands
@@ -554,39 +757,20 @@ All stats are local. Nothing reported home.
 
 ---
 
-## Maintenance
+## Planned (not yet implemented)
 
-### `illuminate forget`
+> The following are roadmap ideas only. They are **not** wired into the CLI —
+> there is no corresponding subcommand today, so invoking them will error.
+> Until they ship, retire a decision by superseding it with a new decision
+> page, and run schema upgrades automatically via `illuminate serve` /
+> `illuminate audit`.
 
-Mark a decision/pattern as retired. The page is kept in the wiki; the graph stops surfacing it in audit responses.
-
-```
-illuminate forget <id> [--reason TEXT]
-```
-
-### `illuminate purge`
-
-Hard-delete from the graph (and optionally the wiki).
-
-```
-illuminate purge --decision <id> [--also-wiki]
-```
-
-Asks for confirmation. Use sparingly; supersession via a new decision is usually preferable.
-
----
-
-## Migration & versioning
-
-### `illuminate migrate`
-
-Run pending schema migrations on `graph.db`.
-
-```
-illuminate migrate [--dry-run]
-```
-
-Run automatically by `illuminate serve` and `illuminate audit`. Manual invocation is for advanced users.
+- **Maintenance** — a `forget` (retire a decision/pattern, keep its wiki page) and
+  `purge` (hard-delete from the graph) verb. Today, prefer supersession: write a
+  new decision that replaces the old one.
+- **Migration & versioning** — an explicit `migrate` verb to run pending
+  `graph.db` schema migrations. Migrations currently run implicitly when the
+  graph is opened.
 
 ---
 
@@ -629,16 +813,6 @@ illuminate wiki serve
 ```
 
 Fails the build if any `error`-severity finding triggers.
-
----
-
-## Shell completion
-
-```bash
-illuminate completions bash > /etc/bash_completion.d/illuminate
-illuminate completions zsh > "${fpath[1]}/_illuminate"
-illuminate completions fish > ~/.config/fish/completions/illuminate.fish
-```
 
 ---
 
