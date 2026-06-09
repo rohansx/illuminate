@@ -51,7 +51,7 @@ fn test_initialize_result_shape() {
     let result = json!({
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}},
-        "serverInfo": {"name": "illuminate", "version": "0.3.0"}
+        "serverInfo": {"name": "illuminate", "version": env!("CARGO_PKG_VERSION")}
     });
 
     assert_eq!(result["protocolVersion"].as_str().unwrap(), "2024-11-05");

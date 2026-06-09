@@ -64,6 +64,17 @@ impl ReflexionStore {
     /// Creates an episode in the decision graph with source="reflexion" and
     /// stores the structured failure/lesson data in the episode metadata.
     pub fn record(&self, input: &ReflexionInput) -> illuminate::Result<String> {
+        let result = Self::record_in(&self.graph, input)?;
+        Ok(result.episode_id)
+    }
+
+    /// Build the canonical reflexion episode (content / metadata / source) for
+    /// `input`. This is the single source of truth for what a reflexion
+    /// episode looks like in the decision graph, so every caller — the CLI
+    /// `failure log` verb, the MCP `illuminate_reflect` tool, and audits — read
+    /// back an identical shape via [`ReflexionStore::find_relevant`] /
+    /// `Graph::get_episode`.
+    pub fn build_episode(input: &ReflexionInput) -> illuminate::Episode {
         let content = format!(
             "FAILURE: {}\nROOT CAUSE: {}\nCORRECTIVE ACTION: {}",
             input.failure, input.root_cause, input.corrective_action
@@ -81,16 +92,27 @@ impl ReflexionStore {
             }),
         );
 
-        let episode = illuminate::Episode {
+        illuminate::Episode {
             id: uuid::Uuid::now_v7().to_string(),
             content,
             source: Some("reflexion".to_string()),
             recorded_at: Utc::now(),
             metadata: Some(serde_json::Value::Object(metadata)),
-        };
+        }
+    }
 
-        let result = self.graph.add_episode(episode)?;
-        Ok(result.episode_id)
+    /// Record a reflexion episode into a borrowed `graph`.
+    ///
+    /// Callers that hold the graph behind a shared lock (e.g. the MCP server's
+    /// `Arc<Mutex<Graph>>`) cannot move it into a [`ReflexionStore`], so this
+    /// associated function records through a `&Graph` while returning the full
+    /// [`illuminate::EpisodeResult`] (episode id + extraction counts). The
+    /// instance method [`ReflexionStore::record`] delegates here.
+    pub fn record_in(
+        graph: &illuminate::Graph,
+        input: &ReflexionInput,
+    ) -> illuminate::Result<illuminate::EpisodeResult> {
+        graph.add_episode(Self::build_episode(input))
     }
 
     /// Find reflexion episodes relevant to the given entities and file paths.

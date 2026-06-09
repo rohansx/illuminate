@@ -9,7 +9,8 @@ use illuminate::Graph;
 use illuminate_audit::policy::IntentPolicy;
 use illuminate_audit::response::Severity;
 use illuminate_index::edges::{Edge, EdgeKind};
-use illuminate_index::storage::{create_schema, upsert_edges};
+use illuminate_index::storage::{create_schema, upsert_edges, upsert_symbols};
+use illuminate_index::symbols::{Symbol, SymbolType, Visibility};
 use illuminate_mcp::tools::ToolContext;
 use rusqlite::Connection;
 use serde_json::json;
@@ -159,6 +160,86 @@ fn populate_minimal_graph(db_path: &std::path::Path) {
 
     upsert_edges(&conn, "crates/billing/src/lib.rs", &[billing_to_payments]).unwrap();
     upsert_edges(&conn, "crates/api/src/lib.rs", &[api_to_billing]).unwrap();
+}
+
+/// Build an index.db where a SYMBOL in the billing file CALLS another symbol.
+/// The Calls edge's source is `<path>::charge` (symbol-level), so it is
+/// reachable from the touched file ONLY when `compute_impact` lifts
+/// symbol-level seeds via `lookup_file` — the parity fix mirroring
+/// `Auditor::compute_impact`.
+fn populate_calls_graph(db_path: &std::path::Path) {
+    let conn = Connection::open(db_path).unwrap();
+    create_schema(&conn).unwrap();
+
+    let charge = Symbol {
+        file_path: "crates/billing/src/lib.rs".to_string(),
+        name: "charge".to_string(),
+        symbol_type: SymbolType::Function,
+        signature: None,
+        visibility: Visibility::Public,
+        line_start: 1,
+        line_end: 3,
+        hash: "hash-charge".to_string(),
+        language: "rust".to_string(),
+    };
+    upsert_symbols(&conn, "crates/billing/src/lib.rs", &[charge]).unwrap();
+
+    let charge_calls_settle = Edge {
+        source_qualified: "crates/billing/src/lib.rs::charge".to_string(),
+        target_qualified: "crates/payments/src/lib.rs::settle".to_string(),
+        kind: EdgeKind::Calls,
+        file_path: "crates/billing/src/lib.rs".to_string(),
+        line: 2,
+    };
+    upsert_edges(
+        &conn,
+        "crates/billing/src/lib.rs",
+        &[charge_calls_settle],
+    )
+    .unwrap();
+}
+
+/// Regression test for MCP/CLI impact parity: the MCP `compute_impact` must
+/// lift `<path>::<sym>` seeds (like the CLI `Auditor` does) so blast-radius
+/// can traverse Calls edges. Before the fix, MCP seeded only `file::<path>`
+/// and this Calls-edge target was unreachable.
+#[tokio::test]
+async fn audit_impact_reaches_calls_edges_via_symbol_seeds() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("index.db");
+    populate_calls_graph(&db_path);
+
+    let graph = Graph::in_memory().unwrap();
+    let ctx = ToolContext::with_index(graph, None, vec![], Some(db_path));
+
+    let resp = ctx
+        .illuminate_audit(json!({
+            "plan": PLAN_TEXT,
+            "files": ["crates/billing/src/lib.rs"],
+        }))
+        .await
+        .expect("audit with files must succeed");
+
+    let impact = &resp["impact"];
+    let seeds = impact["seed_symbols"]
+        .as_array()
+        .expect("seed_symbols must be array");
+    assert!(
+        seeds
+            .iter()
+            .any(|v| v.as_str() == Some("crates/billing/src/lib.rs::charge")),
+        "seed_symbols must include the lifted symbol-level seed: {seeds:?}",
+    );
+
+    let impacted = impact["impacted_symbols"]
+        .as_array()
+        .expect("impacted_symbols must be array");
+    assert!(
+        impacted
+            .iter()
+            .any(|v| v.as_str() == Some("crates/payments/src/lib.rs::settle")),
+        "impacted_symbols should reach the Calls-edge target via the symbol seed: {impacted:?}",
+    );
 }
 
 /// Consistency check: when a `RejectedPattern` policy rejects "Redis" and the

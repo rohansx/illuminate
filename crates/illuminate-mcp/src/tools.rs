@@ -7,7 +7,7 @@ use illuminate_audit::Auditor;
 use illuminate_audit::policy::{AuditConfig, IntentPolicy};
 use illuminate_audit::response::AuditStatus;
 use illuminate_embed::EmbedEngine;
-use illuminate_reflect::Severity;
+use illuminate_reflect::{ReflexionInput, ReflexionStore, Severity};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -158,10 +158,32 @@ impl ToolContext {
             return Value::Null;
         };
 
-        let seeds: Vec<String> = files
+        let mut seeds: Vec<String> = files
             .iter()
             .map(|p| format!("file::{}", normalize_mcp_path(p, &self.repo_root)))
             .collect();
+
+        // Lift each `<path>::<sym>` qualifier into the seed set so the BFS can
+        // traverse Calls edges (whose source qualifier is `<path>::<fn>`, not
+        // `file::<path>`). Without this, MCP impact only reaches Imports edges
+        // and diverges from the CLI/`Auditor` path. Mirrors
+        // `Auditor::compute_impact` in illuminate-audit.
+        for p in files {
+            let path_str = normalize_mcp_path(p, &self.repo_root);
+            match illuminate_index::storage::lookup_file(&conn, &path_str) {
+                Ok(symbols) => {
+                    for sym in symbols {
+                        seeds.push(format!("{path_str}::{}", sym.name));
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        "illuminate-mcp: lookup_file failed for {path_str} ({e}); \
+                         skipping symbol-level seeds"
+                    );
+                }
+            }
+        }
 
         match illuminate_index::storage::impact_radius(&conn, &seeds, IMPACT_DEPTH, IMPACT_NODES) {
             Ok(radius) => json!({
@@ -636,6 +658,9 @@ impl ToolContext {
             .as_str()
             .ok_or("missing required field: plan")?
             .to_string();
+        // Fold an optional rationale into the plan so it is audited too
+        // (shared with the CLI `audit` command).
+        let plan = illuminate_audit::fold_rationale(&plan, args["rationale"].as_str());
 
         // Optional `files` argument: when present and an index.db is
         // configured, surfaces blast-radius data in the response. Missing or
@@ -767,37 +792,23 @@ impl ToolContext {
             _ => Severity::Medium,
         };
 
-        // Build the reflexion episode content and metadata
-        let content = format!(
-            "FAILURE: {failure}\nROOT CAUSE: {root_cause}\nCORRECTIVE ACTION: {corrective_action}"
-        );
-
-        let mut metadata = serde_json::Map::new();
-        metadata.insert(
-            "reflexion".to_string(),
-            json!({
-                "failure": failure,
-                "root_cause": root_cause,
-                "corrective_action": corrective_action,
-                "severity": severity,
-                "files_affected": files_affected,
-            }),
-        );
-
-        let episode = Episode {
-            id: uuid::Uuid::now_v7().to_string(),
-            content,
-            source: Some("reflexion".to_string()),
-            recorded_at: chrono::Utc::now(),
-            metadata: Some(Value::Object(metadata)),
+        // Delegate to the canonical reflexion recorder so the persisted
+        // episode (content prefix markers, `source = "reflexion"`, and the
+        // `reflexion` metadata block) is byte-for-byte identical to what the
+        // `illuminate failure log` CLI writes and what `find_relevant` reads.
+        let input = ReflexionInput {
+            failure,
+            root_cause,
+            corrective_action,
+            files_affected,
+            severity,
         };
-        let episode_id = episode.id.clone();
 
         let graph = self.graph.lock().map_err(|e| e.to_string())?;
-        let result = graph.add_episode(episode).map_err(|e| e.to_string())?;
+        let result = ReflexionStore::record_in(&graph, &input).map_err(|e| e.to_string())?;
 
         Ok(json!({
-            "episode_id": episode_id,
+            "episode_id": result.episode_id,
             "entities_extracted": result.entities_extracted,
             "edges_created": result.edges_created,
             "message": "Reflexion recorded. Future audits will surface this lesson.",
@@ -1563,7 +1574,8 @@ pub fn tools_list() -> Value {
                     "type": "object",
                     "properties": {
                         "plan": {"type": "string", "description": "The agent's proposed plan or action in natural language"},
-                        "files": {"type": "array", "items": {"type": "string"}, "description": "Optional: files the plan would touch (enables blast-radius reporting)"}
+                        "files": {"type": "array", "items": {"type": "string"}, "description": "Optional: files the plan would touch (enables blast-radius reporting)"},
+                        "rationale": {"type": "string", "description": "Optional: why the plan is being made; folded into the audited plan text"}
                     },
                     "required": ["plan"]
                 }
