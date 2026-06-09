@@ -42,6 +42,17 @@ pub type GraphSearchFn = dyn Fn(&str, usize) -> Vec<GraphHit> + Send + Sync;
 /// trail/*.jsonl` files. A `None` source yields a zeroed object (no `null`s).
 pub type TokensFn = dyn Fn() -> serde_json::Value + Send + Sync;
 
+/// Closure invoked by `/api/dashboard` to surface the FULL decision-graph
+/// stats (episode count incl. ingested docs, entity/edge counts, and a
+/// per-source breakdown). Returns a JSON object shaped like
+/// `{ episodes, entities, edges, sources: [{ source, count }, …] }`.
+///
+/// Kept as a closure (like [`TokensFn`]) so the wiki crate has zero typed
+/// dependency on `illuminate-core` — the CLI wires it to `Graph::open(..).
+/// stats()`. A `None` source yields a zeroed object (no `null`s) so the
+/// dashboard KPI renders `0` rather than blanking out.
+pub type GraphStatsFn = dyn Fn() -> serde_json::Value + Send + Sync;
+
 /// Per-request context passed into [`route`].
 ///
 /// Lifetimes: the test path constructs this with stack-borrowed closures,
@@ -54,6 +65,9 @@ pub struct RouteCtx<'a> {
     /// Optional token-savings source for the dashboard savings tile. `None`
     /// (no captured trails wired in) yields a zeroed `tokens` object.
     pub tokens: Option<&'a TokensFn>,
+    /// Optional full decision-graph stats source for the dashboard graph KPI.
+    /// `None` (no graph.db wired in) yields a zeroed `graph` object.
+    pub graph: Option<&'a GraphStatsFn>,
 }
 
 /// Response produced by [`route`] — passed to `tiny_http::Response::from_string`.
@@ -322,6 +336,7 @@ fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
         "recent_failures": recent_failures,
         "audit_rows": audit_rows,
         "tokens": dashboard_tokens(ctx),
+        "graph": dashboard_graph(ctx),
     });
     RouteResp::json(200, body.to_string())
 }
@@ -342,6 +357,26 @@ fn dashboard_tokens(ctx: &RouteCtx) -> serde_json::Value {
             "cache_creation": 0,
             "cache_read": 0,
             "cache_saved_pct": 0.0,
+        }),
+    }
+}
+
+/// Full decision-graph stats sub-object for the dashboard envelope.
+///
+/// When a [`GraphStatsFn`] is wired into the context (the CLI opens the
+/// repo's `graph.db` and folds `Graph::stats()`), its JSON is returned
+/// verbatim — including the full episode count (ingested docs included) that
+/// the on-disk wiki page count alone can't see. With no source, every field
+/// is a numeric zero and `sources` an empty array — never `null` — so the
+/// graph KPI renders `0` instead of blanking out.
+fn dashboard_graph(ctx: &RouteCtx) -> serde_json::Value {
+    match ctx.graph {
+        Some(f) => f(),
+        None => serde_json::json!({
+            "episodes": 0,
+            "entities": 0,
+            "edges": 0,
+            "sources": [],
         }),
     }
 }
@@ -607,8 +642,11 @@ fn split_url(url: &str) -> (String, &str) {
 /// for the server's lifetime.
 ///
 /// A `None` auditor turns the playground into a 503 page; a `None`
-/// graph_search renders search results without graph hits. Either makes
-/// sense for a wiki served from a directory without an associated graph.db.
+/// graph_search renders search results without graph hits. `tokens` and
+/// `graph` are optional sources for the dashboard's token-savings and full
+/// decision-graph KPIs; a `None` of either yields a zeroed object. All of
+/// these make sense for a wiki served from a directory without an associated
+/// graph.db.
 pub fn serve_with(
     wiki_root: &Path,
     port: u16,
@@ -616,6 +654,7 @@ pub fn serve_with(
     auditor: Option<Arc<AuditFn>>,
     graph_search: Option<Arc<GraphSearchFn>>,
     tokens: Option<Arc<TokensFn>>,
+    graph: Option<Arc<GraphStatsFn>>,
 ) -> std::io::Result<()> {
     let addr = format!("127.0.0.1:{port}");
     let server = tiny_http::Server::http(&addr)
@@ -640,12 +679,14 @@ pub fn serve_with(
 
         let auditor_ref = auditor.as_deref();
         let tokens_ref = tokens.as_deref();
+        let graph_ref = graph.as_deref();
         let resp = {
             let ctx = RouteCtx {
                 root: &root,
                 project_name: project_name.as_deref(),
                 auditor: auditor_ref,
                 tokens: tokens_ref,
+                graph: graph_ref,
             };
             let mut r = route(&ctx, &method, &url, &body);
             // Inject graph hits into search responses if a graph closure is wired in.
@@ -677,7 +718,7 @@ pub fn serve_with(
 /// Back-compat shim for callers that don't have an auditor. Renders the
 /// dashboard, browse, search and a 503 audit playground.
 pub fn serve(wiki_root: &Path, port: u16) -> std::io::Result<()> {
-    serve_with(wiki_root, port, None, None, None, None)
+    serve_with(wiki_root, port, None, None, None, None, None)
 }
 
 fn extract_search_query(url: &str) -> Option<String> {

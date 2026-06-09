@@ -11,6 +11,7 @@ fn ctx_for(root: &Path) -> RouteCtx<'_> {
         project_name: Some("testproj"),
         auditor: None,
         tokens: None,
+        graph: None,
     }
 }
 

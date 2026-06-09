@@ -249,6 +249,47 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         })
     };
 
+    // Full decision-graph stats source for the dashboard graph KPI. Opens the
+    // repo's graph.db per request and folds `Graph::stats()` so the dashboard
+    // reflects the FULL episode count (ingested docs included), not just the
+    // on-disk wiki page count. Best-effort: any error (missing db, open
+    // failure, stats failure) yields a zeroed object so the KPI renders 0.
+    let graph_stats: std::sync::Arc<illuminate_wiki::serve::GraphStatsFn> = {
+        let root = repo_root()?;
+        std::sync::Arc::new(move || -> serde_json::Value {
+            let zeroed = || {
+                serde_json::json!({
+                    "episodes": 0,
+                    "entities": 0,
+                    "edges": 0,
+                    "sources": [],
+                })
+            };
+            let db = root.join(".illuminate").join("graph.db");
+            match illuminate::Graph::open(&db) {
+                Ok(graph) => match graph.stats() {
+                    Ok(stats) => {
+                        let sources: Vec<serde_json::Value> = stats
+                            .sources
+                            .iter()
+                            .map(|(name, count)| {
+                                serde_json::json!({ "source": name, "count": count })
+                            })
+                            .collect();
+                        serde_json::json!({
+                            "episodes": stats.episode_count,
+                            "entities": stats.entity_count,
+                            "edges": stats.edge_count,
+                            "sources": sources,
+                        })
+                    }
+                    Err(_) => zeroed(),
+                },
+                Err(_) => zeroed(),
+            }
+        })
+    };
+
     illuminate_wiki::serve::serve_with(
         &dir,
         port,
@@ -256,6 +297,7 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         Some(auditor),
         Some(graph_search),
         Some(tokens),
+        Some(graph_stats),
     )
 }
 

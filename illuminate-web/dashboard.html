@@ -59,7 +59,7 @@
   <div class="metrics">
     <div class="metric"><span class="k">decisions</span><span class="v amber" data-metric="decisions" data-bind="stats.decisions">5</span></div>
     <div class="metric"><span class="k">cache saved</span><span class="v" data-metric="cache" data-bind-tmpl="{tokens.cache_saved_pct}%">100%</span></div>
-    <div class="metric"><span class="k">graph nodes</span><span class="v" data-metric="graph" data-bind="stats.entities">1,247</span></div>
+    <div class="metric"><span class="k">graph nodes</span><span class="v" data-metric="graph" data-bind="graph.episodes">1,247</span></div>
   </div>
   <nav class="links">
     <a href="index.html">landing</a>
@@ -115,8 +115,8 @@
 
     <div class="kpi teal">
       <div class="k"><span>decision graph</span></div>
-      <div class="v" data-bind-prepend="stats.entities">1,247<span class="u">nodes</span></div>
-      <div class="note"><span data-bind-tmpl="{stats.decisions} decisions · {stats.patterns} patterns · {stats.failures} failures">12 decisions · 8 patterns · 5 failures</span></div>
+      <div class="v" data-bind-prepend="graph.episodes">1,247<span class="u">nodes</span></div>
+      <div class="note">full knowledge graph · <span data-bind-tmpl="{stats.decisions} decisions · {stats.patterns} patterns · {stats.failures} failures">12 decisions · 8 patterns · 5 failures</span></div>
     </div>
 
     <div class="kpi rust">

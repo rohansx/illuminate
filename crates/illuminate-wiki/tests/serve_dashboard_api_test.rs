@@ -25,6 +25,7 @@ fn ctx_for(root: &Path) -> RouteCtx<'_> {
         project_name: Some("testproj"),
         auditor: None,
         tokens: None,
+        graph: None,
     }
 }
 
@@ -170,6 +171,7 @@ fn api_dashboard_project_defaults_when_unnamed() {
         project_name: None,
         auditor: None,
         tokens: None,
+        graph: None,
     };
     let resp = route(&ctx, "GET", "/api/dashboard", "");
     let v: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
@@ -280,6 +282,7 @@ fn api_dashboard_tokens_reflect_wired_source() {
         project_name: Some("testproj"),
         auditor: None,
         tokens: Some(&tokens_fn),
+        graph: None,
     };
     let resp = route(&ctx, "GET", "/api/dashboard", "");
     let v: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
@@ -291,4 +294,69 @@ fn api_dashboard_tokens_reflect_wired_source() {
     assert_eq!(tokens["cache_creation"], 40);
     assert_eq!(tokens["cache_read"], 500);
     assert_eq!(tokens["cache_saved_pct"].as_f64(), Some(33.33));
+}
+
+#[test]
+fn api_dashboard_graph_zero_when_no_graph_source() {
+    // No graph closure wired in (the empty-wiki / no-graph.db case): the
+    // `graph` object must always be present with numeric-zero counts and an
+    // empty `sources` array — never null — so the dashboard graph KPI renders
+    // 0 rather than blanking out.
+    let tmp = tempfile::tempdir().unwrap();
+    let resp = route(&ctx_for(tmp.path()), "GET", "/api/dashboard", "");
+    let v: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+
+    let graph = v.get("graph").expect("missing `graph` object");
+    assert!(graph.is_object(), "`graph` must be a JSON object");
+    assert_eq!(graph["episodes"], 0);
+    assert_eq!(graph["entities"], 0);
+    assert_eq!(graph["edges"], 0);
+    assert!(
+        graph["episodes"].is_number(),
+        "graph.episodes must be numeric"
+    );
+    assert!(
+        graph["entities"].is_number(),
+        "graph.entities must be numeric"
+    );
+    assert!(graph["edges"].is_number(), "graph.edges must be numeric");
+    let sources = graph["sources"]
+        .as_array()
+        .expect("graph.sources must be an array");
+    assert!(
+        sources.is_empty(),
+        "graph.sources must be empty when no source"
+    );
+}
+
+#[test]
+fn api_dashboard_graph_reflects_wired_source() {
+    // When a graph closure is wired in (the CLI path that opens graph.db and
+    // folds Graph::stats()), its values — including the FULL episode count
+    // with ingested docs — flow through the envelope verbatim.
+    let tmp = tempfile::tempdir().unwrap();
+    let graph_fn = || -> serde_json::Value {
+        serde_json::json!({
+            "episodes": 66,
+            "entities": 3,
+            "edges": 4,
+            "sources": [{ "source": "ingested:local-docs", "count": 43 }],
+        })
+    };
+    let ctx = RouteCtx {
+        root: tmp.path(),
+        project_name: Some("testproj"),
+        auditor: None,
+        tokens: None,
+        graph: Some(&graph_fn),
+    };
+    let resp = route(&ctx, "GET", "/api/dashboard", "");
+    let v: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+
+    let graph = &v["graph"];
+    assert_eq!(graph["episodes"], 66);
+    assert_eq!(graph["entities"], 3);
+    assert_eq!(graph["edges"], 4);
+    assert_eq!(graph["sources"][0]["source"], "ingested:local-docs");
+    assert_eq!(graph["sources"][0]["count"], 43);
 }

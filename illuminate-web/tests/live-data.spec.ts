@@ -21,6 +21,15 @@ const ENVELOPE = {
     entities: 2048,
     edges: 5120,
   },
+  // The full decision-graph stats — episode count (ingested docs included),
+  // distinct from the on-disk wiki entity count above. The topbar "graph
+  // nodes" metric and the teal "decision graph" KPI bind to graph.episodes.
+  graph: {
+    episodes: 3072,
+    entities: 2048,
+    edges: 5120,
+    sources: [{ source: "ingested:local-docs", count: 43 }],
+  },
   recent_sessions: [],
   recent_decisions: [],
   recent_failures: [],
@@ -54,8 +63,9 @@ test.describe("dashboard live data (/api/dashboard)", () => {
 
     await page.goto("/dashboard.html", { waitUntil: "networkidle" });
 
-    // data-bind="stats.entities" → formatted with thousands separator.
-    await expect(page.locator('[data-metric="graph"]')).toHaveText("2,048");
+    // data-bind="graph.episodes" → full decision-graph episode count,
+    // formatted with thousands separator.
+    await expect(page.locator('[data-metric="graph"]')).toHaveText("3,072");
 
     // graph panel stat tiles bound to live counts. These stat fields are now
     // bound in several places (topbar metric, KPI tiles, footer counts), so
@@ -66,9 +76,10 @@ test.describe("dashboard live data (/api/dashboard)", () => {
     await expect(graphStats.locator('[data-bind="stats.failures"]')).toHaveText("9");
     await expect(graphStats.locator('[data-bind="stats.edges"]')).toHaveText("5,120");
 
-    // data-bind-prepend keeps the trailing unit span ("nodes") intact.
-    const kpi = page.locator('[data-bind-prepend="stats.entities"]');
-    await expect(kpi).toContainText("2,048");
+    // The teal "decision graph" KPI binds to graph.episodes; data-bind-prepend
+    // keeps the trailing unit span ("nodes") intact.
+    const kpi = page.locator('[data-bind-prepend="graph.episodes"]');
+    await expect(kpi).toContainText("3,072");
     await expect(kpi.locator(".u")).toHaveText("nodes");
 
     // data-bind-tmpl interpolates multiple paths (the KPI stats note — there
