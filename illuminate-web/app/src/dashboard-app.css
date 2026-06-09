@@ -7,10 +7,20 @@
    terra/teal accents, sharp 2px chrome, --line borders).
    ============================================================================ */
 
-/* the app fills the full width — no left rail in this build */
-body { padding-left: 0; }
+/* the fixed left rail (.rail, from illuminate-v4.css) is restored in this
+   interactive build — keep body padded so content clears it. */
+body { padding-left: var(--rail-w); }
 
-.dash { padding-top: clamp(20px, 3vw, 36px); }
+.dash { padding-top: 0; }
+
+/* ---- app shell: topbar + swappable view ---------------------------------- */
+.shell { display: flex; flex-direction: column; min-height: 100vh; }
+.app-topbar { gap: clamp(12px, 2vw, 24px); }
+.view {
+  padding: clamp(18px, 3vw, 32px) clamp(16px, 3vw, 32px) 64px;
+}
+.stack { display: flex; flex-direction: column; gap: 18px; }
+.stack > .section-h:first-child { margin-top: 0; }
 
 .dash-head .summary-line {
   font-family: var(--mono);
@@ -144,4 +154,167 @@ body { padding-left: 0; }
   letter-spacing: 0.14em;
   color: var(--faint);
   margin: 6px 0 -6px;
+}
+
+/* ---- clickable card rows (rendered as <button>) -------------------------- */
+.card-row.clickable {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.card-row.clickable:last-child { border-bottom: none; }
+.card-row.clickable:hover { background: var(--panel-2); }
+.card-row.clickable:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: -2px; }
+
+/* ---- knowledge view ------------------------------------------------------ */
+.kn-view { display: flex; flex-direction: column; gap: 14px; }
+.kn-tabs { align-self: flex-start; flex-wrap: wrap; }
+.kn-tabs button { white-space: nowrap; }
+.kn-panels { display: block; }
+.kn-group[hidden] { display: none; }
+
+/* ---- topbar search ------------------------------------------------------- */
+.search-box { margin-left: auto; display: flex; align-items: center; min-width: 0; }
+.search-input {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--panel);
+  border: var(--line) solid var(--border-2);
+  padding: 7px 12px;
+  width: clamp(180px, 32vw, 360px);
+  transition: border-color .16s, background .16s;
+}
+.search-input::placeholder { color: var(--faint); }
+.search-input:focus { outline: none; border-color: var(--amber-dim); background: var(--panel-2); }
+
+.search-results {
+  border: var(--line) solid var(--border);
+  border-top: none;
+  background: var(--panel);
+  margin: 0 clamp(16px, 3vw, 32px);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.search-results[hidden] { display: none; }
+.search-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 9px 14px;
+  border-bottom: var(--line) solid var(--border);
+  background: var(--bg-2);
+}
+.search-head .label {
+  font-family: var(--mono); font-size: 9.5px;
+  text-transform: uppercase; letter-spacing: 0.14em; color: var(--amber);
+  border: 1px solid var(--border-2); padding: 2px 7px;
+}
+.search-head .title { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
+.search-head .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.sr-list { display: flex; flex-direction: column; }
+.sr-row {
+  width: 100%; text-align: left;
+  display: flex; flex-direction: column; gap: 5px;
+  background: transparent; border: none; border-bottom: 1px solid var(--border);
+  padding: 11px 14px; cursor: pointer; font: inherit; color: inherit;
+  transition: background .14s;
+}
+.sr-row:last-child { border-bottom: none; }
+.sr-row:hover { background: var(--panel-2); }
+.sr-row:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: -2px; }
+.sr-top { display: flex; align-items: center; gap: 9px; }
+.sr-title { font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.sr-snippet { font-family: var(--mono); font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+
+/* ---- detail slide-over --------------------------------------------------- */
+.detail-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(8,7,11,0.62);
+  backdrop-filter: blur(2px);
+  display: flex; justify-content: flex-end;
+}
+.detail-overlay[hidden] { display: none; }
+.detail-sheet {
+  width: min(640px, 100%);
+  height: 100%;
+  background: var(--panel);
+  border-left: var(--line) solid var(--border-2);
+  box-shadow: -18px 0 50px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  animation: detail-in .22s ease;
+}
+@keyframes detail-in { from { transform: translateX(28px); opacity: .4; } to { transform: none; opacity: 1; } }
+.detail-bar {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; justify-content: flex-end;
+  padding: 12px 16px;
+  background: var(--bg-2);
+  border-bottom: var(--line) solid var(--border);
+}
+.detail-close {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--ink-soft); background: var(--panel);
+  border: var(--line) solid var(--border-2);
+  padding: 6px 11px; cursor: pointer;
+  transition: border-color .16s, color .16s, background .16s;
+}
+.detail-close:hover { border-color: var(--amber-dim); color: var(--ink); background: var(--panel-2); }
+.detail-body { padding: 20px 24px 48px; }
+.detail-head { display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.detail-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  font-family: var(--mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 3px 9px; border: 1px solid var(--border-2); color: var(--muted);
+}
+.chip.teal  { color: var(--teal);  border-color: rgba(110,209,200,0.45); }
+.chip.sage  { color: var(--sage);  border-color: rgba(149,196,134,0.45); }
+.chip.rust  { color: var(--rust);  border-color: rgba(224,122,79,0.45); }
+.chip.lilac { color: var(--lilac); border-color: rgba(184,155,217,0.45); }
+.chip.ghost { color: var(--faint); }
+.detail-title { font-family: var(--sans); font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.2; }
+.detail-meta { display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.detail-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.detail-tags .ref { font-family: var(--mono); font-size: 11px; color: var(--teal); }
+
+/* rendered markdown body */
+.detail-md { margin-top: 18px; font-family: var(--sans); font-size: 14px; color: var(--ink-soft); line-height: 1.65; }
+.detail-md h1, .detail-md h2, .detail-md h3 { font-family: var(--sans); color: var(--ink); font-weight: 700; line-height: 1.25; margin: 22px 0 8px; }
+.detail-md h1 { font-size: 20px; } .detail-md h2 { font-size: 17px; } .detail-md h3 { font-size: 15px; }
+.detail-md p { margin: 10px 0; }
+.detail-md a { color: var(--amber); text-decoration: underline; text-underline-offset: 2px; }
+.detail-md ul, .detail-md ol { margin: 10px 0; padding-left: 22px; }
+.detail-md li { margin: 4px 0; }
+.detail-md code {
+  font-family: var(--mono); font-size: 12.5px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  padding: 1px 5px; color: var(--amber);
+}
+.detail-md pre {
+  background: var(--bg-2); border: 1px solid var(--border);
+  padding: 14px 16px; overflow-x: auto; margin: 14px 0;
+}
+.detail-md pre code { background: none; border: none; padding: 0; color: var(--ink-soft); }
+.detail-md blockquote {
+  border-left: 3px solid var(--border-2);
+  margin: 14px 0; padding: 4px 16px; color: var(--muted);
+}
+.detail-md table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13px; }
+.detail-md th, .detail-md td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
+.detail-md th { background: var(--bg-2); color: var(--ink); }
+.detail-md hr { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+.detail-md img { max-width: 100%; }
+
+body.detail-open { overflow: hidden; }
+
+@media (max-width: 720px) {
+  .detail-sheet { width: 100%; }
+  .search-input { width: 100%; }
+  .search-box { width: 100%; }
 }

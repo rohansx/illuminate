@@ -98,7 +98,7 @@ export function renderSources(sources: GraphSource[]): HTMLElement {
 }
 
 // ---- recent decisions / failures -----------------------------------------
-function recentRow(item: RecentItem, kind: "dec" | "fail"): HTMLElement {
+function recentRow(item: RecentItem, kind: "dec" | "fail", onOpen: OpenPage): HTMLElement {
   const bodyChildren: HTMLElement[] = [text("div", "name", item.title || item.id)];
 
   const meta = div("meta", []);
@@ -110,8 +110,16 @@ function recentRow(item: RecentItem, kind: "dec" | "fail"): HTMLElement {
   bodyChildren.push(meta);
 
   const badge = text("span", "badge", kind === "fail" ? "failure" : "decision");
-  return div(`card-row ${kind}`, [div("body", bodyChildren), badge]);
+  const row = el("button", { class: `card-row clickable ${kind}`, type: "button" }, [
+    div("body", bodyChildren),
+    badge,
+  ]);
+  row.addEventListener("click", () => onOpen(item.id));
+  return row;
 }
+
+/** Callback invoked with a page id when a clickable row is activated. */
+export type OpenPage = (id: string) => void;
 
 export function renderRecent(
   title: string,
@@ -120,6 +128,7 @@ export function renderRecent(
   kind: "dec" | "fail",
   emptyText: string,
   tone: string,
+  onOpen: OpenPage,
 ): HTMLElement {
   const head = el("div", { class: "ph" }, []);
   head.append(text("span", "label", label));
@@ -130,7 +139,7 @@ export function renderRecent(
   if (items.length === 0) {
     body.append(text("p", "empty", emptyText));
   } else {
-    const list = div("card-list", items.map((it) => recentRow(it, kind)));
+    const list = div("card-list", items.map((it) => recentRow(it, kind, onOpen)));
     body.append(list);
   }
   return div(`panel ${tone}`, [head, body]);

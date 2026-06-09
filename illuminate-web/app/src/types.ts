@@ -56,3 +56,37 @@ export interface Dashboard {
   // recent_sessions is intentionally NOT modelled / rendered — the endpoint
   // currently returns decisions there, so it would be misleading.
 }
+
+// The four page kinds the wiki exposes (page_type_dir in serve.rs).
+export type PageType = "decision" | "pattern" | "failure" | "module";
+
+// GET /api/pages -> [{ id, title, type, status, tags, created, updated }]
+export interface PageListItem {
+  id: string;
+  title: string;
+  type: string;
+  status?: string;
+  tags?: string[];
+  created?: string;
+  updated?: string;
+}
+
+// GET /api/page/<id> -> one page with FULL markdown `body`.
+export interface Page {
+  id: string;
+  title: string;
+  type: string;
+  status?: string;
+  tags?: string[];
+  body: string;
+  created?: string;
+  updated?: string;
+}
+
+// GET /api/search?q= -> [{ id, title, type, snippet }]
+export interface SearchResult {
+  id: string;
+  title: string;
+  type: string;
+  snippet: string;
+}
