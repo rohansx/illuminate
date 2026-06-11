@@ -1611,6 +1611,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "tiny_http",
  "tokenizers 0.22.2",
  "toml",
 ]

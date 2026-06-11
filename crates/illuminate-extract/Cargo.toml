@@ -37,3 +37,4 @@ cloakpipe = ["dep:cloakpipe-core", "dep:anyhow"]
 tempfile = "3"
 sha2 = "0.10"
 dirs = "6"
+tiny_http = "0.12"

@@ -124,6 +124,39 @@ fn test_verify_returns_false_on_mismatch() {
     assert!(!mgr.verify(&spec).unwrap());
 }
 
+/// Specs use nested names (`gliner_large-v2.1/onnx/model_int8.onnx`), so on a
+/// fresh cache `download` must create the destination's parent directories
+/// before writing — without this, first-run `illuminate models download`
+/// fails with "No such file or directory". Exercises the REAL download path
+/// against a localhost HTTP server (no mocks).
+#[test]
+fn test_download_creates_nested_parent_dirs() {
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/model.onnx", server.server_addr());
+    let payload: &[u8] = b"onnx-bytes";
+    let handle = std::thread::spawn(move || {
+        if let Ok(req) = server.recv() {
+            let _ = req.respond(tiny_http::Response::from_data(payload.to_vec()));
+        }
+    });
+
+    let tmp = tempfile::tempdir().unwrap();
+    let mgr = ModelManager::with_cache_dir(tmp.path().to_path_buf()).unwrap();
+    let spec = ModelSpec {
+        name: "nested/onnx/model_int8.onnx".into(),
+        url,
+        sha256: "skip".into(),
+        size_bytes: payload.len() as u64,
+    };
+
+    let path = mgr
+        .download(&spec)
+        .expect("download must create parent dirs");
+    assert!(path.ends_with("nested/onnx/model_int8.onnx"));
+    assert_eq!(fs::read(&path).unwrap(), payload);
+    handle.join().unwrap();
+}
+
 #[test]
 fn test_verify_errors_on_missing_file() {
     let tmp = tempfile::tempdir().unwrap();

@@ -123,6 +123,16 @@ impl ModelManager {
                 .progress_chars("#>-"),
         );
 
+        // Spec names are nested paths (e.g. `gliner_large-v2.1/onnx/model_int8.onnx`),
+        // so the destination's parent directories must exist before File::create —
+        // otherwise a fresh cache fails with "No such file or directory".
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| ModelManagerError::Io {
+                context: format!("creating model dir {}", parent.display()),
+                source: e,
+            })?;
+        }
+
         let mut file = fs::File::create(&dest).map_err(|e| ModelManagerError::Io {
             context: format!("creating {}", dest.display()),
             source: e,
