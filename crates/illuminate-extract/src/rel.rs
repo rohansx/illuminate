@@ -1280,6 +1280,19 @@ fn detect_from_to_pattern(
     }
 }
 
+/// Largest index `<= idx` that lies on a UTF-8 char boundary of `s`.
+/// Stable-toolchain substitute for the unstable `str::floor_char_boundary`.
+fn floor_char_boundary(s: &str, idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    let mut i = idx;
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
 /// Detect "for {entity} support" patterns and emit introduced relations.
 ///
 /// E.g., "Upgrade the RecommendationService ... for virtual threads support"
@@ -1299,8 +1312,10 @@ fn detect_for_support_pattern(
     while let Some(for_pos) = text_lower[search_start..].find("for ") {
         let abs_for = search_start + for_pos;
 
-        // Check if "support" appears within 60 chars after "for"
-        let look_end = (abs_for + 60).min(text_lower.len());
+        // Check if "support" appears within ~60 bytes after "for". The
+        // offset is byte arithmetic, so floor it to a char boundary —
+        // slicing mid-char (e.g. inside '…') panics on real ingested docs.
+        let look_end = floor_char_boundary(&text_lower, abs_for + 60);
         let after_for = &text_lower[abs_for..look_end];
         if !after_for.contains("support") {
             search_start = abs_for + 4;
@@ -1789,4 +1804,36 @@ pub enum RelError {
 
     #[error("inference error: {0}")]
     Inference(String),
+}
+
+#[cfg(test)]
+mod char_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn floor_char_boundary_floors_and_clamps() {
+        let s = "ab\u{2026}cd"; // '…' occupies bytes 2..5
+        assert_eq!(floor_char_boundary(s, 0), 0);
+        assert_eq!(floor_char_boundary(s, 2), 2);
+        assert_eq!(floor_char_boundary(s, 3), 2); // inside '…' → floor
+        assert_eq!(floor_char_boundary(s, 4), 2);
+        assert_eq!(floor_char_boundary(s, 5), 5);
+        assert_eq!(floor_char_boundary(s, 99), s.len());
+    }
+
+    /// Regression: real ingested docs crashed `illuminate ingest` at
+    /// rel.rs:1304 — "end byte index 1090 is not a char boundary; it is
+    /// inside '…'". The "for … support" lookahead is byte arithmetic
+    /// (`for_pos + 60`) and must floor to a char boundary before slicing.
+    #[test]
+    fn for_support_window_survives_multibyte_boundary() {
+        // "for " + 54×'x' = 58 bytes, then '…' spans bytes 58..61 — so the
+        // +60 lookahead lands inside the ellipsis, exactly like the crash.
+        let text = format!("for {}\u{2026} support", "x".repeat(54));
+        let schema = ExtractionSchema::default();
+        let mut relations = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        detect_for_support_pattern(&text, &[], &schema, &mut relations, &mut seen);
+        assert!(relations.is_empty());
+    }
 }
