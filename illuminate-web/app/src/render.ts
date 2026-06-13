@@ -50,7 +50,7 @@ export function renderStats(d: Dashboard): HTMLElement {
     { k: "failures", v: num(d.stats.failures), tone: "rust" },
     { k: "modules", v: num(d.stats.modules), tone: "lilac" },
     { k: "episodes", v: num(d.graph.episodes), tone: "amber", note: "graph nodes" },
-    { k: "captured sessions", v: num(d.tokens.sessions), tone: "teal" },
+    { k: "sessions", v: num(d.tokens.sessions), tone: "teal", note: "captured" },
     { k: "cache-saved", v: pct(d.tokens.cache_saved_pct), tone: "sage" },
   ];
   return div(
@@ -60,11 +60,36 @@ export function renderStats(d: Dashboard): HTMLElement {
 }
 
 // ---- knowledge sources (the real centerpiece) ----------------------------
-export function renderSources(sources: GraphSource[]): HTMLElement {
+export interface SourcesOpts {
+  /** When set, each source row becomes a real button that drills into its
+   *  graph-episode list. Without it the rows render as static chart rows
+   *  (no hover affordance — see dashboard-app.css). */
+  onOpenSource?: (source: string) => void;
+  /** Cap the list at the top N sources (Overview). The full list lives in
+   *  the Sources view; `onViewAll` renders the link there. */
+  maxRows?: number;
+  onViewAll?: () => void;
+}
+
+export function renderSources(sources: GraphSource[], opts: SourcesOpts = {}): HTMLElement {
+  const sorted = [...sources].sort((a, b) => b.count - a.count);
+  const capped =
+    opts.maxRows !== undefined && sorted.length > opts.maxRows
+      ? sorted.slice(0, opts.maxRows)
+      : sorted;
+
   const head = el("div", { class: "ph" }, []);
   head.append(text("span", "label", "graph"));
   head.append(text("span", "title", "Knowledge sources"));
-  head.append(text("span", "sub", `${num(sources.length)} sources`));
+  head.append(
+    text(
+      "span",
+      "sub",
+      capped.length < sorted.length
+        ? `top ${num(capped.length)} of ${num(sorted.length)}`
+        : `${num(sorted.length)} source${sorted.length === 1 ? "" : "s"}`,
+    ),
+  );
 
   const body = div("pb tight", []);
 
@@ -73,24 +98,42 @@ export function renderSources(sources: GraphSource[]): HTMLElement {
     return div("panel amber", [head, body]);
   }
 
-  const sorted = [...sources].sort((a, b) => b.count - a.count);
   const max = Math.max(...sorted.map((s) => s.count), 1);
 
   const list = div("src-list", []);
-  for (const s of sorted) {
-    const widthPct = Math.max(2, Math.round((s.count / max) * 100));
-
+  for (const s of capped) {
     const labelRow = div("src-top", [
       text("span", "src-name", s.source),
       text("span", "src-count", num(s.count)),
     ]);
 
-    const bar = div("src-bar", []);
-    const fill = div("src-fill", []);
-    fill.style.width = `${widthPct}%`;
-    bar.append(fill);
+    const children: HTMLElement[] = [labelRow];
+    // A count-1 bar nub carries no information — only draw bars above 1.
+    if (s.count > 1) {
+      const widthPct = Math.max(2, Math.round((s.count / max) * 100));
+      const bar = div("src-bar", []);
+      const fill = div("src-fill", []);
+      fill.style.width = `${widthPct}%`;
+      bar.append(fill);
+      children.push(bar);
+    }
 
-    list.append(div("src-row", [labelRow, bar]));
+    const onOpen = opts.onOpenSource;
+    if (onOpen) {
+      const row = el("button", { class: "src-row clickable", type: "button" }, children);
+      row.addEventListener("click", () => onOpen(s.source));
+      list.append(row);
+    } else {
+      list.append(div("src-row", children));
+    }
+  }
+
+  const onViewAll = opts.onViewAll;
+  if (capped.length < sorted.length && onViewAll) {
+    const more = el("button", { class: "src-more", type: "button" });
+    more.textContent = `view all ${num(sorted.length)} sources →`;
+    more.addEventListener("click", () => onViewAll());
+    list.append(more);
   }
   body.append(list);
 
@@ -98,6 +141,9 @@ export function renderSources(sources: GraphSource[]): HTMLElement {
 }
 
 // ---- recent decisions / failures -----------------------------------------
+// No per-row type badge: each panel holds a single type and is already titled
+// with it ("Recent decisions"), so a repeated badge is pure noise — the type
+// chip earns its place only in mixed lists (search results).
 function recentRow(item: RecentItem, kind: "dec" | "fail", onOpen: OpenPage): HTMLElement {
   const bodyChildren: HTMLElement[] = [text("div", "name", item.title || item.id)];
 
@@ -109,10 +155,8 @@ function recentRow(item: RecentItem, kind: "dec" | "fail", onOpen: OpenPage): HT
   }
   bodyChildren.push(meta);
 
-  const badge = text("span", "badge", kind === "fail" ? "failure" : "decision");
   const row = el("button", { class: `card-row clickable ${kind}`, type: "button" }, [
     div("body", bodyChildren),
-    badge,
   ]);
   row.addEventListener("click", () => onOpen(item.id));
   return row;
@@ -146,7 +190,19 @@ export function renderRecent(
 }
 
 // ---- token savings -------------------------------------------------------
-export function renderTokens(d: Dashboard): HTMLElement {
+// What each metric means — shown only on the dedicated Tokens view
+// (`detailed`), so the destination explains the numbers instead of merely
+// repeating the Overview tile. Static documentation, not data.
+const TOKEN_DEFS: Record<string, string> = {
+  "cache-saved": "share of all input tokens served from the prompt cache",
+  "cache read": "input tokens read back from the prompt cache (cheap)",
+  "cache creation": "input tokens written into the prompt cache",
+  input: "uncached input tokens sent to the model",
+  output: "tokens generated by the model",
+  sessions: "captured agent sessions folded into these totals",
+};
+
+export function renderTokens(d: Dashboard, opts: { detailed?: boolean } = {}): HTMLElement {
   const head = el("div", { class: "ph" }, []);
   head.append(text("span", "label", "tokens"));
   head.append(text("span", "title", "Token savings"));
@@ -163,7 +219,11 @@ export function renderTokens(d: Dashboard): HTMLElement {
 
   const grid = div("breakdown tok-grid", []);
   for (const [k, v, tone] of rows) {
-    grid.append(div(`row ${tone}`.trim(), [text("span", "k", k), text("span", "v", v)]));
+    const cell = div(`row ${tone}`.trim(), [text("span", "k", k), text("span", "v", v)]);
+    if (opts.detailed && TOKEN_DEFS[k]) {
+      cell.append(text("span", "d", TOKEN_DEFS[k]));
+    }
+    grid.append(cell);
   }
 
   const body = div("pb", [grid]);

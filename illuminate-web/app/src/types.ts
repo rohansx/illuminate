@@ -90,3 +90,23 @@ export interface SearchResult {
   type: string;
   snippet: string;
 }
+
+// GET /api/episodes?source=&limit= -> { episodes: [...], total }
+export interface EpisodeListItem {
+  id: string;
+  source: string;
+  preview: string;
+}
+
+export interface EpisodeList {
+  episodes: EpisodeListItem[];
+  total: number;
+}
+
+// GET /api/episode/<id> -> one episode with FULL raw `content`.
+export interface Episode {
+  id: string;
+  source: string;
+  content: string;
+  created?: string;
+}

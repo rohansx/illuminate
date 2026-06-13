@@ -1,6 +1,8 @@
-// Fixed left rail (reusing the dark .rail / .vnav aesthetic) plus the in-app
-// view-state switcher. No router library — switching a view simply toggles the
-// active rail item and asks the host to render that view. Overview is default.
+// Navigation: the fixed left rail (desktop) plus a compact horizontal tab
+// strip (mobile, <=720px — where illuminate-v4.css hides the rail entirely).
+// Both are built here and kept in sync by the shared `setActive`. No router
+// library — switching a view simply toggles the active item and asks the host
+// to render that view. Overview is default.
 
 import { el, text } from "./dom.ts";
 
@@ -19,27 +21,30 @@ const ITEMS: NavItem[] = [
 ];
 
 /**
- * Build the fixed left rail. `onSelect` is called with the chosen view id; the
- * caller drives the actual render and then calls the returned `setActive` to
- * sync the highlight (so external/default selection stays consistent).
+ * Build the fixed left rail AND the mobile tab strip. `onSelect` is called
+ * with the chosen view id; the caller drives the actual render and then calls
+ * the returned `setActive` to sync the highlight on both navs (so external /
+ * default selection stays consistent).
  */
-export function createRail(onSelect: (id: ViewId) => void): {
+export function createNav(onSelect: (id: ViewId) => void): {
   rail: HTMLElement;
+  mobileNav: HTMLElement;
   setActive: (id: ViewId) => void;
 } {
   const mark = el("div", { class: "mark" });
 
   const vnav = el("nav", { class: "vnav", "aria-label": "views" });
-  const links = new Map<ViewId, HTMLElement>();
+  const railLinks = new Map<ViewId, HTMLElement>();
 
   for (const item of ITEMS) {
-    const a = el("a", { href: "#", role: "button", "aria-label": item.id });
+    // `title` gives sighted users the full word behind the rail abbreviation.
+    const a = el("a", { href: "#", role: "button", "aria-label": item.id, title: item.id });
     a.textContent = item.short;
     a.addEventListener("click", (e) => {
       e.preventDefault();
       onSelect(item.id);
     });
-    links.set(item.id, a);
+    railLinks.set(item.id, a);
     vnav.append(a);
   }
 
@@ -48,9 +53,22 @@ export function createRail(onSelect: (id: ViewId) => void): {
 
   const rail = el("aside", { class: "rail" }, [mark, el("div", { class: "sep" }), vnav, footer]);
 
-  function setActive(id: ViewId): void {
-    for (const [key, a] of links) a.classList.toggle("active", key === id);
+  // Mobile: a horizontal tab strip under the topbar with FULL labels —
+  // display is toggled purely in CSS (shown only at <=720px).
+  const mobileNav = el("nav", { class: "mnav", "aria-label": "views" });
+  const mobileButtons = new Map<ViewId, HTMLElement>();
+  for (const item of ITEMS) {
+    const b = el("button", { type: "button" });
+    b.textContent = item.id;
+    b.addEventListener("click", () => onSelect(item.id));
+    mobileButtons.set(item.id, b);
+    mobileNav.append(b);
   }
 
-  return { rail, setActive };
+  function setActive(id: ViewId): void {
+    for (const [key, a] of railLinks) a.classList.toggle("active", key === id);
+    for (const [key, b] of mobileButtons) b.classList.toggle("active", key === id);
+  }
+
+  return { rail, mobileNav, setActive };
 }

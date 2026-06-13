@@ -13,7 +13,6 @@ import type { OpenPage } from "./render.ts";
 interface Group {
   key: string;
   label: string;
-  badge: string;
   tone: string; // dec | pat | fail | (none)
   empty: string;
 }
@@ -21,12 +20,14 @@ interface Group {
 // `key` matches the API's page `type` field, which is the DIR name (plural:
 // "decisions"/"patterns"/"failures"/"modules") — not the singular form.
 const GROUPS: Group[] = [
-  { key: "decisions", label: "decisions", badge: "decision", tone: "dec", empty: "no decisions recorded yet" },
-  { key: "patterns", label: "patterns", badge: "pattern", tone: "pat", empty: "no patterns recorded yet" },
-  { key: "failures", label: "failures", badge: "failure", tone: "fail", empty: "no failures recorded yet" },
-  { key: "modules", label: "modules", badge: "module", tone: "", empty: "no modules recorded yet" },
+  { key: "decisions", label: "decisions", tone: "dec", empty: "no decisions recorded yet" },
+  { key: "patterns", label: "patterns", tone: "pat", empty: "no patterns recorded yet" },
+  { key: "failures", label: "failures", tone: "fail", empty: "no failures recorded yet" },
+  { key: "modules", label: "modules", tone: "", empty: "no modules recorded yet" },
 ];
 
+// No per-row type badge: the tab label and panel title already name the type
+// for every row in these single-type panels — a repeated badge is pure noise.
 function pageRow(item: PageListItem, group: Group, onOpen: OpenPage): HTMLElement {
   const bodyChildren: HTMLElement[] = [text("div", "name", item.title || item.id)];
 
@@ -37,10 +38,8 @@ function pageRow(item: PageListItem, group: Group, onOpen: OpenPage): HTMLElemen
   for (const t of item.tags ?? []) meta.append(text("span", "ref", `#${t}`));
   bodyChildren.push(meta);
 
-  const badge = text("span", "badge", group.badge);
   const row = el("button", { class: `card-row clickable ${group.tone}`.trim(), type: "button" }, [
     div("body", bodyChildren),
-    badge,
   ]);
   row.addEventListener("click", () => onOpen(item.id));
   return row;

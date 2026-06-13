@@ -15,6 +15,26 @@ export function pct(n: unknown): string {
   return `${s}%`;
 }
 
+/**
+ * Strip markdown syntax noise (code fences, inline backticks, heading hashes,
+ * bold/italic asterisks, blockquote markers, table pipes) from a snippet or
+ * preview so list rows read as plain prose. Conservative on purpose: it never
+ * touches underscores or word characters, so identifiers survive intact.
+ */
+export function cleanSnippet(s: string): string {
+  return (s ?? "")
+    .replace(/```[^\n`]*/g, " ") // code-fence openers/closers
+    .replace(/`([^`]*)`/g, "$1") // inline code
+    .replace(/^#{1,6}\s+/gm, "") // heading markers
+    .replace(/^>\s?/gm, "") // blockquote markers
+    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
+    .replace(/\*([^*]+)\*/g, "$1") // italics
+    .replace(/^[\s|:-]+$/gm, " ") // table separator rows
+    .replace(/\|/g, " ") // table pipes
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Relative time from an RFC-3339 stamp, e.g. "3m ago", "just now". */
 export function relativeTime(rfc3339: string): string {
   const t = Date.parse(rfc3339);

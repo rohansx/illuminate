@@ -26,6 +26,8 @@ fn ctx_for(root: &Path) -> RouteCtx<'_> {
         auditor: None,
         tokens: None,
         graph: None,
+        episodes: None,
+        episode: None,
     }
 }
 
@@ -172,6 +174,8 @@ fn api_dashboard_project_defaults_when_unnamed() {
         auditor: None,
         tokens: None,
         graph: None,
+        episodes: None,
+        episode: None,
     };
     let resp = route(&ctx, "GET", "/api/dashboard", "");
     let v: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
@@ -283,6 +287,8 @@ fn api_dashboard_tokens_reflect_wired_source() {
         auditor: None,
         tokens: Some(&tokens_fn),
         graph: None,
+        episodes: None,
+        episode: None,
     };
     let resp = route(&ctx, "GET", "/api/dashboard", "");
     let v: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
@@ -349,6 +355,8 @@ fn api_dashboard_graph_reflects_wired_source() {
         auditor: None,
         tokens: None,
         graph: Some(&graph_fn),
+        episodes: None,
+        episode: None,
     };
     let resp = route(&ctx, "GET", "/api/dashboard", "");
     let v: serde_json::Value = serde_json::from_str(&resp.body).unwrap();

@@ -43,6 +43,8 @@ fn ctx_for<'a>(root: &'a Path) -> RouteCtx<'a> {
         auditor: None,
         tokens: None,
         graph: None,
+        episodes: None,
+        episode: None,
     }
 }
 
@@ -147,6 +149,8 @@ fn audit_playground_post_returns_response_page() {
         auditor: Some(&auditor),
         tokens: None,
         graph: None,
+        episodes: None,
+        episode: None,
     };
 
     let resp = route(&ctx, "POST", "/audit", "plan=add+Redis+caching");
@@ -198,6 +202,8 @@ fn api_audit_post_returns_audit_result_json() {
         auditor: Some(&auditor),
         tokens: None,
         graph: None,
+        episodes: None,
+        episode: None,
     };
 
     let resp = route(&ctx, "POST", "/api/audit", r#"{"plan":"add Redis"}"#);

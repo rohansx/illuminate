@@ -8,8 +8,43 @@
    ============================================================================ */
 
 /* the fixed left rail (.rail, from illuminate-v4.css) is restored in this
-   interactive build — keep body padded so content clears it. */
-body { padding-left: var(--rail-w); }
+   interactive build — keep body padded so content clears it. Scoped to
+   desktop: at <=720px v4 hides the rail, so an unconditional padding here
+   (imported after v4) would beat v4's reset and leave a 60px dead gutter. */
+@media (min-width: 721px) {
+  body { padding-left: var(--rail-w); }
+}
+
+/* ---- mobile navigation (<=720px, where v4 removes the rail) --------------- */
+/* A compact horizontal tab strip under the topbar with FULL view labels.
+   Hidden on desktop; the only nav there is the rail. */
+.mnav { display: none; }
+@media (max-width: 720px) {
+  .mnav {
+    display: flex;
+    overflow-x: auto;
+    background: var(--bg-2);
+    border-bottom: var(--line) solid var(--border);
+  }
+  .mnav button {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--border);
+    padding: 10px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mnav button.active {
+    color: var(--amber);
+    background: var(--panel);
+    box-shadow: inset 0 -2px 0 var(--amber);
+  }
+}
 
 .dash { padding-top: 0; }
 
@@ -58,7 +93,51 @@ body { padding-left: var(--rail-w); }
   transition: background 0.14s;
 }
 .src-row:last-child { border-bottom: none; }
-.src-row:hover { background: var(--panel-2); }
+/* Hover/pointer affordances ONLY on the clickable (button) variant — static
+   chart rows must read honestly as non-interactive. */
+.src-row.clickable {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.src-row.clickable:last-child { border-bottom: none; }
+.src-row.clickable:hover { background: var(--panel-2); }
+.src-row.clickable:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: -2px; }
+
+/* "view all N sources →" footer link on the capped Overview panel */
+.src-more {
+  width: 100%;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--amber);
+  background: transparent;
+  border: none;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+.src-more:hover { background: var(--panel-2); }
+.src-more:focus-visible { outline: 2px solid var(--amber-dim); outline-offset: -2px; }
+
+/* ---- per-source episode drill-down ---------------------------------------- */
+.ep-back {
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  background: var(--panel);
+  border: var(--line) solid var(--border-2);
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: border-color 0.16s, color 0.16s;
+}
+.ep-back:hover { border-color: var(--amber-dim); color: var(--ink); }
+.ep-row .name { white-space: normal; overflow-wrap: anywhere; }
 .src-top {
   display: flex;
   align-items: baseline;
@@ -96,6 +175,16 @@ body { padding-left: var(--rail-w); }
 /* ---- token grid ----------------------------------------------------------- */
 .tok-grid { grid-template-columns: 1fr 1fr; }
 @media (max-width: 540px) { .tok-grid { grid-template-columns: 1fr; } }
+/* metric definitions — rendered only on the dedicated Tokens view */
+.tok-grid .row { flex-wrap: wrap; }
+.tok-grid .row .d {
+  flex-basis: 100%;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--faint);
+  margin-top: 4px;
+}
 
 /* ---- recent rows: lighter meta ------------------------------------------- */
 .card-row .meta .ago { color: var(--muted); }
@@ -193,6 +282,10 @@ body { padding-left: var(--rail-w); }
 }
 .search-input::placeholder { color: var(--faint); }
 .search-input:focus { outline: none; border-color: var(--amber-dim); background: var(--panel-2); }
+/* Keyboard focus must be unmistakable — restore the standard amber ring that
+   the :focus rule above (higher specificity than v4's input:focus-visible)
+   would otherwise suppress. Pointer focus stays ring-free. */
+.search-input:focus-visible { outline: var(--line) solid var(--amber); outline-offset: 2px; }
 
 .search-results {
   border: var(--line) solid var(--border);
@@ -216,6 +309,19 @@ body { padding-left: var(--rail-w); }
 }
 .search-head .title { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
 .search-head .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+/* the results panel's own dismiss — no Esc / input-clearing gymnastics needed */
+.search-clear {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: var(--line) solid var(--border-2);
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: border-color 0.16s, color 0.16s;
+}
+.search-clear:hover { border-color: var(--amber-dim); color: var(--ink); }
 .sr-list { display: flex; flex-direction: column; }
 .sr-row {
   width: 100%; text-align: left;

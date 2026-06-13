@@ -53,6 +53,28 @@ pub type TokensFn = dyn Fn() -> serde_json::Value + Send + Sync;
 /// dashboard KPI renders `0` rather than blanking out.
 pub type GraphStatsFn = dyn Fn() -> serde_json::Value + Send + Sync;
 
+/// Closure invoked by `GET /api/episodes` to list graph episodes — the
+/// drill-down behind the dashboard's Sources rows. Receives
+/// `(source_filter, limit)` (filter is an exact source name or a prefix) and
+/// returns a JSON object shaped like
+/// `{ episodes: [{ id, source, preview }, …], total }`.
+///
+/// Kept as a closure (like [`GraphStatsFn`]) so the wiki crate has zero typed
+/// dependency on `illuminate-core` — the CLI wires it to
+/// `Graph::list_episodes` filtered by source. A `None` source yields an empty
+/// envelope (no `null`s) so the episode browser renders an empty state.
+pub type EpisodesFn = dyn Fn(Option<&str>, usize) -> serde_json::Value + Send + Sync;
+
+/// Closure invoked by `GET /api/episode/<id>` to fetch one graph episode in
+/// full. Receives the episode id and returns a JSON object shaped like
+/// `{ id, source, content, created }` — or `{ error }` when nothing matches
+/// (the route maps an `error` payload to HTTP 404).
+///
+/// Kept as a closure (like [`EpisodesFn`]) so the wiki crate has zero typed
+/// dependency on `illuminate-core` — the CLI wires it to `Graph::get_episode`.
+/// A `None` source yields a 503 error object, mirroring the auditor fallback.
+pub type EpisodeFn = dyn Fn(&str) -> serde_json::Value + Send + Sync;
+
 /// Per-request context passed into [`route`].
 ///
 /// Lifetimes: the test path constructs this with stack-borrowed closures,
@@ -68,6 +90,12 @@ pub struct RouteCtx<'a> {
     /// Optional full decision-graph stats source for the dashboard graph KPI.
     /// `None` (no graph.db wired in) yields a zeroed `graph` object.
     pub graph: Option<&'a GraphStatsFn>,
+    /// Optional graph-episode list source for `/api/episodes`. `None` (no
+    /// graph.db wired in) yields an empty `{ episodes: [], total: 0 }`.
+    pub episodes: Option<&'a EpisodesFn>,
+    /// Optional single-episode source for `/api/episode/<id>`. `None` yields
+    /// a 503 error object, mirroring the auditor fallback.
+    pub episode: Option<&'a EpisodeFn>,
 }
 
 /// Response produced by [`route`] — passed to `tiny_http::Response::from_string`.
@@ -115,6 +143,7 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         ("GET", "/api/stats") => handle_api_stats(ctx),
         ("GET", "/api/dashboard") => handle_api_dashboard(ctx),
         ("GET", "/api/pages") => handle_api_pages(ctx, &params),
+        ("GET", "/api/episodes") => handle_api_episodes(ctx, &params),
         // Embedded illuminate-web front-end (landing + dashboard) — served so
         // the single binary hosts the live dashboard from any directory.
         ("GET", p) if crate::webapp::asset(p).is_some() => {
@@ -127,6 +156,9 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         }
         ("GET", p) if p.starts_with("/api/page/") => {
             handle_api_page(ctx, p.trim_start_matches("/api/page/"))
+        }
+        ("GET", p) if p.starts_with("/api/episode/") => {
+            handle_api_episode(ctx, p.trim_start_matches("/api/episode/"))
         }
         ("GET", "/api/search") => handle_api_search(ctx, &params),
         ("GET", p) if p.starts_with("/page/") => handle_page(ctx, p.trim_start_matches("/page/")),
@@ -435,6 +467,51 @@ fn handle_api_page(ctx: &RouteCtx, id: &str) -> RouteResp {
     RouteResp::json(404, format!(r#"{{"error":"page not found: {id}"}}"#))
 }
 
+/// `GET /api/episodes?source=<exact-or-prefix>&limit=N` — list graph episodes
+/// for the dashboard's Sources drill-down. The wired [`EpisodesFn`]'s JSON is
+/// returned verbatim; with no closure the envelope is empty-but-stable so the
+/// browser renders an honest empty state.
+fn handle_api_episodes(
+    ctx: &RouteCtx,
+    params: &std::collections::BTreeMap<String, String>,
+) -> RouteResp {
+    let Some(episodes) = ctx.episodes else {
+        return RouteResp::json(200, r#"{"episodes":[],"total":0}"#.to_string());
+    };
+    let source = params
+        .get("source")
+        .map(String::as_str)
+        .filter(|s| !s.is_empty());
+    let limit = params
+        .get("limit")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_EPISODE_LIMIT);
+    RouteResp::json(200, (episodes)(source, limit).to_string())
+}
+
+/// Default page size for `GET /api/episodes` when no `limit` param is given
+/// (or it doesn't parse).
+const DEFAULT_EPISODE_LIMIT: usize = 50;
+
+/// `GET /api/episode/<id>` — one graph episode in full. The wired
+/// [`EpisodeFn`]'s JSON is returned verbatim; an `error` payload maps to 404,
+/// no closure to 503 (mirroring the auditor fallback).
+fn handle_api_episode(ctx: &RouteCtx, id: &str) -> RouteResp {
+    let Some(episode) = ctx.episode else {
+        return RouteResp::json(
+            503,
+            r#"{"error":"no episode source configured"}"#.to_string(),
+        );
+    };
+    let id = id.trim_end_matches('/');
+    if id.is_empty() {
+        return RouteResp::json(400, r#"{"error":"missing episode id"}"#.to_string());
+    }
+    let v = (episode)(id);
+    let status = if v.get("error").is_some() { 404 } else { 200 };
+    RouteResp::json(status, v.to_string())
+}
+
 fn handle_api_search(
     ctx: &RouteCtx,
     params: &std::collections::BTreeMap<String, String>,
@@ -644,9 +721,12 @@ fn split_url(url: &str) -> (String, &str) {
 /// A `None` auditor turns the playground into a 503 page; a `None`
 /// graph_search renders search results without graph hits. `tokens` and
 /// `graph` are optional sources for the dashboard's token-savings and full
-/// decision-graph KPIs; a `None` of either yields a zeroed object. All of
-/// these make sense for a wiki served from a directory without an associated
-/// graph.db.
+/// decision-graph KPIs; a `None` of either yields a zeroed object.
+/// `episodes` and `episode` are optional sources for the graph-episode
+/// browser (`/api/episodes` + `/api/episode/<id>`); `None` yields an empty
+/// envelope / a 503 error respectively. All of these make sense for a wiki
+/// served from a directory without an associated graph.db.
+#[allow(clippy::too_many_arguments)]
 pub fn serve_with(
     wiki_root: &Path,
     port: u16,
@@ -655,6 +735,8 @@ pub fn serve_with(
     graph_search: Option<Arc<GraphSearchFn>>,
     tokens: Option<Arc<TokensFn>>,
     graph: Option<Arc<GraphStatsFn>>,
+    episodes: Option<Arc<EpisodesFn>>,
+    episode: Option<Arc<EpisodeFn>>,
 ) -> std::io::Result<()> {
     let addr = format!("127.0.0.1:{port}");
     let server = tiny_http::Server::http(&addr)
@@ -680,6 +762,8 @@ pub fn serve_with(
         let auditor_ref = auditor.as_deref();
         let tokens_ref = tokens.as_deref();
         let graph_ref = graph.as_deref();
+        let episodes_ref = episodes.as_deref();
+        let episode_ref = episode.as_deref();
         let resp = {
             let ctx = RouteCtx {
                 root: &root,
@@ -687,6 +771,8 @@ pub fn serve_with(
                 auditor: auditor_ref,
                 tokens: tokens_ref,
                 graph: graph_ref,
+                episodes: episodes_ref,
+                episode: episode_ref,
             };
             let mut r = route(&ctx, &method, &url, &body);
             // Inject graph hits into search responses if a graph closure is wired in.
@@ -718,7 +804,7 @@ pub fn serve_with(
 /// Back-compat shim for callers that don't have an auditor. Renders the
 /// dashboard, browse, search and a 503 audit playground.
 pub fn serve(wiki_root: &Path, port: u16) -> std::io::Result<()> {
-    serve_with(wiki_root, port, None, None, None, None, None)
+    serve_with(wiki_root, port, None, None, None, None, None, None, None)
 }
 
 fn extract_search_query(url: &str) -> Option<String> {

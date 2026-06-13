@@ -1,14 +1,17 @@
 // illuminate · interactive, data-driven dashboard entry point.
 //
-// Shell: a fixed left rail (Overview / Knowledge / Sources / Tokens), a topbar
-// with live search, and a view container. View switching is plain in-app state
-// (show/hide) — no router. Every decision/failure/page row is clickable and
-// opens a right slide-over that renders the page's markdown body via `marked`.
+// Shell: a skip link, a fixed left rail (desktop) plus a horizontal tab strip
+// (mobile), a topbar with live search, and a view container. View switching is
+// plain in-app state (show/hide) — no router. Every decision/failure/page row
+// is clickable and opens a right slide-over that renders the page's markdown
+// body via `marked`. Source rows drill into their graph-episode lists, and
+// each episode opens the same slide-over with its raw content.
 //
-// Strictly data-driven: the Overview hydrates from GET /api/dashboard, Knowledge
-// from /api/pages, search from /api/search, the detail panel from /api/page/<id>.
-// Loading, fetch-error, and empty states are honest — there is NO demo data and
-// no code path that can fabricate a row.
+// Strictly data-driven: the Overview hydrates from GET /api/dashboard,
+// Knowledge from /api/pages, search from /api/search, the detail panel from
+// /api/page/<id>, episodes from /api/episodes + /api/episode/<id>. Loading,
+// fetch-error, and empty states are honest — there is NO demo data and no
+// code path that can fabricate a row.
 
 import "./illuminate-v4.css";
 import "./illuminate-dashboard.css";
@@ -17,10 +20,11 @@ import "./dashboard-app.css";
 import type { Dashboard } from "./types.ts";
 import { div, el, text } from "./dom.ts";
 import { fetchDashboard } from "./api.ts";
-import { openDetail } from "./detail.ts";
-import { createRail, type ViewId } from "./nav.ts";
+import { openDetail, openEpisode } from "./detail.ts";
+import { createNav, type ViewId } from "./nav.ts";
 import { createSearch } from "./search.ts";
 import { mountKnowledge } from "./knowledge.ts";
+import { mountEpisodes } from "./episodes.ts";
 import {
   renderError,
   renderHeader,
@@ -31,14 +35,21 @@ import {
   renderTokens,
 } from "./render.ts";
 
+/** Overview shows only the head of the source distribution; the Sources view
+ *  has the full list. Keeps the long tail of count-1 sources off the
+ *  Overview so the two-column grid stays balanced. */
+const OVERVIEW_SOURCES_MAX = 8;
+
 const root = document.getElementById("app");
 
 // ---- shell scaffold (built once, populated on data load) -----------------
-const view = div("view", []); // the swappable main content region
+// The view container is the skip-link target, hence id + tabindex.
+const view = el("div", { class: "view", id: "main", tabindex: "-1" });
 let currentView: ViewId = "overview";
 let dashboard: Dashboard | null = null;
+let selectedSource: string | null = null; // Sources-view episode drill-down
 
-const { rail, setActive } = createRail((id) => selectView(id));
+const { rail, mobileNav, setActive } = createNav((id) => selectView(id));
 const { control: searchControl, results: searchResults } = createSearch((id) => openDetail(id));
 
 const topbar = el("div", { class: "topbar app-topbar" }, [
@@ -46,19 +57,33 @@ const topbar = el("div", { class: "topbar app-topbar" }, [
   searchControl,
 ]);
 
-const shell = div("shell", [topbar, searchResults, view]);
+const shell = div("shell", [topbar, mobileNav, searchResults, view]);
+
+const skipLink = el("a", { class: "skip-link", href: "#main" });
+skipLink.textContent = "skip to content";
 
 function mountShell(): void {
   if (!root) return;
-  root.replaceChildren(rail, shell);
+  root.replaceChildren(skipLink, rail, shell);
 }
 
 // ---- view renderers --------------------------------------------------------
+/** Drill into one source's episode list (rendered inside the Sources view). */
+function openSource(source: string): void {
+  selectedSource = source;
+  selectView("sources", { keepSource: true });
+}
+
 function overviewView(d: Dashboard): HTMLElement {
   const header = renderHeader(d);
   const stats = renderStats(d);
 
-  const topGrid = div("dash-grid", [renderSources(d.graph.sources ?? []), renderTokens(d)]);
+  const sourcesPanel = renderSources(d.graph.sources ?? [], {
+    onOpenSource: openSource,
+    maxRows: OVERVIEW_SOURCES_MAX,
+    onViewAll: () => selectView("sources"),
+  });
+  const topGrid = div("dash-grid", [sourcesPanel, renderTokens(d)]);
 
   const decisions = renderRecent(
     "Recent decisions",
@@ -94,18 +119,22 @@ function overviewView(d: Dashboard): HTMLElement {
 function sourcesView(d: Dashboard): HTMLElement {
   return div("stack", [
     text("p", "section-h", "knowledge sources"),
-    renderSources(d.graph.sources ?? []),
+    renderSources(d.graph.sources ?? [], { onOpenSource: openSource }),
   ]);
 }
 
 function tokensView(d: Dashboard): HTMLElement {
-  return div("stack", [text("p", "section-h", "token savings"), renderTokens(d)]);
+  return div("stack", [
+    text("p", "section-h", "token savings"),
+    renderTokens(d, { detailed: true }),
+  ]);
 }
 
 // ---- view switching --------------------------------------------------------
-function selectView(id: ViewId): void {
+function selectView(id: ViewId, opts: { keepSource?: boolean } = {}): void {
   currentView = id;
   setActive(id);
+  if (!opts.keepSource) selectedSource = null;
 
   if (id === "knowledge") {
     // Knowledge fetches its own data (lazy) every time it is opened.
@@ -119,7 +148,11 @@ function selectView(id: ViewId): void {
       view.replaceChildren(overviewView(dashboard));
       break;
     case "sources":
-      view.replaceChildren(sourcesView(dashboard));
+      if (selectedSource) {
+        mountEpisodes(view, selectedSource, openEpisode, () => selectView("sources"));
+      } else {
+        view.replaceChildren(sourcesView(dashboard));
+      }
       break;
     case "tokens":
       view.replaceChildren(tokensView(dashboard));

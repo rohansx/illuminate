@@ -290,6 +290,80 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         })
     };
 
+    // Graph-episode list source for /api/episodes — the drill-down behind the
+    // dashboard's clickable Sources rows. Opens graph.db per request (same
+    // pattern as graph_search) and filters `Graph::list_episodes` (already
+    // newest-first) by exact-or-prefix source match. NULL sources are surfaced
+    // as "unknown" to stay consistent with `Graph::stats()`, so a clicked
+    // "unknown" row still matches. Best-effort: any failure yields the empty
+    // envelope so the browser renders an empty state.
+    let episodes: std::sync::Arc<illuminate_wiki::serve::EpisodesFn> = {
+        let root = repo_root()?;
+        std::sync::Arc::new(
+            move |source: Option<&str>, limit: usize| -> serde_json::Value {
+                let empty = || serde_json::json!({ "episodes": [], "total": 0 });
+                let db = root.join(".illuminate").join("graph.db");
+                if !db.is_file() {
+                    return empty();
+                }
+                match illuminate::Graph::open(&db) {
+                    Ok(graph) => match graph.list_episodes(EPISODE_SCAN_CAP, 0) {
+                        Ok(eps) => {
+                            let matched: Vec<_> = eps
+                                .into_iter()
+                                .filter(|ep| {
+                                    source.is_none_or(|f| {
+                                        ep.source.as_deref().unwrap_or("unknown").starts_with(f)
+                                    })
+                                })
+                                .collect();
+                            let total = matched.len();
+                            let rows: Vec<serde_json::Value> = matched
+                                .into_iter()
+                                .take(limit)
+                                .map(|ep| {
+                                    serde_json::json!({
+                                        "id": ep.id,
+                                        "source": ep.source.as_deref().unwrap_or("unknown"),
+                                        "preview": ep.content.chars().take(200).collect::<String>(),
+                                    })
+                                })
+                                .collect();
+                            serde_json::json!({ "episodes": rows, "total": total })
+                        }
+                        Err(_) => empty(),
+                    },
+                    Err(_) => empty(),
+                }
+            },
+        )
+    };
+
+    // Single-episode source for /api/episode/<id> — full content for the
+    // episode detail view. An `{ error }` payload (not-found, open failure)
+    // is mapped to 404 by the route.
+    let episode: std::sync::Arc<illuminate_wiki::serve::EpisodeFn> = {
+        let root = repo_root()?;
+        std::sync::Arc::new(move |id: &str| -> serde_json::Value {
+            let db = root.join(".illuminate").join("graph.db");
+            match illuminate::Graph::open(&db) {
+                Ok(graph) => match graph.get_episode(id) {
+                    Ok(Some(ep)) => serde_json::json!({
+                        "id": ep.id,
+                        "source": ep.source.as_deref().unwrap_or("unknown"),
+                        "content": ep.content,
+                        "created": ep.recorded_at.to_rfc3339(),
+                    }),
+                    Ok(None) => serde_json::json!({
+                        "error": format!("episode not found: {id}"),
+                    }),
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                },
+                Err(e) => serde_json::json!({ "error": e.to_string() }),
+            }
+        })
+    };
+
     illuminate_wiki::serve::serve_with(
         &dir,
         port,
@@ -298,8 +372,15 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         Some(graph_search),
         Some(tokens),
         Some(graph_stats),
+        Some(episodes),
+        Some(episode),
     )
 }
+
+/// Upper bound on episodes scanned per `/api/episodes` request when filtering
+/// by source — `Graph::list_episodes` paginates, so the filter needs a slice
+/// to walk; this caps the per-request work on very large graphs.
+const EPISODE_SCAN_CAP: usize = 10_000;
 
 /// Construct an `Auditor` and run a single audit. Wrapped in a function so the
 /// closure passed to the wiki server is concise and the heavy graph/embed
