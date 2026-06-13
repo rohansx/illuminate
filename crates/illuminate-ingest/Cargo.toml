@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Read-only adapters for external knowledge sources (local markdown, confluence, notion, github-wiki, …) — feeds into the illuminate graph"
 
 [dependencies]
-illuminate = { version = "0.22.0", path = "../illuminate-core" }
+illuminate = { version = "0.23.0", path = "../illuminate-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -1470,7 +1470,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate-config",
@@ -1487,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-audit"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1508,7 +1508,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-bootstrap"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate-wiki",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-cli"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "clap",
@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-config"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "serde",
  "toml",
@@ -1565,7 +1565,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-embed"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "fastembed",
  "thiserror",
@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-enrich"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1590,7 +1590,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-extract"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1618,7 +1618,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-index"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1640,7 +1640,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-ingest"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1653,7 +1653,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-mcp"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "axum",
  "chrono",
@@ -1680,7 +1680,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-publish"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1694,7 +1694,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-reflect"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1706,7 +1706,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-route"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1720,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-trail"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "glob",
@@ -1739,7 +1739,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-watch"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "illuminate",
@@ -1757,7 +1757,7 @@ dependencies = [
 
 [[package]]
 name = "illuminate-wiki"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "pulldown-cmark",

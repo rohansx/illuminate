@@ -10,7 +10,7 @@ Prompts are the new source code — version, share, and enrich them like you do 
 [![rust](https://img.shields.io/badge/rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![mcp](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-9333ea?style=flat-square)](docs/MCP.md)
 [![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-650%20passing-16a34a?style=flat-square)](#)
+[![tests](https://img.shields.io/badge/tests-922%20passing-16a34a?style=flat-square)](#)
 
 [illuminate.sh](https://illuminate.sh) · single Rust binary · local-first · MIT
 
@@ -52,7 +52,7 @@ Both ride on the same substrate: local trail capture, a bi-temporal decision gra
 
 Every prompt flows through four stages: **enrich → generate → capture → curate**. The team repo (Stage 4 output) feeds back into enrichment (Stage 1 input), so the loop tightens with use. After three months your graph knows what your team rejected, what failed, and what to surface before code is written.
 
-> **Status (v0.22):** capture, audit, reflect, enrich, route, and the wiki dashboard ship today. The full **enrich → generate → capture → curate** loop is wired end-to-end — see [docs/ROADMAP.md](docs/ROADMAP.md). The substrate is already useful: install today for audit + the dashboard.
+> **Status (v0.23):** capture, audit, reflect, enrich, route, and the wiki dashboard ship today. v0.23 rebuilds the dashboard as an interactive single-page app — rail nav, clickable decision/pattern/failure detail, a knowledge browser, graph search, and a Sources → episodes drill-down backed by `/api/episodes`. The full **enrich → generate → capture → curate** loop is wired end-to-end — see [docs/ROADMAP.md](docs/ROADMAP.md). The substrate is already useful: install today for audit + the dashboard.
 
 ---
 
@@ -84,20 +84,23 @@ Exit code `2`. Wire that into CI and you have machine-enforced architectural gua
 
 ## What it looks like
 
-`illuminate wiki serve` ships a real dashboard, not a CLI prompt:
+`illuminate wiki serve` ships a real dashboard, not a CLI prompt. The dashboard at **`/app`** is an interactive single-page app that fetches the live graph and renders **only real data** — no demo rows, no placeholders.
 
 > _Screenshots of the live dashboard are captured against `illuminate wiki serve --port 8765` after running through `docs/GETTING_STARTED.md`. The capture script is at [`scripts/capture-screenshots.sh`](scripts/capture-screenshots.sh)._
 
-| View | URL | What you see |
-|------|-----|--------------|
-| **Home** | `/` | Stats cards (decisions / patterns / failures / modules / episodes), recent activity feed, quick links |
-| **Browse** | `/decisions`, `/patterns`, `/failures`, `/modules` | Filterable list views (status, tag, severity) |
-| **Page** | `/page/decisions/dec-no-redis` | Single decision rendered with front-matter card + body markdown + related panel |
-| **Search** | `/search?q=caching` | Two-pane: wiki pages + graph episodes (FTS5 + semantic) |
-| **Audit playground** | `/audit` | Paste a plan → see the audit response visually. The killer non-CLI surface for the rest of the team |
-| **JSON API** | `/api/{stats,pages,page/<id>,search,audit}` | Same data, machine-friendly, for ext integrations |
+| View | What you see |
+|------|--------------|
+| **Overview** | Stats cards (decisions / patterns / failures / modules / episodes / entities / edges) + recent decisions, patterns, and failures, all clickable |
+| **Knowledge** | Browse decisions / patterns / failures / modules; click any row to open the detail slide-over with front-matter + body markdown |
+| **Sources** | The graph's episode sources with counts; click a source to drill into its episodes, click an episode for its full raw content |
+| **Tokens** | Token-savings surface from the trail (estimated tokens enriched / saved) |
+| **Search** | Type-ahead across wiki pages + graph episodes (FTS5 + semantic), results open the same detail slide-over |
 
-Dark mode, mobile responsive, no JS framework, no build step — single binary still.
+Rail navigation on desktop, a tab strip on mobile (≤720px), a focus-trapped detail slide-over, and full keyboard support. Built with Vite + TypeScript into one self-contained file embedded in the binary — still no runtime framework, still a single binary.
+
+The same data is available machine-friendly over the JSON API: `/api/{dashboard,pages,page/<id>,search,episodes,episode/<id>}`.
+
+Dark mode, mobile responsive, single binary.
 
 ---
 

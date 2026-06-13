@@ -7,11 +7,11 @@ repository.workspace = true
 description = "Contextual linter for illuminate — cross-reference agent plans against the decision graph"
 
 [dependencies]
-illuminate = { version = "0.22.0", path = "../illuminate-core" }
-illuminate-config = { version = "0.22.0", path = "../illuminate-config" }
-illuminate-embed = { version = "0.22.0", path = "../illuminate-embed" }
-illuminate-index = { version = "0.22.0", path = "../illuminate-index" }
-illuminate-reflect = { version = "0.22.0", path = "../illuminate-reflect" }
+illuminate = { version = "0.23.0", path = "../illuminate-core" }
+illuminate-config = { version = "0.23.0", path = "../illuminate-config" }
+illuminate-embed = { version = "0.23.0", path = "../illuminate-embed" }
+illuminate-index = { version = "0.23.0", path = "../illuminate-index" }
+illuminate-reflect = { version = "0.23.0", path = "../illuminate-reflect" }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

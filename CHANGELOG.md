@@ -4,6 +4,18 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.23.0] — 2026-06-13
+
+### Changed — the wiki dashboard is now an interactive single-page app
+
+This release rebuilds `illuminate wiki serve`'s dashboard from server-rendered list pages into a real interactive SPA, and adds the graph-episode browse API behind it. The dashboard renders **only live data** — no demo rows, no placeholder markup. Built with Vite + TypeScript into one self-contained file (all JS + CSS inlined) embedded in the binary via `include_str!`, so it is still a single binary with no runtime framework.
+
+- **Interactive dashboard at `/app`.** Rail navigation on desktop with Overview / Knowledge / Sources / Tokens views; a clickable detail slide-over for any decision / pattern / failure / module (front-matter card + body markdown); a knowledge browser; and type-ahead search across wiki pages + graph episodes (FTS5 + semantic). The app fetches `/api/dashboard` on load and degrades to an honest empty state on any fetch failure — never fabricated content. Regenerate with `cd illuminate-web/app && npm run build`.
+- **Graph-episode browse API.** New `GET /api/episodes?source=<exact-or-prefix>&limit=N` (default limit 50) and `GET /api/episode/<id>`. Wired through new `EpisodesFn` / `EpisodeFn` closure types on `RouteCtx` so `illuminate-wiki` keeps **zero typed dependency** on `illuminate-core` — the CLI binds them to `Graph::list_episodes` / `Graph::get_episode` per request. With no graph wired in, the endpoints return a stable empty envelope (`{"episodes":[],"total":0}`) / a 503, never `null`. Powers the dashboard's **Sources → episodes → full-content** drill-down.
+- **UX-audit fixes (Playwright-verified).** A mobile tab strip (`.mnav`) replaces the desktop rail at ≤720px so every view stays reachable; the dead left gutter on mobile is gone (body padding now scoped to `@media (min-width: 721px)`); the detail slide-over is a proper focus-trapped dialog that moves focus in on open, traps Tab, and restores focus to its opener on Escape; a single Escape no longer wipes the search results; Sources rows carry clear hover/focus affordances only when actually clickable; the keyboard focus ring is restored to an unmistakable amber outline. New `illuminate-web/tests/live-app-sources.spec.ts` exercises the whole Sources → episode drill-down plus the mobile-nav and modal-focus fixes against a real `illuminate wiki serve`.
+- **Extraction robustness.** `illuminate models download` now creates nested parent directories before writing, so model specs with nested paths (e.g. `gliner_large-v2.1/onnx/model_int8.onnx`) no longer fail on a fresh cache. The NER for-support relation window now floors byte offsets to UTF-8 char boundaries, fixing a panic on multibyte input during `illuminate ingest`.
+- **Workspace version bump** `0.22.0` → `0.23.0` across `Cargo.toml` + all path-deps. README status, dashboard section, and test badge (922 passing) updated to match.
+
 ## [0.22.0] — 2026-05-26
 
 ### Added — v3.2 begins: `illuminate-ingest`, `illuminate ask`, `illuminate browse`
