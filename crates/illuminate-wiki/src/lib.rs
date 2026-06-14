@@ -12,6 +12,7 @@ pub mod page;
 pub mod render;
 pub mod scaffold;
 pub mod serve;
+pub mod serve_cloud;
 pub mod walk;
 pub mod webapp;
 

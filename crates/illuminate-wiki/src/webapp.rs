@@ -20,6 +20,11 @@ const DASHBOARD_HTML: &str = include_str!("../../../illuminate-web/app/dist/inde
 const V4_CSS: &str = include_str!("../../../illuminate-web/illuminate-v4.css");
 const DASHBOARD_CSS: &str = include_str!("../../../illuminate-web/illuminate-dashboard.css");
 const V4_JS: &str = include_str!("../../../illuminate-web/illuminate-v4.js");
+// The "Illuminate Cloud — Teams" workspace dashboard: a Vite + TypeScript app
+// that fetches /api/workspace (a real multi-repo aggregation) and renders ONLY
+// live data — built to ONE self-contained file. Served at `/cloud` by
+// `illuminate cloud serve`. Regenerate with `cd illuminate-web/cloud && npm run build`.
+const CLOUD_HTML: &str = include_str!("../../../illuminate-web/cloud/dist/index.html");
 
 const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
@@ -38,6 +43,13 @@ pub fn asset(path: &str) -> Option<(&'static str, &'static str)> {
         "/illuminate-v4.js" => Some((JS, V4_JS)),
         _ => None,
     }
+}
+
+/// The embedded "Illuminate Cloud — Teams" workspace dashboard, served at
+/// `/cloud` by `illuminate cloud serve`. Single self-contained Vite build that
+/// fetches `/api/workspace`.
+pub fn cloud_html() -> &'static str {
+    CLOUD_HTML
 }
 
 #[cfg(test)]

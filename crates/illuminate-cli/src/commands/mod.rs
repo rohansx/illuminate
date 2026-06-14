@@ -6,6 +6,7 @@ pub mod audit_docs;
 pub mod audit_pr;
 pub mod bootstrap;
 pub mod browse;
+pub mod cloud;
 pub mod decisions;
 pub mod diagram;
 pub mod doc_decay;
@@ -42,6 +43,7 @@ pub mod trail_tokens;
 pub mod trust_check;
 pub mod watch;
 pub mod wiki;
+pub mod workspace;
 
 use std::env;
 use std::path::PathBuf;

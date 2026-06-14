@@ -506,6 +506,12 @@ enum Commands {
         cmd: commands::wiki::WikiCmd,
     },
 
+    /// Serve the multi-repo "Illuminate Cloud — Teams" workspace dashboard
+    Cloud {
+        #[command(subcommand)]
+        cmd: commands::cloud::CloudCmd,
+    },
+
     /// Populate the wiki from existing repo signals (CLAUDE.md, ADRs)
     Bootstrap {
         /// Skip the automatic `wiki rebuild` step at the end (writes pages only)
@@ -870,6 +876,9 @@ pub fn run() {
             commands::trail::run(cmd).map_err(illuminate::IlluminateError::Io)
         }
         Commands::Wiki { cmd } => commands::wiki::run(cmd).map_err(illuminate::IlluminateError::Io),
+        Commands::Cloud { cmd } => {
+            commands::cloud::run(cmd).map_err(illuminate::IlluminateError::Io)
+        }
         Commands::Bootstrap { no_rebuild } => {
             commands::bootstrap::run(no_rebuild).map_err(illuminate::IlluminateError::Io)
         }
