@@ -4,6 +4,18 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.24.0] — 2026-06-14
+
+### Added — `illuminate cloud serve`: the multi-repo "Illuminate Cloud — Teams" workspace dashboard
+
+A real, local, multi-repo dashboard. Where `illuminate wiki serve` shows ONE repo, `illuminate cloud serve` scans a root for every repo carrying an `.illuminate/graph.db`, opens each graph, and aggregates them into one editorial "Teams" view — **with no cloud backend and no fabricated data**. Every number traces back to a real `graph.db` or a real `git log`; this is the honest local realization of the cloud/teams product surface (true network federation stays deferred per [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+
+- **`illuminate cloud serve [--root PATH] [--port N] [--depth N]` CLI verb.** Scans `--root` (default: cwd, depth 6) for `.illuminate` repos — skipping `node_modules` / `target` / `.git` / `dist` and friends — opens each graph, and serves the workspace dashboard at `http://127.0.0.1:<port>/cloud` (default port 8770). The snapshot is computed once at startup (scanning N graphs + `git log` per repo is too heavy per-request); the per-repo drill-down re-opens that single graph live.
+- **Workspace aggregator (`crates/illuminate-cli/src/commands/workspace.rs`).** Pure, unit-tested helpers (`health`, `strata`, `level`, `merge_feed`, `assign_roles`, `aggregate`, `parse_git_log`) separated from the IO (`scan`, `summarize_repo`, `git_contributors`). Folds per-repo `Graph::stats()` + recent episodes + 28-day activity strata + git contributors into a stable JSON snapshot. Deterministic health: `red` (empty graph), `yellow` (episodes but no edges / stale >90d), `green` (populated + connected + recent). The repos LIST shows only populated repos; the headline totals still report `scanned` and `uninitialized` so nothing is hidden.
+- **`/api/workspace` + `/api/workspace/repo/<id>` endpoints** served by a new `illuminate-wiki::serve_cloud` module — its own pure `route_cloud` + `serve_cloud_with`, kept separate from the single-repo `serve` so that dashboard's `RouteCtx` (and every test that builds one) is untouched. Wired via `WorkspaceFn` / `WorkspaceRepoFn` closures, so the wiki crate keeps **zero typed dependency** on `illuminate-core`.
+- **`illuminate-web/cloud/` — new Vite + TypeScript single-page app** in the approved cream/Fraunces editorial design (ported from the mockup; the mockup's fake browser chrome is dropped — a real served app doesn't draw its own window). Rail nav on desktop, a tab strip on mobile (≤1100px), four views (Overview / Repositories / Members / Activity), a focus-trapped repo drill-down slide-over, stat cards, a real activity feed, an activity-strata heatmap, and a git-contributor members list. Strictly data-driven from `/api/workspace`; honest loading / empty / error states; no demo rows. Built to one self-contained file embedded via `include_str!` and served at `/cloud`.
+- **Tests.** 9 new aggregator unit tests + 6 `serve_cloud` route tests + a live `illuminate-web/tests/live-cloud.spec.ts` Playwright spec that seeds a two-repo workspace, spawns a real `cloud serve`, and asserts the populated repos table, the focus-trapped drill-down (Escape closes + restores focus), and mobile nav.
+
 ## [0.23.0] — 2026-06-13
 
 ### Changed — the wiki dashboard is now an interactive single-page app

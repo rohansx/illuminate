@@ -553,6 +553,22 @@ illuminate wiki serve [--port 8765]
 
 Markdown is rendered with a minimal stylesheet. Anchors and inter-page links work. No JavaScript.
 
+The single-binary build also embeds the interactive Vite dashboard at `/app` (fetches `/api/dashboard`, renders only live data).
+
+### `illuminate cloud serve`
+
+Serve the multi-repo **"Illuminate Cloud — Teams"** workspace dashboard at `http://127.0.0.1:<port>/cloud`. Shipped in v0.24.
+
+```
+illuminate cloud serve [--root PATH] [--port 8770] [--depth 6]
+```
+
+Scans `--root` (default: current directory) to `--depth` for every repo that has an `.illuminate/graph.db`, opens each graph, and aggregates them into one live workspace view: org-level stat cards, a per-repo table with deterministic health (`green`/`yellow`/`red` from real graph signals), a merged activity feed, a 28-day activity heatmap, and a git-contributor members list. Click a repo to drill into its episodes, sources, and contributors.
+
+**Real, local, multi-repo — no cloud backend.** Every value traces to a real `graph.db` or a real `git log`; there is no fabricated data. The repos table lists only populated repos, but the headline totals report `scanned` and `uninitialized` counts so nothing is hidden. True network/team federation remains deferred (see [`ROADMAP.md`](ROADMAP.md)).
+
+**JSON API:** `GET /api/workspace` (the full snapshot, computed once at startup) and `GET /api/workspace/repo/<id>` (live single-repo detail).
+
 ### `illuminate wiki lint`
 
 Validate every wiki page against `SCHEMA.md`.

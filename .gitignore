@@ -2,6 +2,7 @@ target/
 .illuminate/graph.db
 .illuminate/graph.db-shm
 .illuminate/graph.db-wal
+.illuminate/index.db
 .illuminate/trail/
 .env
 *.db-shm

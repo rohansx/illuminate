@@ -10,7 +10,7 @@ Prompts are the new source code — version, share, and enrich them like you do 
 [![rust](https://img.shields.io/badge/rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![mcp](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-9333ea?style=flat-square)](docs/MCP.md)
 [![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-922%20passing-16a34a?style=flat-square)](#)
+[![tests](https://img.shields.io/badge/tests-937%20passing-16a34a?style=flat-square)](#)
 
 [illuminate.sh](https://illuminate.sh) · single Rust binary · local-first · MIT
 
@@ -101,6 +101,10 @@ Rail navigation on desktop, a tab strip on mobile (≤720px), a focus-trapped de
 The same data is available machine-friendly over the JSON API: `/api/{dashboard,pages,page/<id>,search,episodes,episode/<id>}`.
 
 Dark mode, mobile responsive, single binary.
+
+### Teams view — `illuminate cloud serve`
+
+`illuminate cloud serve --root <dir>` scans a directory for **every** repo that has an `.illuminate/graph.db` and aggregates them into one editorial "Illuminate Cloud — Teams" workspace dashboard at **`/cloud`** — a real, local realization of the multi-repo product surface (no cloud backend, no fabricated data). It shows org-level stat cards, a per-repo table with deterministic health (green/yellow/red from graph signals), a merged activity feed, a 28-day activity heatmap, and a git-contributor members list. Click any repo to drill into its episodes, sources, and contributors. Built with Vite + TypeScript in a cream/Fraunces editorial theme; served from the same single binary.
 
 ---
 
@@ -198,7 +202,8 @@ illuminate failures list/show
 illuminate index                 build code-graph (symbols + edges)
 illuminate search "<q>"          FTS5 + semantic search across graph
 illuminate rebuild               rebuild graph.db from wiki + trail
-illuminate wiki serve            launch the dashboard at http://127.0.0.1:8765
+illuminate wiki serve            launch the single-repo dashboard at http://127.0.0.1:8765
+illuminate cloud serve           multi-repo workspace dashboard at /cloud (aggregates every .illuminate repo under --root)
 illuminate wiki redact "<re>"    bulk-redact regex across wiki + graph
 illuminate trail import/list/register/watch/install-service
 illuminate mcp serve             MCP server (stdio default; --http for Streamable HTTP)

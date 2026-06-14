@@ -1,6 +1,6 @@
 # Illuminate — Roadmap
 
-> **Status:** v0.21 shipped (May 2026). The v3.0 wedges (`illuminate-enrich` + `illuminate-publish`) are live; both products of the v3 positioning are end-to-end functional. This document tracks the **next-cycle plan** — v3.1 (broaden capture), v3.2 (docs as first-class content per [`knowledge-layer.md`](knowledge-layer.md)), v3.3 (high-value doc features), v3.4 (workflow features), v3.5 (polish + adoption), v3-cloud (optional hosted). See [`CHANGELOG.md`](../CHANGELOG.md) for the per-version log.
+> **Status:** v0.24 shipped (June 2026). The v3.0 wedges (`illuminate-enrich` + `illuminate-publish`) are live; both products of the v3 positioning are end-to-end functional. v0.23 rebuilt the single-repo dashboard as an interactive Vite SPA (`/app`); v0.24 added `illuminate cloud serve` — a real, local **multi-repo "Teams" workspace dashboard** (`/cloud`) that aggregates every `.illuminate` repo under a root. This document tracks the **next-cycle plan** — v3.1 (broaden capture), v3.2 (docs as first-class content per [`knowledge-layer.md`](knowledge-layer.md)), v3.3 (high-value doc features), v3.4 (workflow features), v3.5 (polish + adoption), v3-cloud (optional hosted — true network/team federation, distinct from the local multi-repo view that ships today). See [`CHANGELOG.md`](../CHANGELOG.md) for the per-version log.
 
 ---
 
@@ -18,11 +18,11 @@ The full closed loop is live:
 | **Audit (linter)** | Policy DSL (`rejected_pattern`, `must_use`, `frozen`), `decision_ref` plumbing, `evidence`/`confidence`/`trace_id`/`wiki_url` on every finding. Code-graph blast-radius joined with decision graph. | `illuminate-audit` |
 | **Reflect (failure capture)** | Reflexion episodes via `illuminate failure log` CLI and `illuminate_reflect` MCP tool. Surfaced in future audits via `find_relevant`. | `illuminate-reflect` |
 | **MCP** | JSON-RPC server: `stdio` (default) + Streamable HTTP via axum 0.8 with bearer auth. Tools (`illuminate_audit/explain/search/decisions_for/failures_for/get_wiki_page/route/reflect/impact`). `resources/list` + `resources/read` for wiki pages. `prompts/list` + `prompts/get` (audit_check, summarize_failures). | `illuminate-mcp` |
-| **Wiki dashboard** | `illuminate wiki serve` — home / browse / search / **audit playground** / JSON API / quick-add form for non-CLI page creation. Dark mode, mobile responsive, no JS framework. | `illuminate-wiki` |
+| **Wiki dashboard** | `illuminate wiki serve` — single-repo interactive SPA at `/app` (overview / knowledge / sources→episodes / tokens / search), clickable detail slide-over, JSON API. Plus the multi-repo **`illuminate cloud serve`** "Teams" workspace dashboard at `/cloud` (v0.24). Dark mode + cream/Fraunces editorial themes, mobile responsive. | `illuminate-wiki` |
 | **CI** | GitHub Action `audit-pr@master` — comments findings on PRs via `gh`, fails check on `error`-severity violations. Exit codes 0/2/3 per `docs/CLI.md`. | `.github/actions/audit-pr/` |
 | **CLI surface** | `init`, `bootstrap`, `audit`, `audit-diff`, `audit-pr`, `impact`, `explain`, `failure log`, `decisions list/show/for`, `patterns list/show`, `failures list/show`, `index`, `search`, `rebuild`, `wiki serve/redact`, `trail import/list/register/watch/install-service`, `mcp serve`, `models download`, `status`, `stats`. | `illuminate-cli` |
 
-**14 crates. 650+ tests passing. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all` clean.**
+**17 crates. 937 tests passing. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all` clean.**
 
 Per-version detail in [`CHANGELOG.md`](../CHANGELOG.md).
 

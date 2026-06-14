@@ -7,10 +7,10 @@ repository.workspace = true
 description = "Pre-LLM prompt enrichment for illuminate — deterministic prompt rewriting with team context"
 
 [dependencies]
-illuminate = { version = "0.23.0", path = "../illuminate-core" }
-illuminate-route = { version = "0.23.0", path = "../illuminate-route" }
-illuminate-embed = { version = "0.23.0", path = "../illuminate-embed" }
-illuminate-index = { version = "0.23.0", path = "../illuminate-index" }
+illuminate = { version = "0.24.0", path = "../illuminate-core" }
+illuminate-route = { version = "0.24.0", path = "../illuminate-route" }
+illuminate-embed = { version = "0.24.0", path = "../illuminate-embed" }
+illuminate-index = { version = "0.24.0", path = "../illuminate-index" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
