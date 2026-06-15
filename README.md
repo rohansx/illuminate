@@ -10,7 +10,7 @@ Prompts are the new source code — version, share, and enrich them like you do 
 [![rust](https://img.shields.io/badge/rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![mcp](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-9333ea?style=flat-square)](docs/MCP.md)
 [![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-937%20passing-16a34a?style=flat-square)](#)
+[![tests](https://img.shields.io/badge/tests-963%20passing-16a34a?style=flat-square)](#)
 
 [illuminate.sh](https://illuminate.sh) · single Rust binary · local-first · MIT
 
@@ -52,7 +52,7 @@ Both ride on the same substrate: local trail capture, a bi-temporal decision gra
 
 Every prompt flows through four stages: **enrich → generate → capture → curate**. The team repo (Stage 4 output) feeds back into enrichment (Stage 1 input), so the loop tightens with use. After three months your graph knows what your team rejected, what failed, and what to surface before code is written.
 
-> **Status (v0.23):** capture, audit, reflect, enrich, route, and the wiki dashboard ship today. v0.23 rebuilds the dashboard as an interactive single-page app — rail nav, clickable decision/pattern/failure detail, a knowledge browser, graph search, and a Sources → episodes drill-down backed by `/api/episodes`. The full **enrich → generate → capture → curate** loop is wired end-to-end — see [docs/ROADMAP.md](docs/ROADMAP.md). The substrate is already useful: install today for audit + the dashboard.
+> **Status (v0.27):** capture, audit, reflect, enrich, route, and the dashboards ship today. Recent releases: **v0.23** interactive single-page dashboard (`/app`); **v0.24** multi-repo "Cloud — Teams" workspace dashboard (`/cloud`, `illuminate cloud serve`); **v0.25** 3D knowledge-graph visualization (`/graph`); **v0.26** `illuminate policy` — a Rhai **deny→ask→allow gatekeeper** + PreToolUse hook (advisor → enforcer); **v0.27** a swappable `VectorIndex` (exact `FlatIndex` + a pure-Rust embedded HNSW). The full **enrich → generate → capture → curate** loop is wired end-to-end — see [docs/ROADMAP.md](docs/ROADMAP.md). Install today for audit, the dashboards, the graph, and the policy gate.
 
 ---
 
@@ -266,7 +266,7 @@ Nineteen crates, one binary:
 
 | Crate | Responsibility | Status |
 |-------|---------------|--------|
-| `illuminate-core` | Graph API on top of `ctxgraph` | ✅ shipped |
+| `illuminate-core` | Bi-temporal graph API (the in-tree `ctxgraph` SQLite engine) + swappable `VectorIndex` (exact + embedded HNSW) | ✅ shipped |
 | `illuminate-config` | Shared `illuminate.toml` parsers (audit, trail, extraction, mcp.http) | ✅ shipped |
 | `illuminate-trail` | Session capture (Claude Code, Cursor, Codex) | ✅ shipped |
 | `illuminate-extract` | NER pipeline (GLiNER + GLiREL via ONNX) | ✅ shipped |
@@ -342,8 +342,10 @@ Set `[extraction.llm] provider = "none"` to run fully offline at $0.
 - [`ctxgraph`](https://github.com/rohansx/ctxgraph) — bi-temporal knowledge graph engine (2.4× F1 vs Graphiti, ~250× faster)
 - [`tree-sitter`](https://tree-sitter.github.io/) — incremental code parsing
 - [GLiNER](https://github.com/urchade/GLiNER) + [GLiREL](https://github.com/jackboyla/GLiREL) — local NER (ONNX)
+- [`instant-distance`](https://github.com/instant-labs/instant-distance) — pure-Rust embedded HNSW for the approximate `VectorIndex`
+- [`rhai`](https://rhai.rs/) — sandboxed scripting for the `illuminate policy` gatekeeper DSL
 - [`axum`](https://github.com/tokio-rs/axum) — MCP HTTP transport
-- [`tiny_http`](https://github.com/tiny-http/tiny-http) — wiki dashboard server
+- [`tiny_http`](https://github.com/tiny-http/tiny-http) — dashboard server (`/app`, `/cloud`, `/graph`)
 
 Format knowledge for Cursor / Codex parsers ported from [codeburn](https://github.com/getagentseal/codeburn) (MIT). Edge model + `impact_radius` informed by [code-review-graph](https://github.com/tirth8205/code-review-graph) (MIT). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)'s Related Projects section.
 

@@ -4,6 +4,17 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.27.0] — 2026-06-15
+
+### Added — swappable `VectorIndex` + pure-Rust embedded HNSW
+
+The constructive outcome of evaluating HelixDB (a graph+vector database) as a possible substrate: HelixDB was rejected — it ships as a Docker/Podman **server** with a closed engine and **no bi-temporal** support, which would break illuminate's single-binary / one-SQLite-file / offline / bi-temporal invariants. But it surfaced a real gap: illuminate's semantic-search leg did a brute-force O(N) cosine scan with no index. This captures HelixDB's one genuine win — an indexed approximate-nearest-neighbor search — **without** a server, container, or closed engine.
+
+- **`illuminate-core::vector` module.** A swappable `VectorIndex` trait (`search(query, k) -> [(id, cosine)]`) with two implementations: `FlatIndex` (exact brute-force — deterministic, correct at any N, the default the cold-open CLI path uses) and `HnswIndex` (a **pure-Rust embedded HNSW** via the `instant-distance` crate — build once, query many; for long-lived callers like the MCP server / batch search that need to scale past the brute-force comfort zone). The embedded HNSW statically links into the single binary — no server, no C extension, still offline. 5 unit tests (exact ranking, HNSW nearest-neighbor, flat-vs-HNSW agreement on the top hit).
+- **`search_fused` routed through the trait.** The RRF semantic leg now goes through `FlatIndex` (same exact, deterministic results) instead of an inline cosine scan, and is bounded to the same top-`pool` as the FTS5 leg (deeper ranks contribute a negligible `1/(K+rank)` to RRF anyway), which also lets an ANN backend return early. RRF fusion and the FTS5 keyword leg are unchanged — only the nearest-neighbor leg is now pluggable.
+- **No new crate / no schema change.** Embeddings stay little-endian f32 blobs in `graph.db`; the HNSW is rebuilt in-memory from them on demand, so the on-disk format and the markdown-source-of-truth invariant are untouched.
+- **Workspace version bump** `0.26.0` → `0.27.0`.
+
 ## [0.26.0] — 2026-06-15
 
 ### Added — `illuminate policy`: the gatekeeper (advisor → enforcer)
