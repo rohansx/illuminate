@@ -19,6 +19,86 @@ const IMPACT_DEPTH: u32 = 2;
 /// Default node cap for impact-radius traversal in MCP audits.
 const IMPACT_NODES: usize = 50;
 
+// ── policy gate (shared with `illuminate policy` CLI) ───────────────────────
+
+/// Build a policy engine wired with the same graph-backed helpers the live hook
+/// uses, so a dry-run `query_policy` matches what the hook would decide:
+/// `recently_edited(path)` (git, last 14d) + `decisions_referencing(text)`
+/// (count of graph episodes mentioning a concept).
+fn build_policy_engine(root: &Path) -> illuminate_policy::Engine {
+    let r1 = root.to_path_buf();
+    let r2 = root.to_path_buf();
+    illuminate_policy::Engine::with_helpers(move |e| {
+        e.register_fn("recently_edited", move |path: &str| {
+            policy_recently_edited(&r1, path)
+        });
+        e.register_fn("decisions_referencing", move |text: &str| {
+            policy_decisions_referencing(&r2, text)
+        });
+    })
+}
+
+/// The repo's policy ruleset: `.illuminate/policy.rhai` if present, else the
+/// bundled conservative default.
+fn policy_ruleset(engine: &illuminate_policy::Engine, root: &Path) -> illuminate_policy::RuleSet {
+    let custom = root.join(".illuminate").join("policy.rhai");
+    if custom.is_file()
+        && let Ok(rs) = illuminate_policy::RuleSet::load(engine, &custom)
+    {
+        return rs;
+    }
+    illuminate_policy::default_ruleset(engine)
+}
+
+fn policy_recently_edited(root: &Path, path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "log",
+            "-1",
+            "--since=14 days ago",
+            "--format=%H",
+            "--",
+            path,
+        ])
+        .output();
+    matches!(out, Ok(o) if o.status.success() && !o.stdout.is_empty())
+}
+
+fn policy_decisions_referencing(root: &Path, text: &str) -> i64 {
+    if text.trim().is_empty() {
+        return 0;
+    }
+    let db = root.join(".illuminate").join("graph.db");
+    match Graph::open(&db) {
+        Ok(graph) => graph
+            .search(text, 50)
+            .map(|hits| hits.len() as i64)
+            .unwrap_or(0),
+        Err(_) => 0,
+    }
+}
+
+/// Read the most recent policy ledger entries (newest first).
+fn read_policy_ledger(root: &Path, limit: usize) -> Vec<Value> {
+    let path = root.join(".illuminate").join("policy").join("ledger.jsonl");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<Value> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .collect();
+    rows.reverse();
+    rows.truncate(limit);
+    rows
+}
+
 pub struct ToolContext {
     pub graph: Arc<Mutex<Graph>>,
     pub embed: Option<Arc<EmbedEngine>>,
@@ -944,6 +1024,51 @@ impl ToolContext {
         }))
     }
 
+    /// `illuminate_query_policy` — dry-run the policy gate for a proposed tool
+    /// call so the agent can self-check *before* acting ("would this be
+    /// allowed?"). Evaluates the repo's `.illuminate/policy.rhai` (or the bundled
+    /// default) in deny→ask→allow order, with the same graph-backed helpers the
+    /// live hook uses. No side effects — does NOT write the ledger.
+    pub async fn illuminate_query_policy(&self, args: Value) -> Result<Value, String> {
+        let tool = args["tool"].as_str().unwrap_or("").trim().to_string();
+        if tool.is_empty() {
+            return Err("missing 'tool' (e.g. \"Bash\", \"Edit\", \"WebFetch\")".to_string());
+        }
+        let root = self
+            .repo_root()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        let engine = build_policy_engine(&root);
+        let rules = policy_ruleset(&engine, &root);
+        let req = illuminate_policy::EvalRequest {
+            tool,
+            cmd: args["cmd"].as_str().unwrap_or("").to_string(),
+            path: args["path"].as_str().unwrap_or("").to_string(),
+            url: args["url"].as_str().unwrap_or("").to_string(),
+            cwd: root.display().to_string(),
+            home: std::env::var("HOME").unwrap_or_default(),
+            session_id: String::new(),
+        };
+        let out = engine.eval(&rules, &req);
+        Ok(json!({
+            "decision": out.decision.as_str(),
+            "rule": out.rule.map(|r| json!({ "file": r.file.display().to_string(), "line": r.line })),
+            "rule_text": out.rule_text,
+        }))
+    }
+
+    /// `illuminate_recent_decisions` — the recent policy decisions from the
+    /// ledger (`.illuminate/policy/ledger.jsonl`), newest first.
+    pub async fn illuminate_recent_decisions(&self, args: Value) -> Result<Value, String> {
+        let limit = args["limit"].as_u64().unwrap_or(20) as usize;
+        let root = self
+            .repo_root()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        Ok(json!({ "decisions": read_policy_ledger(&root, limit) }))
+    }
+
     /// Tool: illuminate_impact
     /// Given a decision ID, show every file and symbol anchored to that decision.
     pub async fn illuminate_impact(&self, args: Value) -> Result<Value, String> {
@@ -1704,6 +1829,30 @@ pub fn tools_list() -> Value {
                         "id": {"type": "string", "description": "Wiki page id (front-matter id or filename stem)"}
                     },
                     "required": ["id"]
+                }
+            },
+            {
+                "name": "illuminate_query_policy",
+                "description": "Dry-run the policy gate for a proposed tool call BEFORE acting (\"would this be allowed?\"). Evaluates the repo's .illuminate/policy.rhai (or the bundled default) in deny→ask→allow order, with the same graph-backed helpers the live hook uses (recently_edited, decisions_referencing). No side effects — does NOT write the ledger. Returns the decision (allow/ask/deny), and the matched rule's source location + text.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tool": {"type": "string", "description": "Tool name to gate (e.g. 'Bash', 'Edit', 'Write', 'WebFetch')"},
+                        "cmd": {"type": "string", "description": "Optional: the shell command (for Bash)"},
+                        "path": {"type": "string", "description": "Optional: the file path (for Edit/Write/Read)"},
+                        "url": {"type": "string", "description": "Optional: the URL (for WebFetch)"}
+                    },
+                    "required": ["tool"]
+                }
+            },
+            {
+                "name": "illuminate_recent_decisions",
+                "description": "List recent policy decisions from the ledger (.illuminate/policy/ledger.jsonl), newest first. Each entry records the gated tool call, the decision, and the matched rule. Use to audit what the gate has been allowing/asking/denying.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max entries (default 20)"}
+                    }
                 }
             }
         ]

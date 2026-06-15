@@ -1,6 +1,6 @@
 # Illuminate — MCP Server
 
-The MCP (Model Context Protocol) server is the agent-facing surface. It exposes twelve `illuminate_*` tools — `ask`, `audit`, `decisions_for`, `enrich`, `explain`, `failures_for`, `get_wiki_page`, `impact`, `reflect`, `route`, `stats`, and `symbols` — as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call. (The graph-primitive tools `add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, and `export_graph` are also registered.)
+The MCP (Model Context Protocol) server is the agent-facing surface. It exposes fourteen `illuminate_*` tools — `ask`, `audit`, `decisions_for`, `enrich`, `explain`, `failures_for`, `get_wiki_page`, `impact`, `query_policy`, `recent_decisions`, `reflect`, `route`, `stats`, and `symbols` — as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call. (The graph-primitive tools `add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, and `export_graph` are also registered.)
 
 For the audit engine itself, see `AUDIT.md`. For CLI usage, see `CLI.md`.
 
@@ -298,6 +298,50 @@ Fetch the markdown content of a wiki page by id.
   "body": "## Decision\n..."
 }
 ```
+
+### `illuminate_query_policy`
+
+Dry-run the policy gate for a proposed tool call **before** acting — "would this be allowed?". Evaluates the repo's `.illuminate/policy.rhai` (or the bundled default) in `deny → ask → allow` order, with the same graph-backed helpers the live hook uses (`recently_edited`, `decisions_referencing`). **No side effects** — does not write the ledger. This is the same engine the `illuminate policy` CLI and the PreToolUse hook run, so the verdict matches what the hook would decide.
+
+**Request:**
+
+```json
+{
+  "method": "illuminate_query_policy",
+  "params": { "tool": "Bash", "cmd": "rm -rf build/" }
+}
+```
+
+`tool` is required; `cmd` / `path` / `url` are optional and supplied per the gated tool (`cmd` for Bash, `path` for Edit/Write/Read, `url` for WebFetch).
+
+**Response:**
+
+```json
+{
+  "decision": "ask",
+  "rule": { "file": ".illuminate/policy.rhai", "line": 12 },
+  "rule_text": "ask if tool == \"Bash\" && cmd.contains(\"rm -rf\")"
+}
+```
+
+`decision` is one of `allow` / `ask` / `deny`. `rule` is the matched rule's source location (null if nothing matched and the default applied).
+
+### `illuminate_recent_decisions`
+
+List recent policy decisions from the ledger (`.illuminate/policy/ledger.jsonl`), newest first. Use to audit what the gate has been allowing, asking, or denying.
+
+**Request:**
+
+```json
+{
+  "method": "illuminate_recent_decisions",
+  "params": { "limit": 20 }
+}
+```
+
+`limit` is optional (default 20).
+
+**Response:** `{ "decisions": [ /* ledger rows, newest first */ ] }` — each row records the gated tool call, the decision, and the matched rule.
 
 ---
 

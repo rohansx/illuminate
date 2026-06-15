@@ -4,6 +4,18 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.29.0] — 2026-06-15
+
+### Added — policy gate, agent-facing: `query_policy` + `recent_decisions` MCP tools
+
+The last deferred Phase-2 follow-up. The policy gate already sat in the live tool-call path (the PreToolUse hook) and was scriptable from the CLI; this exposes it to the *agent itself* over MCP, so an LLM can self-check a proposed action before taking it and can audit what the gate has been doing — without shelling out.
+
+- **`illuminate_query_policy`.** A **dry-run** of the gate: given a proposed `{tool, cmd?, path?, url?}`, it evaluates the repo's `.illuminate/policy.rhai` (or the bundled default) in `deny → ask → allow` order and returns `{decision, rule: {file, line}, rule_text}` — **no side effects, no ledger write**. It builds the engine with the same graph-backed helpers the live hook uses (`recently_edited`, `decisions_referencing`), so the verdict an agent self-checks matches exactly what the hook would decide. Lets an agent ask "would this be allowed?" before acting.
+- **`illuminate_recent_decisions`.** Reads `.illuminate/policy/ledger.jsonl` and returns the most recent gate decisions (newest first, `limit` default 20) so an agent (or a human via the MCP surface) can audit what's been allowed / asked / denied.
+- **Tool count.** The MCP server now advertises **fourteen** `illuminate_*` tools (was twelve). Both new tools reuse the exact policy engine, ruleset loader, and ledger reader the CLI uses — no second implementation. 1 new integration test (schemas advertised + required fields).
+- **Phase 2 is now complete.** No policy follow-ups remain deferred (the optional resident daemon stays intentionally out — illuminate evaluates cold per tool-call).
+- **Workspace version bump** `0.28.0` → `0.29.0`.
+
 ## [0.28.0] — 2026-06-15
 
 ### Added — policy gatekeeper, finished: graph-backed rules + one-command install

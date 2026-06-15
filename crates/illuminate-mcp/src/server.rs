@@ -231,6 +231,8 @@ impl McpServer {
                     "illuminate_decisions_for" => ctx.illuminate_decisions_for(args).await,
                     "illuminate_failures_for" => ctx.illuminate_failures_for(args).await,
                     "illuminate_get_wiki_page" => ctx.illuminate_get_wiki_page(args).await,
+                    "illuminate_query_policy" => ctx.illuminate_query_policy(args).await,
+                    "illuminate_recent_decisions" => ctx.illuminate_recent_decisions(args).await,
                     other => Err(format!("unknown tool: {other}")),
                 };
 

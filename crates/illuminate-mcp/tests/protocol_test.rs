@@ -142,6 +142,36 @@ fn test_tools_list_includes_traverse_batch() {
 }
 
 #[test]
+fn test_tools_list_includes_policy_tools() {
+    // The two policy MCP tools (v0.29) must be advertised with correct schemas.
+    let tools = illuminate_mcp::tools::tools_list();
+    let list = tools["tools"].as_array().expect("tools array");
+
+    let query = list
+        .iter()
+        .find(|t| t["name"] == "illuminate_query_policy")
+        .expect("illuminate_query_policy must be advertised");
+    let required = query["inputSchema"]["required"].as_array().unwrap();
+    assert!(
+        required.iter().any(|v| v.as_str() == Some("tool")),
+        "query_policy must require 'tool'"
+    );
+    assert_eq!(
+        query["inputSchema"]["properties"]["url"]["type"]
+            .as_str()
+            .unwrap(),
+        "string"
+    );
+
+    let recent = list
+        .iter()
+        .find(|t| t["name"] == "illuminate_recent_decisions")
+        .expect("illuminate_recent_decisions must be advertised");
+    // recent_decisions has no required fields (limit is optional).
+    assert!(recent["inputSchema"]["required"].is_null());
+}
+
+#[test]
 fn test_embedding_cache_warm_once_semantics() {
     // The embedding_cache Option acts as a once-flag:
     // None = not yet loaded, Some(map) = loaded. Verify the semantics hold.
