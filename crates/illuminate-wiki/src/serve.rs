@@ -75,6 +75,16 @@ pub type EpisodesFn = dyn Fn(Option<&str>, usize) -> serde_json::Value + Send + 
 /// A `None` source yields a 503 error object, mirroring the auditor fallback.
 pub type EpisodeFn = dyn Fn(&str) -> serde_json::Value + Send + Sync;
 
+/// Closure invoked by `GET /api/layout` to build the 3D graph-visualization
+/// payload. Receives `(layer, max_nodes)` (layer is `code` | `decisions` |
+/// `both`) and returns a `GraphData` JSON object shaped like
+/// `{ nodes: [{ id, x, y, z, label, name, size, color }, …], edges, total_nodes }`.
+///
+/// Kept as a closure (like [`EpisodesFn`]) so the wiki crate has zero typed
+/// dependency on `illuminate-index`/`illuminate-core` — the CLI wires it to the
+/// layout builder over the code + decision graphs. `None` yields an empty graph.
+pub type LayoutFn = dyn Fn(&str, usize) -> serde_json::Value + Send + Sync;
+
 /// Per-request context passed into [`route`].
 ///
 /// Lifetimes: the test path constructs this with stack-borrowed closures,
@@ -96,6 +106,9 @@ pub struct RouteCtx<'a> {
     /// Optional single-episode source for `/api/episode/<id>`. `None` yields
     /// a 503 error object, mirroring the auditor fallback.
     pub episode: Option<&'a EpisodeFn>,
+    /// Optional graph-layout source for `/api/layout` (the `/graph` viz).
+    /// `None` yields an empty graph.
+    pub layout: Option<&'a LayoutFn>,
 }
 
 /// Response produced by [`route`] — passed to `tiny_http::Response::from_string`.
@@ -144,6 +157,7 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         ("GET", "/api/dashboard") => handle_api_dashboard(ctx),
         ("GET", "/api/pages") => handle_api_pages(ctx, &params),
         ("GET", "/api/episodes") => handle_api_episodes(ctx, &params),
+        ("GET", "/api/layout") => handle_api_layout(ctx, &params),
         // Embedded illuminate-web front-end (landing + dashboard) — served so
         // the single binary hosts the live dashboard from any directory.
         ("GET", p) if crate::webapp::asset(p).is_some() => {
@@ -493,6 +507,36 @@ fn handle_api_episodes(
 /// (or it doesn't parse).
 const DEFAULT_EPISODE_LIMIT: usize = 50;
 
+/// `GET /api/layout?layer=<code|decisions|both>&max_nodes=N` — the 3D graph
+/// payload for the `/graph` visualization. The wired [`LayoutFn`]'s JSON is
+/// returned verbatim; with no closure an empty graph is returned so the viz
+/// renders an honest empty state.
+fn handle_api_layout(
+    ctx: &RouteCtx,
+    params: &std::collections::BTreeMap<String, String>,
+) -> RouteResp {
+    let Some(layout) = ctx.layout else {
+        return RouteResp::json(
+            200,
+            r#"{"nodes":[],"edges":[],"total_nodes":0}"#.to_string(),
+        );
+    };
+    let layer = params.get("layer").map(String::as_str).unwrap_or("both");
+    let layer = match layer {
+        "code" | "decisions" | "both" => layer,
+        _ => "both",
+    };
+    let max_nodes = params
+        .get("max_nodes")
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_LAYOUT_MAX_NODES);
+    RouteResp::json(200, (layout)(layer, max_nodes).to_string())
+}
+
+/// Default node cap for `GET /api/layout`.
+const DEFAULT_LAYOUT_MAX_NODES: usize = 6_000;
+
 /// `GET /api/episode/<id>` — one graph episode in full. The wired
 /// [`EpisodeFn`]'s JSON is returned verbatim; an `error` payload maps to 404,
 /// no closure to 503 (mirroring the auditor fallback).
@@ -737,6 +781,7 @@ pub fn serve_with(
     graph: Option<Arc<GraphStatsFn>>,
     episodes: Option<Arc<EpisodesFn>>,
     episode: Option<Arc<EpisodeFn>>,
+    layout: Option<Arc<LayoutFn>>,
 ) -> std::io::Result<()> {
     let addr = format!("127.0.0.1:{port}");
     let server = tiny_http::Server::http(&addr)
@@ -764,6 +809,7 @@ pub fn serve_with(
         let graph_ref = graph.as_deref();
         let episodes_ref = episodes.as_deref();
         let episode_ref = episode.as_deref();
+        let layout_ref = layout.as_deref();
         let resp = {
             let ctx = RouteCtx {
                 root: &root,
@@ -773,6 +819,7 @@ pub fn serve_with(
                 graph: graph_ref,
                 episodes: episodes_ref,
                 episode: episode_ref,
+                layout: layout_ref,
             };
             let mut r = route(&ctx, &method, &url, &body);
             // Inject graph hits into search responses if a graph closure is wired in.
@@ -804,7 +851,9 @@ pub fn serve_with(
 /// Back-compat shim for callers that don't have an auditor. Renders the
 /// dashboard, browse, search and a 503 audit playground.
 pub fn serve(wiki_root: &Path, port: u16) -> std::io::Result<()> {
-    serve_with(wiki_root, port, None, None, None, None, None, None, None)
+    serve_with(
+        wiki_root, port, None, None, None, None, None, None, None, None,
+    )
 }
 
 fn extract_search_query(url: &str) -> Option<String> {

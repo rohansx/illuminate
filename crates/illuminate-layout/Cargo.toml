@@ -1,0 +1,13 @@
+[package]
+name = "illuminate-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic 3D force-directed graph layout for illuminate's graph visualization — a Rust port of codebase-memory-mcp's layout3d.c (MIT)"
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

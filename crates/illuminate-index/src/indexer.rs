@@ -161,6 +161,18 @@ impl CodeIndex {
         storage::list_import_edges(&self.conn)
     }
 
+    /// Every symbol in the index, sorted deterministically. Backs the
+    /// graph-visualization node set (`/api/layout`).
+    pub fn list_all_symbols(&self) -> Result<Vec<crate::symbols::Symbol>> {
+        storage::list_all_symbols(&self.conn)
+    }
+
+    /// Every edge in the index, sorted deterministically. Backs the
+    /// graph-visualization edge set (`/api/layout`).
+    pub fn list_all_edges(&self) -> Result<Vec<crate::edges::Edge>> {
+        storage::list_all_edges(&self.conn)
+    }
+
     /// Enrich an anchor with symbol information.
     ///
     /// Given an anchor with just a file_path, finds the best matching symbol

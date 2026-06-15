@@ -248,6 +248,45 @@ pub fn list_import_edges(conn: &Connection) -> Result<Vec<Edge>> {
         .map_err(Into::into)
 }
 
+/// Every symbol in the index, sorted deterministically by
+/// (file_path, line_start, name). Backs the graph-visualization node set.
+pub fn list_all_symbols(conn: &Connection) -> Result<Vec<Symbol>> {
+    let mut stmt = conn.prepare(
+        "SELECT file_path, name, symbol_type, signature, visibility, line_start, line_end, hash, language
+         FROM symbols
+         ORDER BY file_path, line_start, name",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Symbol {
+            file_path: row.get(0)?,
+            name: row.get(1)?,
+            symbol_type: parse_symbol_type(&row.get::<_, String>(2)?),
+            signature: row.get(3)?,
+            visibility: parse_visibility(&row.get::<_, String>(4)?),
+            line_start: row.get(5)?,
+            line_end: row.get(6)?,
+            hash: row.get(7)?,
+            language: row.get(8)?,
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
+}
+
+/// Every edge in the index, sorted deterministically. Backs the
+/// graph-visualization edge set (the renderer keeps only edges whose endpoints
+/// resolve to known nodes).
+pub fn list_all_edges(conn: &Connection) -> Result<Vec<Edge>> {
+    let mut stmt = conn.prepare(
+        "SELECT source_qualified, target_qualified, kind, file_path, line
+         FROM edges
+         ORDER BY source_qualified, target_qualified, line",
+    )?;
+    let rows = stmt.query_map([], row_to_edge)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
+}
+
 /// Outgoing edges for a qualified name.
 pub fn lookup_outgoing(conn: &Connection, source: &str) -> Result<Vec<Edge>> {
     let mut stmt = conn.prepare(

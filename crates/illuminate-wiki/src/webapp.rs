@@ -25,6 +25,11 @@ const V4_JS: &str = include_str!("../../../illuminate-web/illuminate-v4.js");
 // live data — built to ONE self-contained file. Served at `/cloud` by
 // `illuminate cloud serve`. Regenerate with `cd illuminate-web/cloud && npm run build`.
 const CLOUD_HTML: &str = include_str!("../../../illuminate-web/cloud/dist/index.html");
+// The graph-visualization island: a React + react-three-fiber app that fetches
+// /api/layout and renders illuminate's code + decision graphs as a 3D galaxy.
+// Built to ONE self-contained file. Served at `/graph` by `illuminate wiki
+// serve`. Regenerate with `cd illuminate-web/graph && npm run build`.
+const GRAPH_HTML: &str = include_str!("../../../illuminate-web/graph/dist/index.html");
 
 const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
@@ -37,6 +42,7 @@ const JS: &str = "application/javascript; charset=utf-8";
 pub fn asset(path: &str) -> Option<(&'static str, &'static str)> {
     match path {
         "/app" | "/dashboard" | "/dashboard.html" => Some((HTML, DASHBOARD_HTML)),
+        "/graph" => Some((HTML, GRAPH_HTML)),
         "/index.html" | "/landing" => Some((HTML, INDEX_HTML)),
         "/illuminate-v4.css" => Some((CSS, V4_CSS)),
         "/illuminate-dashboard.css" => Some((CSS, DASHBOARD_CSS)),

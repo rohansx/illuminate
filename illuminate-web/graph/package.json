@@ -1,0 +1,28 @@
+{
+  "name": "illuminate-graph-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Illuminate graph visualization — a React + react-three-fiber island that renders illuminate's code + decision graphs as a 3D galaxy from /api/layout. Renderer technique adapted from codebase-memory-mcp graph-ui (MIT).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0",
+    "@react-three/fiber": "^8.17.10",
+    "@react-three/drei": "^9.114.3",
+    "@react-three/postprocessing": "^2.16.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.1.0"
+  }
+}

@@ -16,6 +16,7 @@ pub mod explain;
 pub mod export;
 pub mod failure;
 pub mod failures;
+pub mod graph_layout;
 pub mod hook;
 pub mod hook_install;
 pub mod impact;

@@ -364,6 +364,17 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         })
     };
 
+    // Graph-layout source for /api/layout — the 3D `/graph` visualization.
+    // Builds the GraphData payload from the repo's code graph (index.db) and
+    // decision graph (graph.db) per the requested layer. Best-effort: a missing
+    // graph yields an empty payload so the viz renders an honest empty state.
+    let layout: std::sync::Arc<illuminate_wiki::serve::LayoutFn> = {
+        let root = repo_root()?;
+        std::sync::Arc::new(move |layer: &str, max_nodes: usize| -> serde_json::Value {
+            super::graph_layout::build_layout(&root, layer, max_nodes)
+        })
+    };
+
     illuminate_wiki::serve::serve_with(
         &dir,
         port,
@@ -374,6 +385,7 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         Some(graph_stats),
         Some(episodes),
         Some(episode),
+        Some(layout),
     )
 }
 

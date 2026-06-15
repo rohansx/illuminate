@@ -45,6 +45,7 @@ fn ctx_for<'a>(root: &'a Path) -> RouteCtx<'a> {
         graph: None,
         episodes: None,
         episode: None,
+        layout: None,
     }
 }
 
@@ -151,6 +152,7 @@ fn audit_playground_post_returns_response_page() {
         graph: None,
         episodes: None,
         episode: None,
+        layout: None,
     };
 
     let resp = route(&ctx, "POST", "/audit", "plan=add+Redis+caching");
@@ -204,6 +206,7 @@ fn api_audit_post_returns_audit_result_json() {
         graph: None,
         episodes: None,
         episode: None,
+        layout: None,
     };
 
     let resp = route(&ctx, "POST", "/api/audit", r#"{"plan":"add Redis"}"#);

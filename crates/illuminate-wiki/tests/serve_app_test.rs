@@ -14,6 +14,7 @@ fn ctx_for(root: &Path) -> RouteCtx<'_> {
         graph: None,
         episodes: None,
         episode: None,
+        layout: None,
     }
 }
 

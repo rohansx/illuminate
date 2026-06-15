@@ -6,7 +6,10 @@ Crate-by-crate breakdown: responsibility, public API surface, dependencies, and 
 
 ## Workspace layout
 
-The workspace ships **17 crates** today (all directories under `crates/`).
+The workspace ships **18 crates** today (all directories under `crates/`). The
+newest, `illuminate-layout`, is a pure deterministic 3D force-directed graph
+layout (a Rust port of codebase-memory-mcp's `layout3d.c`, MIT) that powers the
+`/graph` visualization via `GET /api/layout`.
 
 **Core (shipped through v0.18):**
 
