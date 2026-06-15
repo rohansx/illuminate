@@ -1,0 +1,359 @@
+//! `illuminate policy` — the gatekeeper. Evaluates a tool call against the
+//! repo's Rhai policy (`.illuminate/policy.rhai`, or the bundled conservative
+//! default) in deny → ask → allow order, records every decision to a local
+//! ledger, and — as a Claude Code PreToolUse hook — returns the allow/deny/ask
+//! verdict in the host-agent protocol so illuminate sits in the live tool-call
+//! path, not just advising after the fact.
+
+use clap::Subcommand;
+use illuminate_policy::{Decision, Engine, EvalRequest, RuleSet, default_ruleset};
+use serde_json::{Value, json};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+#[derive(Subcommand)]
+pub enum PolicyCmd {
+    /// Evaluate a single tool call and print the decision (allow/deny/ask)
+    Check {
+        /// Tool name (e.g. Bash, Read, WebFetch)
+        tool: String,
+        /// For Bash: the command
+        #[arg(long)]
+        cmd: Option<String>,
+        /// For Read/Edit/Write: the file path
+        #[arg(long)]
+        path: Option<String>,
+        /// For WebFetch: the URL
+        #[arg(long)]
+        url: Option<String>,
+        /// Emit JSON instead of a human line
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the full rule-by-rule trace for a tool call (why a decision was reached)
+    Trace {
+        /// Tool name
+        tool: String,
+        #[arg(long)]
+        cmd: Option<String>,
+        #[arg(long)]
+        path: Option<String>,
+        #[arg(long)]
+        url: Option<String>,
+    },
+    /// PreToolUse hook: read the tool call from stdin, decide, emit the
+    /// host-agent permission verdict (allow/deny/ask) on stdout
+    Hook,
+    /// Show the most recent policy decisions from the ledger
+    Recent {
+        /// Max rows
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        /// Emit JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+pub fn run(cmd: PolicyCmd) -> std::io::Result<()> {
+    match cmd {
+        PolicyCmd::Check {
+            tool,
+            cmd,
+            path,
+            url,
+            json,
+        } => cmd_check(tool, cmd, path, url, json),
+        PolicyCmd::Trace {
+            tool,
+            cmd,
+            path,
+            url,
+        } => cmd_trace(tool, cmd, path, url),
+        PolicyCmd::Hook => cmd_hook(),
+        PolicyCmd::Recent { limit, json } => cmd_recent(limit, json),
+    }
+}
+
+fn cmd_recent(limit: usize, as_json: bool) -> std::io::Result<()> {
+    let rows = recent_decisions(&repo_root(), limit);
+    if as_json {
+        println!("{}", Value::Array(rows));
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("(no policy decisions recorded yet)");
+        return Ok(());
+    }
+    for r in &rows {
+        let s = |k: &str| r.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        let detail = [s("cmd"), s("path"), s("url")]
+            .into_iter()
+            .find(|x| !x.is_empty())
+            .unwrap_or("");
+        println!(
+            "{:<6} {:<8} {}  [{}]",
+            s("decision").to_uppercase(),
+            s("tool"),
+            detail,
+            s("rule")
+        );
+    }
+    Ok(())
+}
+
+/// Find the repo root (nearest ancestor with `.illuminate/`), defaulting to cwd.
+fn repo_root() -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut cur = Some(cwd.as_path());
+    while let Some(d) = cur {
+        if d.join(".illuminate").is_dir() {
+            return d.to_path_buf();
+        }
+        cur = d.parent();
+    }
+    cwd
+}
+
+/// The repo's policy ruleset: `.illuminate/policy.rhai` if present, else the
+/// bundled conservative default.
+fn ruleset_for(engine: &Engine, root: &Path) -> RuleSet {
+    let custom = root.join(".illuminate").join("policy.rhai");
+    if custom.is_file() {
+        match RuleSet::load(engine, &custom) {
+            Ok(rs) => return rs,
+            Err(e) => eprintln!("illuminate: policy.rhai parse error ({e}); using default policy"),
+        }
+    }
+    default_ruleset(engine)
+}
+
+fn make_request(
+    tool: &str,
+    cmd: Option<String>,
+    path: Option<String>,
+    url: Option<String>,
+    root: &Path,
+) -> EvalRequest {
+    EvalRequest {
+        tool: tool.to_string(),
+        cmd: cmd.unwrap_or_default(),
+        path: path.unwrap_or_default(),
+        url: url.unwrap_or_default(),
+        cwd: root.display().to_string(),
+        home: std::env::var("HOME").unwrap_or_default(),
+        session_id: String::new(),
+    }
+}
+
+fn cmd_check(
+    tool: String,
+    cmd: Option<String>,
+    path: Option<String>,
+    url: Option<String>,
+    as_json: bool,
+) -> std::io::Result<()> {
+    let root = repo_root();
+    let engine = Engine::new();
+    let rules = ruleset_for(&engine, &root);
+    let req = make_request(&tool, cmd, path, url, &root);
+    let out = engine.eval(&rules, &req);
+    append_ledger(
+        &root,
+        &req,
+        &out.decision,
+        out.rule
+            .as_ref()
+            .map(|r| (r.file.display().to_string(), r.line)),
+        out.rule_text.as_deref(),
+    );
+
+    if as_json {
+        let v = json!({
+            "decision": out.decision.as_str(),
+            "rule": out.rule.map(|r| json!({ "file": r.file.display().to_string(), "line": r.line })),
+            "rule_text": out.rule_text,
+        });
+        println!("{v}");
+    } else {
+        let badge = match out.decision {
+            Decision::Deny => "DENY",
+            Decision::Ask => "ASK",
+            Decision::Allow => "ALLOW",
+        };
+        match &out.rule {
+            Some(r) => println!(
+                "{badge}  ({}:{})  {}",
+                r.file.display(),
+                r.line,
+                out.rule_text.unwrap_or_default()
+            ),
+            None => println!("{badge}  (no rule matched → default)"),
+        }
+    }
+    Ok(())
+}
+
+fn cmd_trace(
+    tool: String,
+    cmd: Option<String>,
+    path: Option<String>,
+    url: Option<String>,
+) -> std::io::Result<()> {
+    let root = repo_root();
+    let engine = Engine::new();
+    let rules = ruleset_for(&engine, &root);
+    let req = make_request(&tool, cmd, path, url, &root);
+    let trace = engine.trace(&rules, &req);
+
+    println!("decision: {}", trace.outcome.decision.as_str());
+    println!("rules (deny → ask → allow order):");
+    for r in &trace.rules {
+        let mark = if r.decisive {
+            "▶"
+        } else if r.matched {
+            "·"
+        } else {
+            " "
+        };
+        println!(
+            "  {mark} [{}] {}:{}  {}",
+            r.verb.as_str(),
+            r.location.file.display(),
+            r.location.line,
+            r.source_text
+        );
+    }
+    Ok(())
+}
+
+/// PreToolUse hook. Reads the Claude Code hook payload from stdin, evaluates the
+/// policy, records the decision, and emits the permission verdict on stdout in
+/// the host-agent's `hookSpecificOutput.permissionDecision` protocol (allow /
+/// deny / ask). Honored-decisions-only: an `ask` lets the agent prompt natively.
+fn cmd_hook() -> std::io::Result<()> {
+    let mut input = String::new();
+    std::io::stdin().read_to_string(&mut input)?;
+    let payload: Value = serde_json::from_str(&input).unwrap_or_default();
+
+    let tool = payload
+        .get("tool_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let tool_input = payload.get("tool_input").cloned().unwrap_or_default();
+    let root = repo_root();
+
+    let mut req = EvalRequest::from_tool_call(tool, &tool_input, &root.display().to_string());
+    if let Some(sid) = payload.get("session_id").and_then(|v| v.as_str()) {
+        req.session_id = sid.to_string();
+    }
+
+    let engine = Engine::new();
+    let rules = ruleset_for(&engine, &root);
+    let out = engine.eval(&rules, &req);
+    append_ledger(
+        &root,
+        &req,
+        &out.decision,
+        out.rule
+            .as_ref()
+            .map(|r| (r.file.display().to_string(), r.line)),
+        out.rule_text.as_deref(),
+    );
+
+    let reason = match (&out.decision, &out.rule_text) {
+        (Decision::Allow, _) => "illuminate policy: allowed".to_string(),
+        (_, Some(t)) => format!("illuminate policy: {t}"),
+        (_, None) => "illuminate policy: default".to_string(),
+    };
+    let verdict = json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": out.decision.as_str(),
+            "permissionDecisionReason": reason,
+        }
+    });
+    let mut stdout = std::io::stdout();
+    writeln!(stdout, "{verdict}")?;
+    Ok(())
+}
+
+/// Append one decision to `.illuminate/policy/ledger.jsonl` (best-effort — a
+/// ledger write must never block a tool call).
+fn append_ledger(
+    root: &Path,
+    req: &EvalRequest,
+    decision: &Decision,
+    rule: Option<(String, u32)>,
+    rule_text: Option<&str>,
+) {
+    let dir = root.join(".illuminate").join("policy");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let entry = json!({
+        "ts": chrono::Utc::now().to_rfc3339(),
+        "tool": req.tool,
+        "cmd": req.cmd,
+        "path": req.path,
+        "url": req.url,
+        "decision": decision.as_str(),
+        "rule": rule.map(|(f, l)| format!("{f}:{l}")),
+        "rule_text": rule_text,
+    });
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("ledger.jsonl"))
+    {
+        let _ = writeln!(f, "{entry}");
+    }
+}
+
+/// Read the most recent ledger decisions (newest first), up to `limit`. Used by
+/// the `recent_decisions` surface.
+pub fn recent_decisions(root: &Path, limit: usize) -> Vec<Value> {
+    let path = root.join(".illuminate").join("policy").join("ledger.jsonl");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<Value> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .collect();
+    rows.reverse();
+    rows.truncate(limit);
+    rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ledger_roundtrips_recent_decisions() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".illuminate")).unwrap();
+        let req = EvalRequest {
+            tool: "Bash".into(),
+            cmd: "rm -rf /etc".into(),
+            ..Default::default()
+        };
+        append_ledger(
+            tmp.path(),
+            &req,
+            &Decision::Deny,
+            Some(("default.rhai".into(), 5)),
+            Some("deny if ..."),
+        );
+        append_ledger(tmp.path(), &req, &Decision::Allow, None, None);
+
+        let recent = recent_decisions(tmp.path(), 10);
+        assert_eq!(recent.len(), 2);
+        // newest first
+        assert_eq!(recent[0]["decision"], "allow");
+        assert_eq!(recent[1]["decision"], "deny");
+        assert_eq!(recent[1]["rule"], "default.rhai:5");
+    }
+}

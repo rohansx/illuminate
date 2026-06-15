@@ -29,6 +29,7 @@ pub mod models;
 pub mod onboard;
 pub mod oncall;
 pub mod patterns;
+pub mod policy;
 pub mod publish;
 pub mod query;
 pub mod rebuild;

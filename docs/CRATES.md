@@ -6,10 +6,13 @@ Crate-by-crate breakdown: responsibility, public API surface, dependencies, and 
 
 ## Workspace layout
 
-The workspace ships **18 crates** today (all directories under `crates/`). The
-newest, `illuminate-layout`, is a pure deterministic 3D force-directed graph
-layout (a Rust port of codebase-memory-mcp's `layout3d.c`, MIT) that powers the
-`/graph` visualization via `GET /api/layout`.
+The workspace ships **19 crates** today (all directories under `crates/`).
+`illuminate-layout` is a pure deterministic 3D force-directed graph layout (a
+Rust port of codebase-memory-mcp's `layout3d.c`, MIT) that powers the `/graph`
+visualization via `GET /api/layout`. `illuminate-policy` is a Rhai-based
+deny→ask→allow gatekeeper (ported from the author's `homn-policy`, relicensed
+MIT) that turns illuminate from an advisor into an enforcer at tool-call time
+via the `illuminate policy` CLI + PreToolUse hook.
 
 **Core (shipped through v0.18):**
 

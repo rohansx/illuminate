@@ -1,0 +1,19 @@
+[package]
+name = "illuminate-policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rhai-based deny→ask→allow policy engine for illuminate — the gatekeeper half of the audit loop (ported from homn-policy, the author's own Apache-2.0 project, relicensed MIT)"
+
+[dependencies]
+# `sync` makes Rhai's Engine Send + Sync so the policy Engine can live behind an
+# Arc and be shared across the MCP server's worker threads.
+rhai = { version = "1", features = ["sync"] }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

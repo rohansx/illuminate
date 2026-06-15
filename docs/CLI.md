@@ -569,6 +569,21 @@ Scans `--root` (default: current directory) to `--depth` for every repo that has
 
 **JSON API:** `GET /api/workspace` (the full snapshot, computed once at startup) and `GET /api/workspace/repo/<id>` (live single-repo detail).
 
+### `illuminate policy`
+
+The gatekeeper. Evaluate a tool call against the repo's Rhai policy in **deny → ask → allow** order. Shipped in v0.26 (the enforcement half of the audit loop). Reads `.illuminate/policy.rhai` if present, else a conservative bundled default; a no-match falls through to `ask` (never a silent allow).
+
+```
+illuminate policy check <tool> [--cmd C] [--path P] [--url U] [--json]
+illuminate policy trace <tool> [--cmd C] [--path P] [--url U]
+illuminate policy recent [--limit N] [--json]
+illuminate policy hook        # PreToolUse hook: reads the call from stdin
+```
+
+Policy files are one rule per line — `<verb> if <rhai-expression>;` — with `tool` / `cmd` / `path` / `url` / `cwd` / `home` / `session_id` in scope plus `matches` (glob) and `regex` helpers, e.g. `deny if tool == "Bash" && cmd.contains("rm -rf") && !cwd.starts_with("/tmp");`.
+
+**`illuminate policy hook`** is a Claude Code **PreToolUse hook**: it reads the tool call from stdin and emits the verdict in the host-agent `hookSpecificOutput.permissionDecision` protocol (`allow` / `deny` / `ask`) — an `ask` lets the agent prompt natively. Wire it into your agent's PreToolUse hooks; every decision is recorded to `.illuminate/policy/ledger.jsonl` (read it with `illuminate policy recent`).
+
 ### `illuminate wiki lint`
 
 Validate every wiki page against `SCHEMA.md`.

@@ -4,6 +4,7 @@ target/
 .illuminate/graph.db-wal
 .illuminate/index.db
 .illuminate/trail/
+.illuminate/policy/
 .env
 *.db-shm
 *.db-wal
