@@ -106,6 +106,10 @@ Dark mode, mobile responsive, single binary.
 
 `illuminate cloud serve --root <dir>` scans a directory for **every** repo that has an `.illuminate/graph.db` and aggregates them into one editorial "Illuminate Cloud — Teams" workspace dashboard at **`/cloud`** — a real, local realization of the multi-repo product surface (no cloud backend, no fabricated data). It shows org-level stat cards, a per-repo table with deterministic health (green/yellow/red from graph signals), a merged activity feed, a 28-day activity heatmap, and a git-contributor members list. Click any repo to drill into its episodes, sources, and contributors. Built with Vite + TypeScript in a cream/Fraunces editorial theme; served from the same single binary.
 
+### Graph view — `/graph`
+
+`illuminate wiki serve` also hosts **`/graph`** — an interactive **3D knowledge-graph visualization**. It renders illuminate's own graph as an explorable galaxy: the **code graph** (files as hub-stars, symbols orbiting, clustered by directory) and the **decision graph** (extracted entities + relations), toggleable as layers. Built with React + react-three-fiber over a deterministic Rust force-layout (`illuminate-layout`, a port of [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)'s layout, MIT) — the server computes positions/colors/sizes (`GET /api/layout`) and the browser is a thin renderer. Bloom, orbit controls, hover tooltips, click-to-highlight-neighbors. Strictly live data; honest empty state when the graph isn't built yet.
+
 ---
 
 ## The problem
@@ -258,7 +262,7 @@ See [docs/SCHEMA.md](docs/SCHEMA.md) for the wiki page schema.
 
 ## Architecture
 
-Seventeen crates, one binary:
+Eighteen crates, one binary:
 
 | Crate | Responsibility | Status |
 |-------|---------------|--------|
@@ -274,7 +278,8 @@ Seventeen crates, one binary:
 | `illuminate-watch` | Daemon harness + git/GitHub ingestion | ✅ shipped |
 | `illuminate-reflect` | Reflexion store (failure capture) | ✅ shipped |
 | `illuminate-route` | Reading-plan generator (FTS5 + semantic RRF) | ✅ shipped |
-| `illuminate-wiki` | Markdown layer + the serve dashboard | ✅ shipped |
+| `illuminate-wiki` | Markdown layer + the serve dashboard (`/app`, `/cloud`, `/graph`) | ✅ shipped |
+| `illuminate-layout` | Deterministic 3D force-directed graph layout (powers `/graph`) | ✅ shipped |
 | `illuminate-mcp` | JSON-RPC MCP server (stdio + HTTP) | ✅ shipped |
 | `illuminate-cli` | The binary | ✅ shipped |
 | `illuminate-enrich` | Pre-LLM prompt enrichment (Stage 1 of the pipeline) | ✅ shipped |

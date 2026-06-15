@@ -4,6 +4,18 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.25.0] — 2026-06-15
+
+### Added — `/graph`: an interactive 3D knowledge-graph visualization
+
+Phase 1 of the consolidation roadmap (folding the best of codebase-memory-mcp / GitNexus / code-review-graph / homn / reflect / rtk into illuminate as the one compounding-context repo). illuminate's only graph render was a static 300-node Mermaid flowchart; this turns its graph into an explorable galaxy.
+
+- **`illuminate-layout` crate.** A deterministic 3D force-directed layout — a Rust port of codebase-memory-mcp's `layout3d.c` (MIT, © 2025 DeusData): ring placement by directory-cluster key → z by call depth → 40 iterations of anchored ForceAtlas2 with Barnes-Hut octree repulsion + edge attraction + a spring back to the seed, plus stellar (Hertzsprung-Russell) coloring by node degree and label-based sizing. Pure and deterministic (seeded LCG keyed on each node's qualified name — same graph always lays out the same way); the browser never lays out, it just renders the emitted `{x,y,z,size,color}`. Graph-agnostic, so it serves both the code and decision graphs. 6 unit tests.
+- **`GET /api/layout?layer=<code|decisions|both>&max_nodes=N`** on `illuminate wiki serve`. Sources the **code graph** (`index.db`: files + symbols, connected by file→symbol containment edges — illuminate's tree-sitter index leaves call targets unresolved without LSP, so containment is the honest structural backbone) and the **decision graph** (`graph.db`: extracted entities + their relations), runs the layout, and emits the `GraphData` JSON contract. Wired via a `LayoutFn` closure so `illuminate-wiki` keeps zero typed dependency on `illuminate-index`/`illuminate-core`. New `illuminate-index` queries `list_all_symbols` / `list_all_edges`.
+- **`/graph` — a React + react-three-fiber island.** A 3D galaxy: nodes as one InstancedMesh of spheres (scales to thousands), edges as one additive-blended `lineSegments`, bloom glow, orbit + idle auto-rotate, a layer toggle (All / Code / Decisions), a hover tooltip, and click-to-highlight-neighbors with a detail panel. Renderer technique adapted from codebase-memory-mcp's `graph-ui` (MIT, credited); the app, its editorial UI, and the illuminate wiring are original. Built as a **separate Vite entry** (`illuminate-web/graph/`) so React/three.js stay contained to `/graph` and the vanilla-TS `/app` dashboard is untouched. Strictly live data — an empty or missing graph renders an honest empty state.
+- **Verified live** against this repo: 3,834 nodes / 3,544 edges across code + decisions, zero console errors. New `illuminate-web/tests/live-graph.spec.ts` Playwright spec asserts the `/api/layout` envelope for every layer + that `/graph` boots, mounts a canvas, and shows honest stats.
+- **Workspace version bump** `0.24.0` → `0.25.0`.
+
 ## [0.24.0] — 2026-06-14
 
 ### Added — `illuminate cloud serve`: the multi-repo "Illuminate Cloud — Teams" workspace dashboard
