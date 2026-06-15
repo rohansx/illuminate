@@ -519,7 +519,8 @@ mod tests {
         cmd_install("claude", Some(tmp.path().to_path_buf())).unwrap();
         cmd_install("claude", Some(tmp.path().to_path_buf())).unwrap(); // second run: no dup
 
-        let cfg: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let cfg: Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let pre = cfg["hooks"]["PreToolUse"].as_array().unwrap();
         // prettier preserved + exactly one policy-hook entry
         assert!(pre.iter().any(|e| e["command"] == "prettier"));
@@ -529,10 +530,14 @@ mod tests {
 
     #[test]
     fn entry_runs_policy_hook_detects_flat_and_nested() {
-        assert!(entry_runs_policy_hook(&json!({ "command": "illuminate policy hook" })));
+        assert!(entry_runs_policy_hook(
+            &json!({ "command": "illuminate policy hook" })
+        ));
         assert!(entry_runs_policy_hook(
             &json!({ "hooks": [{ "type": "command", "command": "illuminate policy hook" }] })
         ));
-        assert!(!entry_runs_policy_hook(&json!({ "command": "illuminate audit-hook" })));
+        assert!(!entry_runs_policy_hook(
+            &json!({ "command": "illuminate audit-hook" })
+        ));
     }
 }
