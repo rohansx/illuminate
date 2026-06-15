@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 mod parse;
 
 pub use parse::{ParseError, RuleSet};
+/// Re-exported so callers can register extra helpers via [`Engine::with_helpers`]
+/// without taking a direct `rhai` dependency.
+pub use rhai;
 
 /// The decision a policy reaches for a tool call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,8 +158,18 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Build an engine with default sandbox limits.
+    /// Build an engine with default sandbox limits + the built-in `matches` /
+    /// `regex` helpers.
     pub fn new() -> Self {
+        Self::with_helpers(|_| {})
+    }
+
+    /// Like [`new`](Self::new) but lets the caller register additional Rhai
+    /// helper functions before the engine is sealed — e.g. graph-backed
+    /// predicates (`recently_edited(path)`, `decisions_referencing(entity)`) so
+    /// policy rules can reason over what illuminate knows. The CLI wires those
+    /// in (keeping `illuminate-policy` free of any `illuminate-core` dependency).
+    pub fn with_helpers<F: FnOnce(&mut RhaiEngine)>(extra: F) -> Self {
         let mut inner = RhaiEngine::new();
         inner.set_max_operations(100_000);
         inner.set_max_call_levels(32);
@@ -165,6 +178,7 @@ impl Engine {
         inner.set_max_modules(8);
         inner.set_max_expr_depths(64, 64);
         register_helpers(&mut inner);
+        extra(&mut inner);
         Self {
             inner: std::sync::Arc::new(inner),
         }

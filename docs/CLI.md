@@ -577,10 +577,13 @@ The gatekeeper. Evaluate a tool call against the repo's Rhai policy in **deny �
 illuminate policy check <tool> [--cmd C] [--path P] [--url U] [--json]
 illuminate policy trace <tool> [--cmd C] [--path P] [--url U]
 illuminate policy recent [--limit N] [--json]
-illuminate policy hook        # PreToolUse hook: reads the call from stdin
+illuminate policy hook                       # PreToolUse hook: reads the call from stdin
+illuminate policy install [--agent claude|codex] [--dir PATH]   # one-command hook wiring
 ```
 
-Policy files are one rule per line — `<verb> if <rhai-expression>;` — with `tool` / `cmd` / `path` / `url` / `cwd` / `home` / `session_id` in scope plus `matches` (glob) and `regex` helpers, e.g. `deny if tool == "Bash" && cmd.contains("rm -rf") && !cwd.starts_with("/tmp");`.
+`illuminate policy install` (v0.28) wires `illuminate policy hook` into the agent's PreToolUse hooks in one step (flat for Claude, nested for Codex; idempotent), so the gate turns on without hand-editing JSON.
+
+Policy files are one rule per line — `<verb> if <rhai-expression>;` — with `tool` / `cmd` / `path` / `url` / `cwd` / `home` / `session_id` in scope plus `matches` (glob) and `regex` helpers, e.g. `deny if tool == "Bash" && cmd.contains("rm -rf") && !cwd.starts_with("/tmp");`. Two **graph-backed helpers** (v0.28) let rules reason over what illuminate knows: `recently_edited(path)` (touched in git in the last 14 days) and `decisions_referencing(text)` (count of graph episodes mentioning a concept) — e.g. `ask if tool == "Edit" && decisions_referencing(path) > 0;`.
 
 **`illuminate policy hook`** is a Claude Code **PreToolUse hook**: it reads the tool call from stdin and emits the verdict in the host-agent `hookSpecificOutput.permissionDecision` protocol (`allow` / `deny` / `ask`) — an `ask` lets the agent prompt natively. Wire it into your agent's PreToolUse hooks; every decision is recorded to `.illuminate/policy/ledger.jsonl` (read it with `illuminate policy recent`).
 

@@ -53,6 +53,15 @@ pub enum PolicyCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Wire the policy PreToolUse hook into a host agent's config (one-command setup)
+    Install {
+        /// Host agent: claude or codex (both have a PreToolUse permission hook)
+        #[arg(long, default_value = "claude")]
+        agent: String,
+        /// Config root (default: current directory)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
 }
 
 pub fn run(cmd: PolicyCmd) -> std::io::Result<()> {
@@ -72,7 +81,85 @@ pub fn run(cmd: PolicyCmd) -> std::io::Result<()> {
         } => cmd_trace(tool, cmd, path, url),
         PolicyCmd::Hook => cmd_hook(),
         PolicyCmd::Recent { limit, json } => cmd_recent(limit, json),
+        PolicyCmd::Install { agent, dir } => cmd_install(&agent, dir),
     }
+}
+
+/// The command the installed hook runs (the PreToolUse entry point).
+const POLICY_HOOK_CMD: &str = "illuminate policy hook";
+/// Tool-name matcher for the policy hook — the tools the policy reasons about.
+const POLICY_MATCHER: &str = "Bash|Read|Edit|Write|MultiEdit|WebFetch";
+
+/// Wire `illuminate policy hook` into a host agent's PreToolUse hooks. Idempotent
+/// — re-running never duplicates the entry. Claude uses a flat `{matcher, command}`;
+/// Codex nests `{matcher, hooks: [{type, command}]}`.
+fn cmd_install(agent: &str, dir: Option<PathBuf>) -> std::io::Result<()> {
+    let root = dir.unwrap_or(std::env::current_dir()?);
+    let (path, nested) = match agent.trim().to_lowercase().as_str() {
+        "claude" => (root.join(".claude").join("settings.json"), false),
+        "codex" => (root.join(".codex").join("hooks.json"), true),
+        other => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "unknown agent '{other}': policy hook supports claude or codex (PreToolUse)"
+                ),
+            ));
+        }
+    };
+
+    let mut cfg = match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| json!({})),
+        Err(_) => json!({}),
+    };
+    let pre = cfg
+        .as_object_mut()
+        .expect("object")
+        .entry("hooks")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .expect("object")
+        .entry("PreToolUse")
+        .or_insert_with(|| json!([]));
+    let arr = pre.as_array_mut().expect("array");
+
+    if !arr.iter().any(entry_runs_policy_hook) {
+        if nested {
+            arr.push(json!({ "matcher": POLICY_MATCHER, "hooks": [{ "type": "command", "command": POLICY_HOOK_CMD }] }));
+        } else {
+            arr.push(json!({ "matcher": POLICY_MATCHER, "command": POLICY_HOOK_CMD }));
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&cfg).map_err(std::io::Error::other)?,
+    )?;
+    println!(
+        "wired `{POLICY_HOOK_CMD}` into {agent} PreToolUse → {}",
+        path.display()
+    );
+    println!("the policy gate now runs on every {POLICY_MATCHER} call (allow/deny/ask).");
+    Ok(())
+}
+
+/// True if a PreToolUse entry already runs the policy hook (flat or Codex-nested).
+fn entry_runs_policy_hook(entry: &Value) -> bool {
+    let has = |c: Option<&str>| c.is_some_and(|c| c.contains("policy hook"));
+    if has(entry.get("command").and_then(|v| v.as_str())) {
+        return true;
+    }
+    entry
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .is_some_and(|inner| {
+            inner
+                .iter()
+                .any(|h| has(h.get("command").and_then(|v| v.as_str())))
+        })
 }
 
 fn cmd_recent(limit: usize, as_json: bool) -> std::io::Result<()> {
@@ -128,6 +215,66 @@ fn ruleset_for(engine: &Engine, root: &Path) -> RuleSet {
     default_ruleset(engine)
 }
 
+/// Build a policy engine wired with graph-backed Rhai helpers so rules can
+/// reason over what illuminate knows about this repo — the fusion of the
+/// gatekeeper with the decision graph + git history:
+///
+/// - `recently_edited(path)` → was `path` touched in git in the last 14 days?
+/// - `decisions_referencing(text)` → how many graph episodes mention `text`?
+///
+/// e.g. `ask if tool == "Edit" && decisions_referencing(path) > 0;` (pause
+/// before editing a file the team has recorded decisions about).
+fn build_engine(root: &Path) -> Engine {
+    let r1 = root.to_path_buf();
+    let r2 = root.to_path_buf();
+    Engine::with_helpers(move |e| {
+        e.register_fn("recently_edited", move |path: &str| {
+            recently_edited(&r1, path)
+        });
+        e.register_fn("decisions_referencing", move |text: &str| {
+            decisions_referencing(&r2, text)
+        });
+    })
+}
+
+/// True if `path` was modified in git within the last 14 days. Best-effort:
+/// any git failure (not a repo, no history) is a non-match (false).
+fn recently_edited(root: &Path, path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "log",
+            "-1",
+            "--since=14 days ago",
+            "--format=%H",
+            "--",
+            path,
+        ])
+        .output();
+    matches!(out, Ok(o) if o.status.success() && !o.stdout.is_empty())
+}
+
+/// Count graph episodes that reference `text` (decisions/patterns/failures the
+/// team has recorded touching this concept). Best-effort: 0 if the graph can't
+/// be opened or the query fails.
+fn decisions_referencing(root: &Path, text: &str) -> i64 {
+    if text.trim().is_empty() {
+        return 0;
+    }
+    let db = root.join(".illuminate").join("graph.db");
+    match illuminate::Graph::open(&db) {
+        Ok(graph) => graph
+            .search(text, 50)
+            .map(|hits| hits.len() as i64)
+            .unwrap_or(0),
+        Err(_) => 0,
+    }
+}
+
 fn make_request(
     tool: &str,
     cmd: Option<String>,
@@ -154,7 +301,7 @@ fn cmd_check(
     as_json: bool,
 ) -> std::io::Result<()> {
     let root = repo_root();
-    let engine = Engine::new();
+    let engine = build_engine(&root);
     let rules = ruleset_for(&engine, &root);
     let req = make_request(&tool, cmd, path, url, &root);
     let out = engine.eval(&rules, &req);
@@ -201,7 +348,7 @@ fn cmd_trace(
     url: Option<String>,
 ) -> std::io::Result<()> {
     let root = repo_root();
-    let engine = Engine::new();
+    let engine = build_engine(&root);
     let rules = ruleset_for(&engine, &root);
     let req = make_request(&tool, cmd, path, url, &root);
     let trace = engine.trace(&rules, &req);
@@ -248,7 +395,7 @@ fn cmd_hook() -> std::io::Result<()> {
         req.session_id = sid.to_string();
     }
 
-    let engine = Engine::new();
+    let engine = build_engine(&root);
     let rules = ruleset_for(&engine, &root);
     let out = engine.eval(&rules, &req);
     append_ledger(
@@ -355,5 +502,37 @@ mod tests {
         assert_eq!(recent[0]["decision"], "allow");
         assert_eq!(recent[1]["decision"], "deny");
         assert_eq!(recent[1]["rule"], "default.rhai:5");
+    }
+
+    #[test]
+    fn install_is_idempotent_and_preserves_other_hooks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let settings = tmp.path().join(".claude").join("settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        // Pre-existing unrelated PreToolUse hook must survive.
+        std::fs::write(
+            &settings,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Write","command":"prettier"}]}}"#,
+        )
+        .unwrap();
+
+        cmd_install("claude", Some(tmp.path().to_path_buf())).unwrap();
+        cmd_install("claude", Some(tmp.path().to_path_buf())).unwrap(); // second run: no dup
+
+        let cfg: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let pre = cfg["hooks"]["PreToolUse"].as_array().unwrap();
+        // prettier preserved + exactly one policy-hook entry
+        assert!(pre.iter().any(|e| e["command"] == "prettier"));
+        let policy_entries = pre.iter().filter(|e| entry_runs_policy_hook(e)).count();
+        assert_eq!(policy_entries, 1, "idempotent: exactly one policy hook");
+    }
+
+    #[test]
+    fn entry_runs_policy_hook_detects_flat_and_nested() {
+        assert!(entry_runs_policy_hook(&json!({ "command": "illuminate policy hook" })));
+        assert!(entry_runs_policy_hook(
+            &json!({ "hooks": [{ "type": "command", "command": "illuminate policy hook" }] })
+        ));
+        assert!(!entry_runs_policy_hook(&json!({ "command": "illuminate audit-hook" })));
     }
 }
