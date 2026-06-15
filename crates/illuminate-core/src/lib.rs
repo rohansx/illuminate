@@ -3,6 +3,7 @@ pub mod graph;
 pub mod query;
 pub mod storage;
 pub mod types;
+pub mod vector;
 
 pub use error::{IlluminateError, Result};
 pub use graph::Graph;

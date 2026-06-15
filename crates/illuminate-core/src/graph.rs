@@ -490,18 +490,18 @@ impl Graph {
         }
 
         // --- Semantic (cosine similarity) ranked list ---
+        // Routed through the swappable `VectorIndex` trait. The exact
+        // `FlatIndex` keeps the deterministic brute-force behaviour; callers
+        // that hold a long-lived `HnswIndex` (the MCP server, batch search) can
+        // scale past the brute-force comfort zone without changing this code.
+        // Only the top `fts_pool` semantic hits feed RRF — deeper ranks
+        // contribute a negligible `1/(K+rank)` and bounding them lets an ANN
+        // backend return early.
         let all_embeddings = self.get_embeddings()?;
         if !all_embeddings.is_empty() && !query_embedding.is_empty() {
-            // Compute cosine similarities
-            let mut semantic: Vec<(String, f32)> = all_embeddings
-                .into_iter()
-                .map(|(id, vec)| {
-                    let sim = cosine_similarity(query_embedding, &vec);
-                    (id, sim)
-                })
-                .collect();
-            // Sort descending by similarity
-            semantic.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            use crate::vector::VectorIndex;
+            let index = crate::vector::FlatIndex::new(all_embeddings);
+            let semantic = index.search(query_embedding, fts_pool);
 
             for (rank, (ep_id, _sim)) in semantic.into_iter().enumerate() {
                 let rrf = 1.0 / (K + rank as f64 + 1.0);
@@ -636,20 +636,4 @@ fn extract_files_from_metadata(episode: &Episode) -> Vec<String> {
     }
 
     files
-}
-
-/// Compute cosine similarity between two f32 vectors.
-/// Returns 0.0 if either vector has zero magnitude.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let mag_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let mag_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if mag_a == 0.0 || mag_b == 0.0 {
-        0.0
-    } else {
-        dot / (mag_a * mag_b)
-    }
 }
