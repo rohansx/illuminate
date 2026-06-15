@@ -4,6 +4,17 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.28.0] — 2026-06-15
+
+### Added — policy gatekeeper, finished: graph-backed rules + one-command install
+
+The deferred Phase-2 follow-ups that turn the policy gate from "a thing you wire up by hand" into "one command, and rules that reason over what illuminate knows."
+
+- **Graph-backed Rhai helpers.** Policy rules can now consult the decision graph and git history via two new helpers, registered on the engine by the CLI (so `illuminate-policy` stays free of any `illuminate-core` dependency — `Engine::with_helpers` takes the extra registrations): `recently_edited(path)` → was the path touched in git in the last 14 days? and `decisions_referencing(text)` → how many graph episodes mention this concept? This is the fusion of the gatekeeper with the knowledge graph — e.g. `ask if tool == "Edit" && decisions_referencing(path) > 0;` (pause before editing a file the team has recorded decisions about).
+- **`illuminate policy install --agent <claude|codex>`.** One command wires `illuminate policy hook` into the agent's PreToolUse hooks (flat for Claude, nested for Codex), matching `Bash|Read|Edit|Write|MultiEdit|WebFetch`. Idempotent — re-running never duplicates the entry. The gate now turns on with a single command instead of hand-edited JSON.
+- **Version alignment.** The workspace Cargo version is bumped to 0.28.0. (It had lagged at 0.26.0 through the v0.27.0 tag — the 0.27.0 release content, the VectorIndex + embedded HNSW, is accurate; only the version string trailed. This corrects it.)
+- **Still deferred:** the policy MCP tools (`query_policy` / `recent_decisions`), the optional resident daemon, and graph-backed-helper coverage in the bundled default policy.
+
 ## [0.27.0] — 2026-06-15
 
 ### Added — swappable `VectorIndex` + pure-Rust embedded HNSW
