@@ -4,6 +4,18 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.26.0] — 2026-06-15
+
+### Added — `illuminate policy`: the gatekeeper (advisor → enforcer)
+
+Phase 2 of the consolidation roadmap. illuminate could *advise* (the audit linter surfaces past decisions/failures) and *remember* (the graph), but it never sat in the allow/deny path at tool-call time. This adds that — the missing enforcement half — by fusing in homn's policy engine.
+
+- **`illuminate-policy` crate (19th crate).** A Rhai-based **deny → ask → allow** policy engine — ported from the author's own `homn-policy` (Apache-2.0) and relicensed MIT. Parses `.rhai` policy files (`<verb> if <expr>;`), compiles each expression once, and evaluates in priority order — a matching `deny` beats `ask` beats `allow`; **no match falls through to `ask`, never a silent allow**. Sandboxed Rhai (operation/recursion/size budgets) with `matches` (glob) + `regex` helpers and `tool`/`cmd`/`path`/`url`/`cwd`/`home`/`session_id` scope variables. Ships a conservative bundled `default.rhai` (denies `rm -rf` outside `/tmp` + curl-pipe-sh + force-push to main; asks on push / WebFetch / sudo; allows the normal cargo/npm/git-read/ls dev loop). `Engine::eval` returns the decision + the firing `file:line`; `Engine::trace` shows every rule and marks the one decisive rule. 14 unit tests. The daemon-only hot-reload watcher is intentionally omitted — illuminate evaluates **cold per tool-call** (no resident process).
+- **`illuminate policy` CLI.** `check <tool> [--cmd|--path|--url]` prints the decision + firing rule; `trace` shows the full rule-by-rule evaluation; `recent [--limit N]` lists recorded decisions; **`hook`** is a Claude Code **PreToolUse hook** — it reads the tool call from stdin, evaluates the repo's `.illuminate/policy.rhai` (or the bundled default), and emits the verdict in the host-agent `hookSpecificOutput.permissionDecision` protocol (`allow` / `deny` / `ask`). Honored-decisions-only: an `ask` lets the agent prompt natively (no fragile PTY interception). Every decision is appended to a local `.illuminate/policy/ledger.jsonl`.
+- **Verified live:** `rm -rf /etc` → deny (rule 9), `cargo build` → allow, `git push origin main` → ask, with the PreToolUse hook emitting the correct permission JSON and the ledger recording each call.
+- **Deferred to a Phase 2 follow-up:** the 3 policy MCP tools (`query_policy` / `explain_decision` / `recent_decisions`), the `hook install` wiring for one-command setup, graph-backed Rhai helpers (`recently_edited(path)`, `decisions_referencing(entity)` so rules can reason over the decision graph), and the optional resident daemon for sub-ms eval.
+- **Workspace version bump** `0.25.0` → `0.26.0`.
+
 ## [0.25.0] — 2026-06-15
 
 ### Added — `/graph`: an interactive 3D knowledge-graph visualization

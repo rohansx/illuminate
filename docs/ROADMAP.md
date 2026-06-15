@@ -22,7 +22,7 @@ The full closed loop is live:
 | **CI** | GitHub Action `audit-pr@master` — comments findings on PRs via `gh`, fails check on `error`-severity violations. Exit codes 0/2/3 per `docs/CLI.md`. | `.github/actions/audit-pr/` |
 | **CLI surface** | `init`, `bootstrap`, `audit`, `audit-diff`, `audit-pr`, `impact`, `explain`, `failure log`, `decisions list/show/for`, `patterns list/show`, `failures list/show`, `index`, `search`, `rebuild`, `wiki serve/redact`, `trail import/list/register/watch/install-service`, `mcp serve`, `models download`, `status`, `stats`. | `illuminate-cli` |
 
-**18 crates. 943 tests passing. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all` clean.**
+**19 crates. 958 tests passing. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all` clean.**
 
 Per-version detail in [`CHANGELOG.md`](../CHANGELOG.md).
 

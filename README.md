@@ -262,7 +262,7 @@ See [docs/SCHEMA.md](docs/SCHEMA.md) for the wiki page schema.
 
 ## Architecture
 
-Eighteen crates, one binary:
+Nineteen crates, one binary:
 
 | Crate | Responsibility | Status |
 |-------|---------------|--------|
@@ -280,6 +280,7 @@ Eighteen crates, one binary:
 | `illuminate-route` | Reading-plan generator (FTS5 + semantic RRF) | ✅ shipped |
 | `illuminate-wiki` | Markdown layer + the serve dashboard (`/app`, `/cloud`, `/graph`) | ✅ shipped |
 | `illuminate-layout` | Deterministic 3D force-directed graph layout (powers `/graph`) | ✅ shipped |
+| `illuminate-policy` | Rhai deny→ask→allow gatekeeper engine (`illuminate policy` + PreToolUse hook) | ✅ shipped |
 | `illuminate-mcp` | JSON-RPC MCP server (stdio + HTTP) | ✅ shipped |
 | `illuminate-cli` | The binary | ✅ shipped |
 | `illuminate-enrich` | Pre-LLM prompt enrichment (Stage 1 of the pipeline) | ✅ shipped |
