@@ -412,6 +412,7 @@ mod tests {
             trace_id: String::new(),
             policies_applied: Vec::new(),
             wiki_url: None,
+            risk: None,
         }
     }
 

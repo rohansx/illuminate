@@ -1,34 +1,41 @@
-//! `illuminate audit-diff [BASE]` — audit the set of files changed since
-//! a git base ref.
+//! `illuminate review --base <ref>` — offline risk-gated PR review.
 //!
-//! Thin wrapper over [`Auditor::audit_with_files`]: resolves the changed
-//! file list via `git diff --name-only <BASE>...HEAD`, filters to existing
-//! paths (deletions are skipped for v0.6 — there's no file content to
-//! audit), and reuses the same env-config + embed loading the regular
-//! `audit` command does. Mirrors `audit::print_human` for the human path
-//! and exits 0/2/3 to match `audit` (Pass=0, Violation=2, Warning=3).
+//! Resolves the changed-file list via `git diff --name-only <base>...HEAD`,
+//! runs `Auditor::review_pr` (audit + risk fold), and exits **5** when the
+//! computed risk band meets or exceeds `--fail-on-risk`. Other exit codes
+//! match the audit convention: 0 = pass, 2 = violation, 3 = warning.
+//!
+//! Designed for offline CI use — no GitHub API call, no gh dependency.
 
 use std::path::PathBuf;
 
 use illuminate_audit::Auditor;
 use illuminate_audit::resolve_index_db_from_cwd;
 use illuminate_audit::resolve_repo_root_from_cwd;
-use illuminate_audit::response::{AuditResult, AuditStatus};
+use illuminate_audit::response::{AuditResult, AuditStatus, RiskBand};
 use serde::Serialize;
 
 use super::audit::{load_audit_config, load_policies};
 use super::{git_changed_files, open_graph};
 
-/// Cap on impacted-symbol entries shown in human-readable output —
-/// matches the `audit` command's cap so the two views render identically.
+const HUMAN_FILE_LIMIT: usize = 10;
 const HUMAN_IMPACT_LIMIT: usize = 10;
 
-/// Cap on relevant-decision entries. Lower than `HUMAN_IMPACT_LIMIT` because
-/// each is a multi-line preview.
-const HUMAN_RELEVANT_LIMIT: usize = 5;
+/// Run the `review` subcommand.
+pub fn run(
+    base: String,
+    fail_on_risk: Option<String>,
+    index_db: Option<PathBuf>,
+    json: bool,
+) -> illuminate::Result<()> {
+    let gate: Option<RiskBand> = match fail_on_risk.as_deref() {
+        Some(s) => Some(
+            s.parse::<RiskBand>()
+                .map_err(illuminate::IlluminateError::Extraction)?,
+        ),
+        None => None,
+    };
 
-/// Run the `audit-diff` subcommand.
-pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::Result<()> {
     let changed = git_changed_files(&base)?;
 
     if changed.is_empty() {
@@ -42,13 +49,12 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
                 .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?;
             println!("{s}");
         } else {
-            println!("no changes since {base}; 0 changed files");
+            println!("review {base}: no changed files — nothing to review");
         }
         return Ok(());
     }
 
-    let plan_text = format!("changes since {base}");
-
+    let plan_text = format!("review changes since {base}");
     let graph = open_graph()?;
     let policies = load_policies()?;
     let audit_config = load_audit_config()?;
@@ -56,8 +62,6 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
     let resolved_root = resolve_repo_root_from_cwd();
     let embed = super::audit::try_load_embed_pub();
 
-    // Build an Auditor wired with whatever index/embed combination is
-    // available — same fall-throughs as `audit::run`.
     let result = match resolved_index {
         Some(path) => {
             let auditor = Auditor::with_index_root_and_embed(
@@ -70,7 +74,7 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
                 audit_config.semantic_threshold,
             );
             auditor
-                .audit_with_files(&plan_text, &changed)
+                .review_pr(&plan_text, &changed)
                 .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?
         }
         None => {
@@ -78,7 +82,7 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
                 Some(e) => Auditor::with_index_root_and_embed(
                     graph,
                     policies,
-                    PathBuf::from("/nonexistent/illuminate-audit-no-index.db"),
+                    PathBuf::from("/nonexistent/illuminate-review-no-index.db"),
                     None::<PathBuf>,
                     Some(e),
                     audit_config.semantic_top_k,
@@ -87,7 +91,7 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
                 None => Auditor::new(graph, policies),
             };
             auditor
-                .audit_with_files(&plan_text, &changed)
+                .review_pr(&plan_text, &changed)
                 .map_err(|e| illuminate::IlluminateError::Extraction(e.to_string()))?
         }
     };
@@ -105,10 +109,20 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
         print_human(&base, &changed, &result);
     }
 
-    // Exit with appropriate code (per docs/CLI.md):
-    //   Pass      = 0
-    //   Violation = 2 (blocking)
-    //   Warning   = 3 (non-blocking, distinct from violation)
+    // Risk gate — exit 5 when the band meets or exceeds the threshold.
+    if let (Some(gate), Some(risk)) = (gate.as_ref(), result.risk.as_ref())
+        && risk.band.fails(gate)
+    {
+        eprintln!(
+            "risk gate breached: band={} score={:.3} >= {}",
+            risk.band.as_str(),
+            risk.score,
+            gate.as_str(),
+        );
+        std::process::exit(5);
+    }
+
+    // Audit status exit codes (see docs/AUDIT.md).
     match result.status {
         AuditStatus::Pass => {}
         AuditStatus::Warning => std::process::exit(3),
@@ -118,25 +132,34 @@ pub fn run(base: String, index_db: Option<PathBuf>, json: bool) -> illuminate::R
     Ok(())
 }
 
-/// JSON envelope for `--json` output. Carries the base ref + changed file
-/// list alongside the audit result so consumers don't need a separate
-/// query to know what was audited.
-#[derive(Serialize)]
-struct JsonOutput<'a> {
-    base: &'a str,
-    changed_files: &'a [PathBuf],
-    audit: Option<&'a AuditResult>,
+/// Format the risk score as a human-readable line.
+pub fn format_risk(risk: &illuminate_audit::response::RiskScore) -> String {
+    format!(
+        "risk: {} ({:.3}) [{}]",
+        risk.band.as_str(),
+        risk.score,
+        risk.factors
+            .iter()
+            .map(|f| format!("{}={:.2}", f.name, f.weighted))
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
 }
 
 fn print_human(base: &str, changed: &[PathBuf], result: &AuditResult) {
-    println!("audit-diff {} ({} changed files)", base, changed.len());
-    for f in changed.iter().take(HUMAN_IMPACT_LIMIT) {
+    println!("review {} ({} changed files)", base, changed.len());
+    for f in changed.iter().take(HUMAN_FILE_LIMIT) {
         println!("  - {}", f.display());
     }
-    if changed.len() > HUMAN_IMPACT_LIMIT {
-        println!("  ... ({} more)", changed.len() - HUMAN_IMPACT_LIMIT);
+    if changed.len() > HUMAN_FILE_LIMIT {
+        println!("  ... ({} more)", changed.len() - HUMAN_FILE_LIMIT);
     }
     println!();
+
+    if let Some(risk) = &result.risk {
+        println!("{}", format_risk(risk));
+        println!();
+    }
 
     match result.status {
         AuditStatus::Pass => println!("✓ No violations detected"),
@@ -157,60 +180,39 @@ fn print_human(base: &str, changed: &[PathBuf], result: &AuditResult) {
     }
 
     for v in &result.violations {
-        println!("\n  Conflict: {} ({:?})", v.plan_entity, v.violation_type);
-        if let Some(ref decision) = v.conflicting_decision {
-            println!("  Decision: {}", decision.content);
-            if let Some(ref source) = decision.source {
-                println!("  Source: {source}");
-            }
-        }
+        println!("\n  {:?}: {}", v.violation_type, v.plan_entity);
         println!("  Severity: {:?}", v.severity);
-    }
-
-    if !result.impact.defined_symbols.is_empty() {
-        let count = result.impact.defined_symbols.len();
-        println!();
-        println!("Defined symbols in changed files: {count}");
-        for sym in result
-            .impact
-            .defined_symbols
-            .iter()
-            .take(HUMAN_IMPACT_LIMIT)
-        {
-            println!("  - {sym}");
-        }
-        if count > HUMAN_IMPACT_LIMIT {
-            println!("  ... ({} more)", count - HUMAN_IMPACT_LIMIT);
+        if let Some(ref ev) = v.evidence {
+            let preview: String = ev.chars().take(120).collect();
+            println!("  Evidence: {preview}");
         }
     }
 
     if !result.impact.impacted_symbols.is_empty() {
-        let symbol_count = result.impact.impacted_symbols.len();
-        println!();
-        println!("Blast radius: {symbol_count} symbols impacted");
+        println!("\n  Impacted ({}):", result.impact.impacted_symbols.len());
         for sym in result
             .impact
             .impacted_symbols
             .iter()
             .take(HUMAN_IMPACT_LIMIT)
         {
-            println!("  - {sym}");
+            println!("    {sym}");
         }
-        if symbol_count > HUMAN_IMPACT_LIMIT {
-            println!("  ... ({} more)", symbol_count - HUMAN_IMPACT_LIMIT);
+        if result.impact.impacted_symbols.len() > HUMAN_IMPACT_LIMIT {
+            println!(
+                "    ... ({} more)",
+                result.impact.impacted_symbols.len() - HUMAN_IMPACT_LIMIT
+            );
         }
         if result.impact.truncated {
-            println!("  (results truncated at node cap)");
+            println!("    [blast radius truncated — increase --max-nodes for full view]");
         }
     }
+}
 
-    if !result.relevant_decisions.is_empty() {
-        println!();
-        println!("Related decisions (semantic similarity):");
-        for d in result.relevant_decisions.iter().take(HUMAN_RELEVANT_LIMIT) {
-            let preview = d.content_preview.replace('\n', " ");
-            let label = d.source.as_deref().unwrap_or(&d.episode_id);
-            println!("  - [{label}] ({:.3}) {preview}", d.similarity);
-        }
-    }
+#[derive(Serialize)]
+struct JsonOutput<'a> {
+    base: &'a str,
+    changed_files: &'a [PathBuf],
+    audit: Option<&'a AuditResult>,
 }

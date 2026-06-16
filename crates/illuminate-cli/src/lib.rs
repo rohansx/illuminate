@@ -323,6 +323,27 @@ enum Commands {
         format: Option<String>,
     },
 
+    /// Offline risk-gated PR review: audit changed files + fold a deterministic risk score.
+    ///
+    /// Exit codes: 0=pass 2=violation 3=warning 5=risk-gate-breach.
+    Review {
+        /// Base git ref to diff against (default: HEAD~1)
+        #[arg(default_value = "HEAD~1")]
+        base: String,
+
+        /// Fail with exit 5 if the risk band meets or exceeds this level.
+        #[arg(long, value_name = "BAND")]
+        fail_on_risk: Option<String>,
+
+        /// Path to index.db (default: <repo>/.illuminate/index.db)
+        #[arg(long)]
+        index_db: Option<PathBuf>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Inspect a file's blast-radius via the code graph (read-only).
     Impact {
         /// Files to inspect (repo-relative paths)
@@ -861,6 +882,12 @@ pub fn run() {
             comment,
             format,
         } => commands::audit_pr::run(pr_number, repo, token_env, comment, format),
+        Commands::Review {
+            base,
+            fail_on_risk,
+            index_db,
+            json,
+        } => commands::review::run(base, fail_on_risk, index_db, json),
         Commands::Impact {
             files,
             index_db,

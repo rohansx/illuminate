@@ -216,6 +216,7 @@ impl Auditor {
             trace_id,
             policies_applied,
             wiki_url,
+            risk: None,
         })
     }
 
@@ -318,6 +319,24 @@ impl Auditor {
             }
         }
 
+        Ok(result)
+    }
+
+    /// Audit the files changed since `base_ref` and fold a deterministic risk
+    /// score into the result.
+    ///
+    /// Equivalent to calling [`Self::audit_with_files`] on the git-diff file
+    /// list and then attaching [`fold_risk`] to `AuditResult::risk`. The
+    /// `changed_files` extraction is the caller's responsibility — pass the
+    /// output of `git diff --name-only <base>...HEAD` filtered to existing
+    /// paths. Exit-code mapping: see `docs/AUDIT.md`.
+    pub fn review_pr<P: AsRef<Path>>(
+        &self,
+        plan_text: &str,
+        files: &[P],
+    ) -> illuminate::Result<AuditResult> {
+        let mut result = self.audit_with_files(plan_text, files)?;
+        result.risk = Some(fold_risk(&result));
         Ok(result)
     }
 
@@ -974,3 +993,186 @@ static REJECTION_INDICATORS: &[&str] = &[
     "replaced",
     "switched from",
 ];
+
+/// Compute a deterministic risk score from an `AuditResult`.
+///
+/// Pure fold — no I/O, no LLM. Same input always returns the same output.
+///
+/// Weight table (pinned — change this and the `risk_fold_is_pinned` test fails):
+///
+/// | Signal | Formula | Weight |
+/// |---|---|---|
+/// | `max_severity` | Error→1.0 Warning→0.5 Info→0.2 None→0.0 | 0.45 |
+/// | `blast_radius` | min(impacted\_symbols.len()/20, 1.0) | 0.25 |
+/// | `policy_hits`  | min(policy\_violations.len()/5, 1.0) | 0.20 |
+/// | `truncated`    | 1.0 if capped else 0.0 | 0.10 |
+///
+/// Band ladder: score < 0.40 → Low, [0.40, 0.70) → Medium, [0.70, 0.85) → High,
+/// ≥ 0.85 → Critical.
+pub fn fold_risk(result: &AuditResult) -> response::RiskScore {
+    use response::{RiskBand, RiskFactor, RiskScore, Severity};
+
+    let max_sev = result
+        .violations
+        .iter()
+        .map(|v| &v.severity)
+        .chain(result.policy_violations.iter().map(|v| &v.severity))
+        .fold(0.0f64, |acc, s| {
+            acc.max(match s {
+                Severity::Error => 1.0,
+                Severity::Warning => 0.5,
+                Severity::Info => 0.2,
+            })
+        });
+
+    let blast = (result.impact.impacted_symbols.len() as f64 / 20.0).min(1.0);
+    let policy = (result.policy_violations.len() as f64 / 5.0).min(1.0);
+    let trunc = if result.impact.truncated { 1.0 } else { 0.0 };
+
+    let factors = vec![
+        RiskFactor {
+            name: "max_severity".into(),
+            raw: max_sev,
+            weight: 0.45,
+            weighted: max_sev * 0.45,
+        },
+        RiskFactor {
+            name: "blast_radius".into(),
+            raw: blast,
+            weight: 0.25,
+            weighted: blast * 0.25,
+        },
+        RiskFactor {
+            name: "policy_hits".into(),
+            raw: policy,
+            weight: 0.20,
+            weighted: policy * 0.20,
+        },
+        RiskFactor {
+            name: "truncated".into(),
+            raw: trunc,
+            weight: 0.10,
+            weighted: trunc * 0.10,
+        },
+    ];
+
+    let score: f64 = factors
+        .iter()
+        .map(|f| f.weighted)
+        .sum::<f64>()
+        .clamp(0.0, 1.0);
+    let band = RiskBand::from_score(score);
+
+    RiskScore {
+        score,
+        band,
+        factors,
+    }
+}
+
+#[cfg(test)]
+mod risk_tests {
+    use super::*;
+    use crate::policy::PolicyViolation;
+    use response::{AuditResult, AuditStatus, ImpactInfo, RiskBand, Violation, ViolationType};
+
+    fn empty_result() -> AuditResult {
+        AuditResult {
+            status: AuditStatus::Pass,
+            violations: vec![],
+            policy_violations: vec![],
+            reflexions: vec![],
+            impact: ImpactInfo::default(),
+            relevant_decisions: vec![],
+            trace_id: String::new(),
+            policies_applied: vec![],
+            wiki_url: None,
+            risk: None,
+        }
+    }
+
+    #[test]
+    fn risk_fold_is_pinned() {
+        // Pinned inputs → pinned outputs. Changing the weight table breaks this.
+        // Case A: all-pass, nothing impacted → Low (score = 0.0)
+        let result = empty_result();
+        let rs = fold_risk(&result);
+        assert_eq!(rs.band, RiskBand::Low);
+        assert!((rs.score - 0.0).abs() < 1e-9);
+
+        // Case B: 1 Error violation, 10 impacted, 0 policy, not truncated
+        // severity:  1.0 * 0.45 = 0.450
+        // blast:     0.5 * 0.25 = 0.125
+        // policy:    0.0 * 0.20 = 0.000
+        // truncated: 0.0 * 0.10 = 0.000
+        // total = 0.575 → Medium
+        let mut r = empty_result();
+        r.violations.push(Violation {
+            violation_type: ViolationType::DecisionConflict,
+            plan_entity: "foo".into(),
+            conflicting_decision: None,
+            code_anchors: vec![],
+            severity: response::Severity::Error,
+            evidence: None,
+            confidence: 0.8,
+        });
+        r.impact.impacted_symbols = (0..10).map(|i| format!("sym{i}")).collect();
+        let rs = fold_risk(&r);
+        assert_eq!(rs.band, RiskBand::Medium);
+        assert!((rs.score - 0.575).abs() < 1e-9);
+
+        // Case C: Error + full blast (20 symbols) → High (score = 0.70)
+        let mut r = empty_result();
+        r.violations.push(Violation {
+            violation_type: ViolationType::DecisionConflict,
+            plan_entity: "bar".into(),
+            conflicting_decision: None,
+            code_anchors: vec![],
+            severity: response::Severity::Error,
+            evidence: None,
+            confidence: 1.0,
+        });
+        r.impact.impacted_symbols = (0..20).map(|i| format!("sym{i}")).collect();
+        let rs = fold_risk(&r);
+        assert_eq!(rs.band, RiskBand::High);
+        assert!((rs.score - 0.70).abs() < 1e-9);
+
+        // Case D: Error + full blast + full policy (5 violations) + truncated → Critical (1.0)
+        let mut r = empty_result();
+        r.violations.push(Violation {
+            violation_type: ViolationType::DecisionConflict,
+            plan_entity: "baz".into(),
+            conflicting_decision: None,
+            code_anchors: vec![],
+            severity: response::Severity::Error,
+            evidence: None,
+            confidence: 1.0,
+        });
+        r.impact.impacted_symbols = (0..20).map(|i| format!("sym{i}")).collect();
+        r.impact.truncated = true;
+        for i in 0..5 {
+            r.policy_violations.push(PolicyViolation {
+                policy_name: format!("pol{i}"),
+                reason: String::new(),
+                severity: response::Severity::Error,
+                expected: None,
+                found: None,
+                decision_ref: None,
+                evidence: None,
+                confidence: 1.0,
+            });
+        }
+        let rs = fold_risk(&r);
+        assert_eq!(rs.band, RiskBand::Critical);
+        assert!((rs.score - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn risk_band_ordering() {
+        assert!(RiskBand::Critical.fails(&RiskBand::High));
+        assert!(RiskBand::High.fails(&RiskBand::High));
+        assert!(!RiskBand::Medium.fails(&RiskBand::High));
+        assert!(!RiskBand::Low.fails(&RiskBand::Medium));
+        assert!(RiskBand::Medium.fails(&RiskBand::Low));
+    }
+}

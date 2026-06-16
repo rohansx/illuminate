@@ -46,6 +46,12 @@ pub struct AuditResult {
     /// callers can confirm the policy was loaded before chasing other issues.
     #[serde(default)]
     pub policies_applied: Vec<String>,
+    /// Deterministic risk score folded from signals already present in this
+    /// result — no LLM, no I/O. `None` when computed via the plain [`Auditor::audit`]
+    /// or [`Auditor::audit_with_files`] paths; populated by [`Auditor::review_pr`]
+    /// and the `illuminate review` CLI / `illuminate_review` MCP tool.
+    #[serde(default)]
+    pub risk: Option<RiskScore>,
     /// Path or URL of the most-relevant wiki decision (when one matched).
     ///
     /// Currently a relative file path of the form
@@ -178,4 +184,88 @@ pub enum Severity {
     Error,
     Warning,
     Info,
+}
+
+/// Risk band derived from the weighted risk score.
+///
+/// Band ladder (pinned): Low < 0.40 ≤ Medium < 0.70 ≤ High < 0.85 ≤ Critical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RiskBand {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl RiskBand {
+    pub fn from_score(score: f64) -> Self {
+        if score >= 0.85 {
+            Self::Critical
+        } else if score >= 0.70 {
+            Self::High
+        } else if score >= 0.40 {
+            Self::Medium
+        } else {
+            Self::Low
+        }
+    }
+
+    /// Returns true when `self` meets or exceeds `gate`.
+    pub fn fails(&self, gate: &RiskBand) -> bool {
+        self >= gate
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+impl std::str::FromStr for RiskBand {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "low" => Ok(Self::Low),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            "critical" => Ok(Self::Critical),
+            other => Err(format!(
+                "unknown risk band '{other}' (low|medium|high|critical)"
+            )),
+        }
+    }
+}
+
+/// One signal contributing to the overall risk score.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskFactor {
+    pub name: String,
+    /// Raw (unweighted) signal value in [0.0, 1.0].
+    pub raw: f64,
+    pub weight: f64,
+    /// `raw * weight` — the signal's contribution to the total score.
+    pub weighted: f64,
+}
+
+/// Deterministic risk score for a PR or diff, computed by [`illuminate_audit::fold_risk`].
+///
+/// Weight table (pinned in docs/AUDIT.md):
+/// - `max_severity`  Error→1.0 Warning→0.5 Info→0.2 None→0.0  weight 0.45
+/// - `blast_radius`  min(impacted/20, 1.0)                     weight 0.25
+/// - `policy_hits`   min(policy_count/5, 1.0)                  weight 0.20
+/// - `truncated`     1.0 if capped else 0.0                    weight 0.10
+///
+/// Old payloads (no `risk` field) deserialize with `risk=None` via
+/// `#[serde(default)]` on [`AuditResult::risk`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskScore {
+    /// Clamped weighted sum in [0.0, 1.0].
+    pub score: f64,
+    pub band: RiskBand,
+    pub factors: Vec<RiskFactor>,
 }

@@ -4,6 +4,17 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.31.0] — 2026-06-16
+
+### Added — `illuminate review`: offline risk-scored PR gate
+
+Phase 3, Slices 3-4. Deterministic risk scoring folded additively into `AuditResult` — no LLM, no I/O, same input always returns the same output.
+
+- **`illuminate-audit`: `RiskBand`/`RiskFactor`/`RiskScore` + `fold_risk` + `Auditor::review_pr`.** `fold_risk` is a pure capped weighted sum over four signals `AuditResult` already carries: `max_severity` (0.45), `blast_radius` (0.25), `policy_hits` (0.20), `truncated` (0.10). Band ladder: < 0.40 Low · [0.40, 0.70) Medium · [0.70, 0.85) High · ≥ 0.85 Critical. Weight table and ladder pinned by `risk_fold_is_pinned` test — changing either breaks the test by design. `Auditor::review_pr` calls `audit_with_files` then `fold_risk` and attaches the result as `AuditResult.risk` (`#[serde(default)]` — old consumers see `None`). 2 new tests.
+- **`illuminate review` CLI.** `illuminate review [BASE] [--fail-on-risk low|medium|high|critical] [--index-db PATH] [--json]`. Exits **5** on band breach (exit 4 is taken by `trust check`). Shared `git_changed_files` helper extracted to `commands/mod.rs` — single home for both `audit-diff` and `review`. Docs updated: `docs/AUDIT.md` exit-code matrix (0=pass · 2=violation · 3=warning · 4=trust-fail · 5=risk-gate) + weight/band tables; `docs/CLI.md` `### illuminate review` section.
+- **`illuminate_review` MCP tool.** `{base, fail_on_risk}` → `{audit: AuditResult (with risk), risk_gate_breached: bool}`. Uses `build_auditor()` — same policy + index + embed configuration as `illuminate_audit`. The MCP server now advertises **sixteen** `illuminate_*` tools (was fifteen).
+- **Workspace version bump** `0.30.0` → `0.31.0`.
+
 ## [0.30.0] — 2026-06-16
 
 ### Added — `illuminate trace`: directional process-flow over the code graph

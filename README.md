@@ -10,7 +10,7 @@ Prompts are the new source code — version, share, and enrich them like you do 
 [![rust](https://img.shields.io/badge/rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![mcp](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-9333ea?style=flat-square)](docs/MCP.md)
 [![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-981%20passing-16a34a?style=flat-square)](#)
+[![tests](https://img.shields.io/badge/tests-984%20passing-16a34a?style=flat-square)](#)
 
 [illuminate.sh](https://illuminate.sh) · single Rust binary · local-first · MIT
 
@@ -52,7 +52,7 @@ Both ride on the same substrate: local trail capture, a bi-temporal decision gra
 
 Every prompt flows through four stages: **enrich → generate → capture → curate**. The team repo (Stage 4 output) feeds back into enrichment (Stage 1 input), so the loop tightens with use. After three months your graph knows what your team rejected, what failed, and what to surface before code is written.
 
-> **Status (v0.30):** capture, audit, reflect, enrich, route, and the dashboards ship today. Recent releases: **v0.25** 3D knowledge-graph visualization (`/graph`); **v0.26** `illuminate policy` — a Rhai **deny→ask→allow gatekeeper** + PreToolUse hook (advisor → enforcer); **v0.27** a swappable `VectorIndex` (exact `FlatIndex` + a pure-Rust embedded HNSW); **v0.28** the policy gate finished — graph-backed rules + one-command `illuminate policy install`; **v0.29** the gate goes agent-facing — `illuminate_query_policy` + `illuminate_recent_decisions` MCP tools; **v0.30** `illuminate trace` — directional process-flow (callees/callers) over the code graph + an `illuminate_trace` MCP tool (fifteen `illuminate_*` tools now). The full **enrich → generate → capture → curate** loop is wired end-to-end — see [docs/ROADMAP.md](docs/ROADMAP.md). Install today for audit, the dashboards, the graph, and the policy gate.
+> **Status (v0.31):** capture, audit, reflect, enrich, route, and the dashboards ship today. Recent releases: **v0.25** 3D knowledge-graph visualization (`/graph`); **v0.26** `illuminate policy` — a Rhai **deny→ask→allow gatekeeper** + PreToolUse hook (advisor → enforcer); **v0.27** a swappable `VectorIndex` (exact `FlatIndex` + a pure-Rust embedded HNSW); **v0.28** the policy gate finished — graph-backed rules + one-command `illuminate policy install`; **v0.29** the gate goes agent-facing — `illuminate_query_policy` + `illuminate_recent_decisions` MCP tools; **v0.30** `illuminate trace` — directional process-flow (callees/callers) over the code graph; **v0.31** `illuminate review` — offline risk-scored PR gate (exits 5 on band breach) + `illuminate_review` MCP tool (sixteen `illuminate_*` tools now). The full **enrich → generate → capture → curate** loop is wired end-to-end — see [docs/ROADMAP.md](docs/ROADMAP.md). Install today for audit, the dashboards, the graph, and the policy gate.
 
 ---
 

@@ -714,6 +714,36 @@ edge endpoints as free text), then walks the requested edges in the chosen
 direction. Reads `.illuminate/index.db` (run `illuminate index` first); an
 unmatched symbol prints `no symbol matched`. Deterministic; no network or LLM.
 
+### `illuminate review`
+
+Offline risk-gated PR review: audit files changed since a git base ref and fold
+a deterministic risk score into the result.
+
+```
+illuminate review [BASE] [--fail-on-risk low|medium|high|critical] [--index-db PATH] [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `BASE` | `HEAD~1` | Git ref to diff against (`BASE...HEAD`). |
+| `--fail-on-risk BAND` | off | Exit **5** when risk band ≥ BAND. |
+| `--index-db PATH` | `.illuminate/index.db` | Code-graph database. |
+| `--json` | off | Emit `{base, changed_files, audit}` with `audit.risk` included. |
+
+**Exit codes:** 0 = pass · 2 = violation · 3 = warning · 5 = risk-gate breach.
+
+Weight table (pinned — see `docs/AUDIT.md`):
+- `max_severity`  Error→1.0 Warning→0.5 Info→0.2 None→0.0  × 0.45
+- `blast_radius`  min(impacted/20, 1.0)                     × 0.25
+- `policy_hits`   min(policy\_count/5, 1.0)                 × 0.20
+- `truncated`     1.0 if blast hit the node cap else 0.0    × 0.10
+
+Band ladder: < 0.40 Low · [0.40, 0.70) Medium · [0.70, 0.85) High · ≥ 0.85 Critical.
+
+Designed for offline CI use — no GitHub API, no `gh` dependency. Complements
+`illuminate audit-pr` (which calls the GitHub API and is best for PR comment
+workflows) and `illuminate audit-diff` (which audits without risk scoring).
+
 ### `illuminate doc-decay`
 
 Flag markdown-doc references to code symbols that no longer exist in the index —

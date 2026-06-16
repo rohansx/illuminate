@@ -189,6 +189,26 @@ fn test_tools_list_includes_trace() {
 }
 
 #[test]
+fn test_tools_list_includes_review() {
+    // The offline risk-gate tool (v0.31) must be advertised.
+    let tools = illuminate_mcp::tools::tools_list();
+    let list = tools["tools"].as_array().expect("tools array");
+    let review = list
+        .iter()
+        .find(|t| t["name"] == "illuminate_review")
+        .expect("illuminate_review must be advertised");
+    // fail_on_risk enum must have four values.
+    let fail_enum = review["inputSchema"]["properties"]["fail_on_risk"]["enum"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        fail_enum.len(),
+        4,
+        "fail_on_risk has low/medium/high/critical"
+    );
+}
+
+#[test]
 fn test_embedding_cache_warm_once_semantics() {
     // The embedding_cache Option acts as a once-flag:
     // None = not yet loaded, Some(map) = loaded. Verify the semantics hold.

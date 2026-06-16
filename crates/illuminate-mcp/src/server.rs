@@ -234,6 +234,7 @@ impl McpServer {
                     "illuminate_query_policy" => ctx.illuminate_query_policy(args).await,
                     "illuminate_recent_decisions" => ctx.illuminate_recent_decisions(args).await,
                     "illuminate_trace" => ctx.illuminate_trace(args).await,
+                    "illuminate_review" => ctx.illuminate_review(args).await,
                     other => Err(format!("unknown tool: {other}")),
                 };
 

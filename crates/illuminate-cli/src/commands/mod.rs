@@ -34,6 +34,7 @@ pub mod publish;
 pub mod query;
 pub mod rebuild;
 pub mod reflect;
+pub mod review;
 pub mod search;
 pub mod skill;
 pub mod stats;
@@ -49,9 +50,44 @@ pub mod wiki;
 pub mod workspace;
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use illuminate::Graph;
+
+/// Resolve the changed-file list via `git diff --name-only <base>...HEAD`.
+///
+/// Filters to existing files — deleted entries are skipped since there is no
+/// content to audit and the index lookup would yield empty results. A missing
+/// git binary or non-zero exit is surfaced as an `IlluminateError`.
+///
+/// This is the single canonical home for the `git diff` invocation shared by
+/// `audit-diff` and `review` so the two commands stay in sync.
+pub(crate) fn git_changed_files(base: &str) -> illuminate::Result<Vec<PathBuf>> {
+    let output = Command::new("git")
+        .args(["diff", "--name-only", &format!("{base}...HEAD")])
+        .output()
+        .map_err(|e| {
+            illuminate::IlluminateError::Extraction(format!("failed to run `git diff`: {e}"))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(illuminate::IlluminateError::Extraction(format!(
+            "`git diff {base}...HEAD` failed: {stderr}"
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut files = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() && Path::new(trimmed).exists() {
+            files.push(PathBuf::from(trimmed));
+        }
+    }
+    Ok(files)
+}
 
 /// Find and open the nearest .illuminate/graph.db, searching up from cwd.
 /// If extraction models are available, loads the extraction pipeline.

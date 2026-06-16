@@ -261,6 +261,63 @@ This catches what the in-session hook missed. It's also useful for repos where t
 
 ---
 
+## Exit codes
+
+All audit CLI commands share the same exit-code contract:
+
+| Code | Meaning | Command |
+|------|---------|---------|
+| 0 | Pass — no findings | `audit`, `audit-diff`, `review` |
+| 1 | Generic error (bad args, missing graph.db, etc.) | all |
+| 2 | Violation — at least one `severity=error` finding | `audit`, `audit-diff`, `review` |
+| 3 | Warning — at least one `severity=warning` finding, no errors | `audit`, `audit-diff`, `review` |
+| 4 | Trust-check failed (`illuminate trust check`) | `trust` |
+| 5 | Risk-gate breach — band ≥ `--fail-on-risk` threshold | `review` |
+
+---
+
+## Risk scoring (v0.31+)
+
+`illuminate review` and `illuminate_review` (MCP) fold a deterministic risk
+score into `AuditResult.risk`. The score is a capped weighted sum over signals
+`AuditResult` already carries — no LLM, no I/O, same input always returns the
+same output.
+
+### Weight table (pinned)
+
+| Signal | Formula | Weight |
+|--------|---------|--------|
+| `max_severity` | Error→1.0 · Warning→0.5 · Info→0.2 · None→0.0 | 0.45 |
+| `blast_radius` | min(impacted\_symbols.len() / 20, 1.0) | 0.25 |
+| `policy_hits` | min(policy\_violations.len() / 5, 1.0) | 0.20 |
+| `truncated` | 1.0 if blast hit the node cap else 0.0 | 0.10 |
+
+`score = Σ(signal × weight)`, clamped to [0.0, 1.0].
+
+### Band ladder (pinned)
+
+| Band | Score range |
+|------|-------------|
+| Low | [0.0, 0.40) |
+| Medium | [0.40, 0.70) |
+| High | [0.70, 0.85) |
+| Critical | [0.85, 1.0] |
+
+These thresholds are pinned by the `risk_fold_is_pinned` test in
+`illuminate-audit`. Changing a weight or boundary breaks the test by design —
+all downstream users (CI scripts, MCP consumers) must be updated together.
+
+### Rejected signals (intentionally absent from MVP)
+
+The following signals are NOT in the weight table and MUST NOT be added
+without updating the pinned test and this document:
+
+- **Test-coverage deficit** — no `TESTED_BY` edges exist; a heuristic would be noise.
+- **Cross-community risk** — `communities` is in `graph.db`; `index.db` has no cluster id.
+- **File churn / co-change** — non-deterministic across commits; frozen-snapshot cache deferred to Phase 4.
+
+---
+
 ## CLI usage
 
 ```bash
@@ -268,7 +325,10 @@ This catches what the in-session hook missed. It's also useful for repos where t
 illuminate audit "Add Redis caching to txn lookup" \
     --files services/payments-service/src/cache.rs
 
-# audit a PR
+# risk-gated offline review (exits 5 if High or above)
+illuminate review main --fail-on-risk high
+
+# audit a PR (uses GitHub API, posts comment)
 illuminate audit-pr 847 --repo acme/payments
 
 # audit the working tree (uncommitted changes)

@@ -1148,6 +1148,75 @@ impl ToolContext {
         }))
     }
 
+    /// `illuminate_review` — audit files changed since a git base ref and
+    /// return a deterministic risk score. Equivalent to `illuminate review
+    /// --base <base> --json` but callable as an MCP tool from an agent.
+    ///
+    /// Uses `build_auditor()` → `Auditor::review_pr` so the same policy +
+    /// index + embed configuration the rest of the audit path uses is in
+    /// effect. The `risk` field of the returned audit result carries the
+    /// deterministic fold.
+    pub async fn illuminate_review(&self, args: Value) -> Result<Value, String> {
+        use illuminate_audit::response::RiskBand;
+        use std::path::{Path, PathBuf};
+        use std::process::Command;
+
+        let base = args["base"].as_str().unwrap_or("HEAD~1").to_string();
+        let fail_on_risk: Option<RiskBand> = args["fail_on_risk"]
+            .as_str()
+            .map(|s| s.parse::<RiskBand>())
+            .transpose()
+            .map_err(|e: String| e)?;
+
+        // Resolve changed files (same logic as commands/mod.rs::git_changed_files).
+        let output = Command::new("git")
+            .args(["diff", "--name-only", &format!("{base}...HEAD")])
+            .output()
+            .map_err(|e| format!("failed to run `git diff`: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("`git diff {base}...HEAD` failed: {stderr}"));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let changed: Vec<PathBuf> = stdout
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && Path::new(l).exists())
+            .map(PathBuf::from)
+            .collect();
+
+        if changed.is_empty() {
+            return Ok(json!({
+                "base": base,
+                "changed_files": [],
+                "audit": null,
+                "risk_gate_breached": false,
+            }));
+        }
+
+        let plan_text = format!("review changes since {base}");
+        let auditor = self.build_auditor()?;
+        let result = auditor
+            .review_pr(&plan_text, &changed)
+            .map_err(|e| e.to_string())?;
+
+        let risk_gate_breached = fail_on_risk
+            .as_ref()
+            .and_then(|gate| result.risk.as_ref().map(|r| r.band.fails(gate)))
+            .unwrap_or(false);
+
+        let result_val = serde_json::to_value(&result).map_err(|e| e.to_string())?;
+
+        Ok(json!({
+            "base": base,
+            "changed_files": changed,
+            "audit": result_val,
+            "risk_gate_breached": risk_gate_breached,
+        }))
+    }
+
     /// Tool: illuminate_impact
     /// Given a decision ID, show every file and symbol anchored to that decision.
     pub async fn illuminate_impact(&self, args: Value) -> Result<Value, String> {
@@ -1947,6 +2016,18 @@ pub fn tools_list() -> Value {
                         "max_steps": {"type": "integer", "description": "Max traversed edges, 1-2000 (default 200)"}
                     },
                     "required": ["symbol"]
+                }
+            },
+            {
+                "name": "illuminate_review",
+                "description": "Audit files changed since a git base ref and return a deterministic risk score. Equivalent to `illuminate review --base <base> --json`. Resolves changed files via `git diff --name-only <base>...HEAD`, runs the policy + decision-graph audit, and folds a weighted risk score (severity 0.45 + blast_radius 0.25 + policy_hits 0.20 + truncated 0.10) into `audit.risk`. Use `fail_on_risk` to get `risk_gate_breached=true` when the band meets or exceeds the threshold.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "base": {"type": "string", "description": "Git ref to diff against (default: HEAD~1)"},
+                        "fail_on_risk": {"type": "string", "enum": ["low", "medium", "high", "critical"], "description": "Set risk_gate_breached=true when band >= this level"}
+                    },
+                    "required": []
                 }
             }
         ]

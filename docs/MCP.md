@@ -1,6 +1,6 @@
 # Illuminate — MCP Server
 
-The MCP (Model Context Protocol) server is the agent-facing surface. It exposes fifteen `illuminate_*` tools — `ask`, `audit`, `decisions_for`, `enrich`, `explain`, `failures_for`, `get_wiki_page`, `impact`, `query_policy`, `recent_decisions`, `reflect`, `route`, `stats`, `symbols`, and `trace` — as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call. (The graph-primitive tools `add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, and `export_graph` are also registered.)
+The MCP (Model Context Protocol) server is the agent-facing surface. It exposes sixteen `illuminate_*` tools — `ask`, `audit`, `decisions_for`, `enrich`, `explain`, `failures_for`, `get_wiki_page`, `impact`, `query_policy`, `recent_decisions`, `reflect`, `review`, `route`, `stats`, `symbols`, and `trace` — as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call. (The graph-primitive tools `add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, and `export_graph` are also registered.)
 
 For the audit engine itself, see `AUDIT.md`. For CLI usage, see `CLI.md`.
 
@@ -371,6 +371,51 @@ Directional process-flow trace over the code graph (`index.db`). Resolves a symb
 ```
 
 Seed resolution is best-effort (the code graph stores edge endpoints as free text); an unmatched symbol returns empty `seeds`/`steps`.
+
+### `illuminate_review`
+
+Offline risk-scored PR review: audit changed files since a git base ref and return a deterministic risk score. Uses `Auditor::review_pr` — same policy + index + embed configuration as `illuminate_audit`. No GitHub API call; works offline.
+
+**Request:**
+
+```json
+{
+  "method": "illuminate_review",
+  "params": { "base": "main", "fail_on_risk": "high" }
+}
+```
+
+`base` defaults to `HEAD~1`. `fail_on_risk` ∈ `low` / `medium` / `high` / `critical` (optional — sets `risk_gate_breached` when the risk band meets or exceeds the threshold).
+
+**Response:**
+
+```json
+{
+  "base": "main",
+  "changed_files": ["src/payments/cache.rs"],
+  "audit": {
+    "status": "warn",
+    "risk": {
+      "score": 0.575,
+      "band": "medium",
+      "factors": [
+        { "name": "max_severity", "raw": 0.5, "weight": 0.45, "weighted": 0.225 },
+        { "name": "blast_radius", "raw": 0.6, "weight": 0.25, "weighted": 0.15 },
+        { "name": "policy_hits",  "raw": 1.0, "weight": 0.20, "weighted": 0.20 },
+        { "name": "truncated",    "raw": 0.0, "weight": 0.10, "weighted": 0.0 }
+      ]
+    },
+    "warnings": [...],
+    "violations": [],
+    "relevant_patterns": [],
+    "prior_failures": [],
+    "policies_applied": []
+  },
+  "risk_gate_breached": false
+}
+```
+
+`risk_gate_breached` is `true` when `fail_on_risk` is set and the result band meets or exceeds the threshold. The equivalent CLI command exits with code 5 in that case; the MCP tool always returns 200 and surfaces `risk_gate_breached` instead.
 
 ---
 

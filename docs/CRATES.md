@@ -429,9 +429,9 @@ When `embed: Some(_)` is supplied, `route` runs `Graph::search_fused` (RRF over 
 
 ## `illuminate-mcp`
 
-**Responsibility.** JSON-RPC server speaking the MCP protocol. Exposes the fifteen `illuminate_*` tools below plus the graph-primitive tools (`add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, `export_graph`).
+**Responsibility.** JSON-RPC server speaking the MCP protocol. Exposes the sixteen `illuminate_*` tools below plus the graph-primitive tools (`add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, `export_graph`).
 
-**Tools exposed (the fifteen `illuminate_*` tools).**
+**Tools exposed (the sixteen `illuminate_*` tools).**
 
 | Tool | Calls |
 |------|-------|
@@ -446,6 +446,7 @@ When `embed: Some(_)` is supplied, `route` runs `Graph::search_fused` (RRF over 
 | `illuminate_query_policy` | dry-run the policy gate (allow/ask/deny) for a proposed tool call |
 | `illuminate_recent_decisions` | recent policy-gate decisions from the ledger |
 | `illuminate_reflect` | `ReflexionStore::record_in` (failure capture) |
+| `illuminate_review` | offline risk-scored PR gate (`Auditor::review_pr` + `fold_risk`) |
 | `illuminate_route` | subject → ranked reading plan (FTS5 + semantic RRF) |
 | `illuminate_stats` | graph + token-savings stats |
 | `illuminate_symbols` | tree-sitter symbols for a path |
