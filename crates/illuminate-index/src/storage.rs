@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 use crate::Result;
-use crate::edges::{Edge, EdgeKind, ImpactResult};
+use crate::edges::{Edge, EdgeKind, FlowDir, FlowResult, FlowStep, ImpactResult};
 use crate::symbols::Symbol;
 
 /// Create the symbols table in the index database.
@@ -411,6 +411,188 @@ pub fn impact_radius(
     })
 }
 
+/// Final path segment of a qualified name, splitting on `::`, `.`, or `->`.
+/// `module::Type::method` → `method`; `self.field` → `field`; `a->b` → `b`.
+fn last_segment(qn: &str) -> &str {
+    qn.rsplit([':', '.', '>'])
+        .find(|seg| !seg.is_empty())
+        .unwrap_or(qn)
+        .trim()
+}
+
+/// Resolve a user-supplied symbol name or qualified name to the qualified-name
+/// strings that actually appear as edge endpoints, so they can seed a trace.
+///
+/// Best-effort and deterministic — the code graph stores edge endpoints as free
+/// text (there is no symbol-resolution pass; that is a Phase-4 epic). Strategy:
+/// (1) exact match on either endpoint column wins (returned alone); (2) otherwise
+/// last-segment match — compare the final segment of the query and each candidate
+/// endpoint, case-insensitively. Results are distinct and sorted, so the seed set
+/// is stable across runs.
+pub fn resolve_qn_to_symbols(conn: &Connection, query: &str) -> Result<Vec<String>> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 1. exact endpoint match.
+    let mut exact: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT source_qualified FROM edges WHERE source_qualified = ?1
+             UNION
+             SELECT target_qualified FROM edges WHERE target_qualified = ?1",
+        )?;
+        let rows = stmt.query_map([q], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    if !exact.is_empty() {
+        exact.sort();
+        exact.dedup();
+        return Ok(exact);
+    }
+
+    // 2. last-segment match over the distinct endpoint universe.
+    let target_seg = last_segment(q);
+    let mut matches: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT source_qualified FROM edges
+             UNION
+             SELECT target_qualified FROM edges",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.filter_map(rusqlite::Result::ok)
+            .filter(|qn| last_segment(qn).eq_ignore_ascii_case(target_seg))
+            .collect()
+    };
+    matches.sort();
+    matches.dedup();
+    Ok(matches)
+}
+
+/// Directional BFS over edges from `seeds`, recording each traversed edge as a
+/// [`FlowStep`]. Unlike [`impact_radius`] (unconditionally bidirectional,
+/// node-set only), this follows only `dir` and filters to `kinds` (empty =
+/// all kinds). Bounded by `max_depth` and `max_steps`; output is
+/// deterministically ordered by `(depth, from, to, kind)`.
+///
+/// The temp-seed-table + probe-limit+1 truncation idiom is borrowed from
+/// `impact_radius`; the recursive member is genuinely different — directional
+/// and edge-emitting — and follows the code-review-graph traversal shape
+/// (MIT, Python; re-implemented). `kinds` are compile-time-constant literals
+/// (`EdgeKind::as_str`), so inlining them in the `IN (...)` clause has no
+/// injection surface.
+pub fn trace_flow(
+    conn: &Connection,
+    seeds: &[String],
+    dir: FlowDir,
+    kinds: &[EdgeKind],
+    max_depth: u32,
+    max_steps: usize,
+) -> Result<FlowResult> {
+    if seeds.is_empty() || max_depth == 0 || max_steps == 0 {
+        return Ok(FlowResult {
+            seeds: seeds.to_vec(),
+            steps: Vec::new(),
+            truncated: false,
+        });
+    }
+
+    conn.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS _flow_seeds (qn TEXT PRIMARY KEY);
+         DELETE FROM _flow_seeds;",
+    )?;
+    {
+        let mut stmt = conn.prepare("INSERT OR IGNORE INTO _flow_seeds (qn) VALUES (?1)")?;
+        for s in seeds {
+            stmt.execute([s])?;
+        }
+    }
+
+    let kind_filter = if kinds.is_empty() {
+        String::new()
+    } else {
+        let list = kinds
+            .iter()
+            .map(|k| format!("'{}'", k.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("AND e.kind IN ({list})")
+    };
+
+    // Frontier is the node we continue BFS from; the emitted step is the edge
+    // (from_qn → to_qn). Downstream advances the frontier to the edge target;
+    // upstream advances it to the edge source.
+    let down = format!(
+        "SELECT e.target_qualified, e.source_qualified, e.target_qualified, e.kind, f.depth + 1
+         FROM flow f JOIN edges e ON e.source_qualified = f.frontier
+         WHERE f.depth < ?1 {kind_filter}"
+    );
+    let up = format!(
+        "SELECT e.source_qualified, e.source_qualified, e.target_qualified, e.kind, f.depth + 1
+         FROM flow f JOIN edges e ON e.target_qualified = f.frontier
+         WHERE f.depth < ?1 {kind_filter}"
+    );
+    let recursive = match dir {
+        FlowDir::Downstream => down,
+        FlowDir::Upstream => up,
+        FlowDir::Both => format!("{down}\n            UNION\n            {up}"),
+    };
+
+    let cte = format!(
+        "WITH RECURSIVE flow(frontier, from_qn, to_qn, kind, depth) AS (
+            SELECT qn, NULL, NULL, NULL, 0 FROM _flow_seeds
+            UNION
+            {recursive}
+        )
+        SELECT DISTINCT from_qn, to_qn, kind, depth
+        FROM flow
+        WHERE from_qn IS NOT NULL
+        ORDER BY depth, from_qn, to_qn, kind
+        LIMIT ?2"
+    );
+
+    // Pull one extra row past max_steps to detect truncation cleanly.
+    let probe_limit = max_steps.saturating_add(1);
+    let mut stmt = conn.prepare(&cte)?;
+    let rows = stmt.query_map(
+        rusqlite::params![max_depth as i64, probe_limit as i64],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, u32>(3)?,
+            ))
+        },
+    )?;
+
+    let mut steps: Vec<FlowStep> = Vec::new();
+    for row in rows {
+        let (from, to, kind, depth) = row?;
+        // Skip rows whose kind literal isn't a known EdgeKind (defensive — the
+        // kind filter already constrains this when `kinds` is non-empty).
+        if let Some(kind) = EdgeKind::from_str(&kind) {
+            steps.push(FlowStep {
+                from,
+                to,
+                kind,
+                depth,
+            });
+        }
+    }
+
+    let truncated = steps.len() > max_steps;
+    if truncated {
+        steps.truncate(max_steps);
+    }
+
+    Ok(FlowResult {
+        seeds: seeds.to_vec(),
+        steps,
+        truncated,
+    })
+}
+
 #[cfg(test)]
 mod diagram_reader_tests {
     use super::*;
@@ -502,5 +684,216 @@ mod diagram_reader_tests {
     fn diagram_list_import_edges_empty_when_no_imports() {
         let conn = open();
         assert!(list_import_edges(&conn).unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod flow_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn open() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        conn
+    }
+
+    fn edge(src: &str, tgt: &str, kind: EdgeKind) -> Edge {
+        Edge {
+            source_qualified: src.to_string(),
+            target_qualified: tgt.to_string(),
+            kind,
+            file_path: "src/lib.rs".to_string(),
+            line: 1,
+        }
+    }
+
+    /// A→B→C call chain plus an importer D→A, all in one file.
+    fn linear_graph(conn: &Connection) {
+        upsert_edges(
+            conn,
+            "src/lib.rs",
+            &[
+                edge("a", "b", EdgeKind::Calls),
+                edge("b", "c", EdgeKind::Calls),
+                edge("d", "a", EdgeKind::Calls),
+            ],
+        )
+        .unwrap();
+    }
+
+    fn step_pairs(r: &FlowResult) -> BTreeSet<(String, String)> {
+        r.steps
+            .iter()
+            .map(|s| (s.from.clone(), s.to.clone()))
+            .collect()
+    }
+
+    fn node_set(r: &FlowResult) -> BTreeSet<String> {
+        let mut s = BTreeSet::new();
+        for st in &r.steps {
+            s.insert(st.from.clone());
+            s.insert(st.to.clone());
+        }
+        for seed in &r.seeds {
+            s.remove(seed);
+        }
+        s
+    }
+
+    #[test]
+    fn downstream_follows_source_to_target_only() {
+        let conn = open();
+        linear_graph(&conn);
+        let r = trace_flow(&conn, &["a".into()], FlowDir::Downstream, &[], 5, 100).unwrap();
+        let pairs = step_pairs(&r);
+        assert!(pairs.contains(&("a".into(), "b".into())));
+        assert!(pairs.contains(&("b".into(), "c".into())));
+        // Upstream edge d→a must NOT appear when tracing downstream from a.
+        assert!(!pairs.contains(&("d".into(), "a".into())));
+        assert!(!r.truncated);
+    }
+
+    #[test]
+    fn upstream_follows_target_to_source_only() {
+        let conn = open();
+        // a→b→c→e: c's callers are {b, a}; c→e is downstream of c.
+        upsert_edges(
+            &conn,
+            "src/lib.rs",
+            &[
+                edge("a", "b", EdgeKind::Calls),
+                edge("b", "c", EdgeKind::Calls),
+                edge("c", "e", EdgeKind::Calls),
+            ],
+        )
+        .unwrap();
+        let r = trace_flow(&conn, &["c".into()], FlowDir::Upstream, &[], 5, 100).unwrap();
+        let pairs = step_pairs(&r);
+        // c's callers, transitively: b→c then a→b.
+        assert!(pairs.contains(&("b".into(), "c".into())));
+        assert!(pairs.contains(&("a".into(), "b".into())));
+        // c→e is DOWNSTREAM of c and must not appear when tracing upstream.
+        assert!(!pairs.contains(&("c".into(), "e".into())));
+    }
+
+    #[test]
+    fn both_node_set_matches_impact_radius() {
+        // The critique-required invariant: dir=Both reaches exactly the same
+        // node set as the bidirectional impact_radius, given all kinds and
+        // generous caps.
+        let conn = open();
+        linear_graph(&conn);
+        let seeds = vec!["a".to_string()];
+        let flow = trace_flow(&conn, &seeds, FlowDir::Both, &[], 10, 10_000).unwrap();
+        let impact = impact_radius(&conn, &seeds, 10, 10_000).unwrap();
+        let impact_set: BTreeSet<String> = impact.impacted.into_iter().collect();
+        assert_eq!(node_set(&flow), impact_set);
+        // sanity: the set is non-trivial (b, c via downstream; d via upstream).
+        assert_eq!(
+            impact_set,
+            BTreeSet::from(["b".to_string(), "c".to_string(), "d".to_string()])
+        );
+    }
+
+    #[test]
+    fn respects_kind_filter() {
+        let conn = open();
+        upsert_edges(
+            &conn,
+            "src/lib.rs",
+            &[
+                edge("a", "b", EdgeKind::Calls),
+                edge("a", "m", EdgeKind::Imports),
+            ],
+        )
+        .unwrap();
+        let calls_only = trace_flow(
+            &conn,
+            &["a".into()],
+            FlowDir::Downstream,
+            &[EdgeKind::Calls],
+            5,
+            100,
+        )
+        .unwrap();
+        let pairs = step_pairs(&calls_only);
+        assert!(pairs.contains(&("a".into(), "b".into())));
+        assert!(
+            !pairs.contains(&("a".into(), "m".into())),
+            "imports edge must be filtered out"
+        );
+    }
+
+    #[test]
+    fn truncates_at_max_steps() {
+        let conn = open();
+        let edges: Vec<Edge> = (0..10)
+            .map(|i| edge("hub", &format!("n{i}"), EdgeKind::Calls))
+            .collect();
+        upsert_edges(&conn, "src/lib.rs", &edges).unwrap();
+        let r = trace_flow(&conn, &["hub".into()], FlowDir::Downstream, &[], 5, 3).unwrap();
+        assert_eq!(r.steps.len(), 3);
+        assert!(r.truncated);
+    }
+
+    #[test]
+    fn is_deterministic_across_runs() {
+        let conn = open();
+        linear_graph(&conn);
+        let a = trace_flow(&conn, &["a".into()], FlowDir::Both, &[], 5, 100).unwrap();
+        let b = trace_flow(&conn, &["a".into()], FlowDir::Both, &[], 5, 100).unwrap();
+        assert_eq!(a.steps, b.steps);
+    }
+
+    #[test]
+    fn empty_seeds_or_zero_bounds_yield_nothing() {
+        let conn = open();
+        linear_graph(&conn);
+        assert!(
+            trace_flow(&conn, &[], FlowDir::Both, &[], 5, 100)
+                .unwrap()
+                .steps
+                .is_empty()
+        );
+        assert!(
+            trace_flow(&conn, &["a".into()], FlowDir::Both, &[], 0, 100)
+                .unwrap()
+                .steps
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn resolve_exact_match_wins() {
+        let conn = open();
+        linear_graph(&conn);
+        let got = resolve_qn_to_symbols(&conn, "a").unwrap();
+        assert_eq!(got, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn resolve_last_segment_match() {
+        let conn = open();
+        upsert_edges(
+            &conn,
+            "src/lib.rs",
+            &[edge("mod::Foo::run", "other::run", EdgeKind::Calls)],
+        )
+        .unwrap();
+        // No exact endpoint "run" exists, but both endpoints end in "run".
+        let mut got = resolve_qn_to_symbols(&conn, "run").unwrap();
+        got.sort();
+        assert_eq!(
+            got,
+            vec!["mod::Foo::run".to_string(), "other::run".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolve_empty_query_is_empty() {
+        let conn = open();
+        linear_graph(&conn);
+        assert!(resolve_qn_to_symbols(&conn, "   ").unwrap().is_empty());
     }
 }

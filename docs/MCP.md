@@ -1,6 +1,6 @@
 # Illuminate — MCP Server
 
-The MCP (Model Context Protocol) server is the agent-facing surface. It exposes fourteen `illuminate_*` tools — `ask`, `audit`, `decisions_for`, `enrich`, `explain`, `failures_for`, `get_wiki_page`, `impact`, `query_policy`, `recent_decisions`, `reflect`, `route`, `stats`, and `symbols` — as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call. (The graph-primitive tools `add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, and `export_graph` are also registered.)
+The MCP (Model Context Protocol) server is the agent-facing surface. It exposes fifteen `illuminate_*` tools — `ask`, `audit`, `decisions_for`, `enrich`, `explain`, `failures_for`, `get_wiki_page`, `impact`, `query_policy`, `recent_decisions`, `reflect`, `route`, `stats`, `symbols`, and `trace` — as JSON-RPC endpoints that Claude Code, Cursor, Codex, and any MCP-aware client can call. (The graph-primitive tools `add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, and `export_graph` are also registered.)
 
 For the audit engine itself, see `AUDIT.md`. For CLI usage, see `CLI.md`.
 
@@ -342,6 +342,35 @@ List recent policy decisions from the ledger (`.illuminate/policy/ledger.jsonl`)
 `limit` is optional (default 20).
 
 **Response:** `{ "decisions": [ /* ledger rows, newest first */ ] }` — each row records the gated tool call, the decision, and the matched rule.
+
+### `illuminate_trace`
+
+Directional process-flow trace over the code graph (`index.db`). Resolves a symbol to qualified-name seeds, then walks `calls`/`imports`/`inherits`/`references` edges in the requested direction. Answers "what does this call?" (downstream) or "what calls this?" (upstream). Read-only.
+
+**Request:**
+
+```json
+{
+  "method": "illuminate_trace",
+  "params": { "symbol": "Auditor::audit", "dir": "downstream", "kinds": ["calls"], "max_depth": 3 }
+}
+```
+
+`symbol` is required. `dir` ∈ `downstream` (default) / `upstream` / `both`; `kinds` defaults to `["calls"]`; `max_depth` 1–6 (default 3); `max_steps` 1–2000 (default 200).
+
+**Response:**
+
+```json
+{
+  "symbol": "Auditor::audit",
+  "dir": "downstream",
+  "seeds": ["...::audit"],
+  "steps": [ { "from": "...::audit", "to": "...::compute_impact", "kind": "calls", "depth": 1 } ],
+  "truncated": false
+}
+```
+
+Seed resolution is best-effort (the code graph stores edge endpoints as free text); an unmatched symbol returns empty `seeds`/`steps`.
 
 ---
 

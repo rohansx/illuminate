@@ -692,6 +692,28 @@ illuminate impact <path>
 Walks the import/calls edges to report what a change to `<path>` could affect.
 Useful before a refactor.
 
+### `illuminate trace`
+
+Trace a symbol's directional process flow via the code graph (read-only).
+
+```
+illuminate trace <symbol> [--dir downstream|upstream|both] [--kinds calls,imports,inherits,references] [--depth N] [--max-steps N] [--index-db PATH] [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--dir` | `downstream` | `downstream` = callees, `upstream` = callers, `both`. |
+| `--kinds` | `calls` | Comma-separated edge kinds to follow. |
+| `--depth` | `3` | BFS max depth. |
+| `--max-steps` | `200` | Cap on traversed edges (truncates beyond this). |
+| `--index-db PATH` | `.illuminate/index.db` | Code-graph database. |
+| `--json` | off | Emit `{symbol, dir, seeds, steps:[{from,to,kind,depth}], truncated}`. |
+
+Resolves `<symbol>` to qualified-name seeds (best-effort — the code graph stores
+edge endpoints as free text), then walks the requested edges in the chosen
+direction. Reads `.illuminate/index.db` (run `illuminate index` first); an
+unmatched symbol prints `no symbol matched`. Deterministic; no network or LLM.
+
 ### `illuminate doc-decay`
 
 Flag markdown-doc references to code symbols that no longer exist in the index —

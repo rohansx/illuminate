@@ -40,6 +40,7 @@ pub mod stats;
 pub mod status;
 pub mod summary;
 pub mod symbols;
+pub mod trace;
 pub mod trail;
 pub mod trail_tokens;
 pub mod trust_check;

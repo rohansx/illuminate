@@ -429,9 +429,9 @@ When `embed: Some(_)` is supplied, `route` runs `Graph::search_fused` (RRF over 
 
 ## `illuminate-mcp`
 
-**Responsibility.** JSON-RPC server speaking the MCP protocol. Exposes the fourteen `illuminate_*` tools below plus the graph-primitive tools (`add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, `export_graph`).
+**Responsibility.** JSON-RPC server speaking the MCP protocol. Exposes the fifteen `illuminate_*` tools below plus the graph-primitive tools (`add_episode`, `search`, `get_decision`, `traverse`, `traverse_batch`, `find_precedents`, `list_entities`, `export_graph`).
 
-**Tools exposed (the fourteen `illuminate_*` tools).**
+**Tools exposed (the fifteen `illuminate_*` tools).**
 
 | Tool | Calls |
 |------|-------|
@@ -449,6 +449,7 @@ When `embed: Some(_)` is supplied, `route` runs `Graph::search_fused` (RRF over 
 | `illuminate_route` | subject → ranked reading plan (FTS5 + semantic RRF) |
 | `illuminate_stats` | graph + token-savings stats |
 | `illuminate_symbols` | tree-sitter symbols for a path |
+| `illuminate_trace` | directional process-flow trace (callees/callers) over the code graph |
 
 See `MCP.md` for the full protocol surface.
 

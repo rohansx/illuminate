@@ -1,0 +1,41 @@
+illuminate
+Copyright (c) 2026 the illuminate authors
+Licensed under the MIT License (see LICENSE).
+
+This product includes software and design ideas re-implemented from the
+following open-source projects. Where code was ported, it was re-implemented
+in Rust; no upstream source files are vendored. Attribution is provided here
+in good faith and to satisfy upstream license terms.
+
+------------------------------------------------------------------------------
+code-review-graph — https://github.com/tirth8205/code-review-graph
+  License: MIT (Copyright (c) 2026 Tirth Kanani)
+  Used by: illuminate-index (the recursive-CTE impact/flow traversal shape) and
+  illuminate-audit (the risk-scoring model and band ladder). The upstream is
+  Python; the risk model and traversal were re-implemented in Rust.
+
+------------------------------------------------------------------------------
+reflect — https://github.com/rohansx/reflect
+  License: MIT (Copyright (c) 2026 Rohan)
+  Used by: illuminate-eval (the deterministic, offline parse-and-score verdict
+  model — EvalSignal/Severity, stdout parsers, Laplace confidence scoring, and
+  the near-duplicate lesson gate). The LLM-judge portions of reflect are NOT
+  ported; illuminate-eval is deterministic and never calls a model.
+
+------------------------------------------------------------------------------
+codebase-memory-mcp — https://github.com/DeusData/codebase-memory-mcp
+  License: MIT (Copyright (c) 2025 DeusData)
+  Used by: illuminate-layout (the 3D force-directed layout, a Rust port of
+  layout3d.c) and the /graph react-three-fiber renderer technique.
+
+------------------------------------------------------------------------------
+homn — https://github.com/rohansx/homn
+  License: Apache-2.0 (homn-policy)
+  Used by: illuminate-policy (the Rhai deny→ask→allow policy engine), ported
+  from homn-policy and relicensed MIT with the author's permission.
+
+------------------------------------------------------------------------------
+GitNexus
+  Not vendored or derived. illuminate-query re-implements a bounded
+  openCypher-subset query surface from the public openCypher grammar and from
+  GitNexus's observable MCP tool surface only; no GitNexus source is used.

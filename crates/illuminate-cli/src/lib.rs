@@ -346,6 +346,36 @@ enum Commands {
         json: bool,
     },
 
+    /// Trace a symbol's directional process flow via the code graph (read-only).
+    Trace {
+        /// Symbol or qualified name to trace from
+        symbol: String,
+
+        /// Path to index.db (default: <repo>/.illuminate/index.db)
+        #[arg(long)]
+        index_db: Option<PathBuf>,
+
+        /// Direction: downstream (callees), upstream (callers), or both
+        #[arg(long)]
+        dir: Option<String>,
+
+        /// Comma-separated edge kinds: calls,imports,inherits,references (default: calls)
+        #[arg(long)]
+        kinds: Option<String>,
+
+        /// BFS max depth (default: 3)
+        #[arg(long)]
+        depth: Option<u32>,
+
+        /// Max traversed edges (default: 200)
+        #[arg(long)]
+        max_steps: Option<usize>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Ingest external knowledge sources (local markdown for now) into the graph
     Ingest {
         /// Roots to walk for *.md files; defaults to docs/, ARCHITECTURE.md,
@@ -838,6 +868,15 @@ pub fn run() {
             max_nodes,
             json,
         } => commands::impact::run(files, index_db, depth, max_nodes, json),
+        Commands::Trace {
+            symbol,
+            index_db,
+            dir,
+            kinds,
+            depth,
+            max_steps,
+            json,
+        } => commands::trace::run(symbol, index_db, dir, kinds, depth, max_steps, json),
         Commands::Ingest { roots, json } => commands::ingest::run(roots, json),
         Commands::DocDecay { roots, json } => commands::doc_decay::run(roots, json),
         Commands::AuditDocs { file, json } => commands::audit_docs::run(file, json),

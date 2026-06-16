@@ -17,8 +17,8 @@ toml = { workspace = true }
 # Pure-Rust embedded HNSW for the optional approximate VectorIndex backend —
 # keeps illuminate single-binary/offline (no server, no C extension).
 instant-distance = "0.6"
-illuminate-config = { path = "../illuminate-config", version = "0.29.0" }
-illuminate-extract = { path = "../illuminate-extract", version = "0.29.0", optional = true }
+illuminate-config = { path = "../illuminate-config", version = "0.30.0" }
+illuminate-extract = { path = "../illuminate-extract", version = "0.30.0", optional = true }
 strsim = { workspace = true }
 
 [features]

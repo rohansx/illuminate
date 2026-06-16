@@ -172,6 +172,23 @@ fn test_tools_list_includes_policy_tools() {
 }
 
 #[test]
+fn test_tools_list_includes_trace() {
+    // The code-graph process-flow tool (v0.30) must be advertised, requiring 'symbol'.
+    let tools = illuminate_mcp::tools::tools_list();
+    let list = tools["tools"].as_array().expect("tools array");
+    let trace = list
+        .iter()
+        .find(|t| t["name"] == "illuminate_trace")
+        .expect("illuminate_trace must be advertised");
+    let required = trace["inputSchema"]["required"].as_array().unwrap();
+    assert!(required.iter().any(|v| v.as_str() == Some("symbol")));
+    let dir_enum = trace["inputSchema"]["properties"]["dir"]["enum"]
+        .as_array()
+        .unwrap();
+    assert_eq!(dir_enum.len(), 3, "dir has downstream/upstream/both");
+}
+
+#[test]
 fn test_embedding_cache_warm_once_semantics() {
     // The embedding_cache Option acts as a once-flag:
     // None = not yet loaded, Some(map) = loaded. Verify the semantics hold.

@@ -99,6 +99,33 @@ fn read_policy_ledger(root: &Path, limit: usize) -> Vec<Value> {
     rows
 }
 
+/// Parse the `kinds` arg for `illuminate_trace`. `null`/empty defaults to
+/// `["calls"]`; entries must be valid `EdgeKind` names.
+fn parse_trace_kinds(v: &Value) -> Result<Vec<illuminate_index::edges::EdgeKind>, String> {
+    use illuminate_index::edges::EdgeKind;
+    match v {
+        Value::Null => Ok(vec![EdgeKind::Calls]),
+        Value::Array(arr) => {
+            let mut out = Vec::new();
+            for item in arr {
+                let s = item
+                    .as_str()
+                    .ok_or_else(|| "'kinds' entries must be strings".to_string())?;
+                let k = EdgeKind::from_str(&s.to_lowercase()).ok_or_else(|| {
+                    format!("invalid kind '{s}' (calls|imports|inherits|references)")
+                })?;
+                out.push(k);
+            }
+            if out.is_empty() {
+                Ok(vec![EdgeKind::Calls])
+            } else {
+                Ok(out)
+            }
+        }
+        _ => Err("'kinds' must be an array of strings".to_string()),
+    }
+}
+
 pub struct ToolContext {
     pub graph: Arc<Mutex<Graph>>,
     pub embed: Option<Arc<EmbedEngine>>,
@@ -1069,6 +1096,58 @@ impl ToolContext {
         Ok(json!({ "decisions": read_policy_ledger(&root, limit) }))
     }
 
+    /// `illuminate_trace` — directional process-flow trace over the code graph
+    /// (`index.db`). Resolves `symbol` to qualified-name seeds, then walks
+    /// calls/imports/inherits/references edges in the requested direction. The
+    /// resident index connection is reused (read-only traversal; the temp seed
+    /// table is distinct from the audit path and no sticky PRAGMA is set).
+    pub async fn illuminate_trace(&self, args: Value) -> Result<Value, String> {
+        let symbol = args["symbol"].as_str().unwrap_or("").trim().to_string();
+        if symbol.is_empty() {
+            return Err("missing 'symbol'".to_string());
+        }
+        let dir_str = args["dir"].as_str().unwrap_or("downstream");
+        let dir = illuminate_index::edges::FlowDir::from_str(&dir_str.to_lowercase())
+            .ok_or_else(|| format!("invalid 'dir' '{dir_str}' (downstream|upstream|both)"))?;
+        let kinds = parse_trace_kinds(&args["kinds"])?;
+        let max_depth = args["max_depth"].as_u64().unwrap_or(3).clamp(1, 6) as u32;
+        let max_steps = args["max_steps"].as_u64().unwrap_or(200).clamp(1, 2000) as usize;
+
+        let Some(conn_lock) = self.index_connection() else {
+            return Err("no index.db configured; run `illuminate index` first".to_string());
+        };
+        let conn = conn_lock
+            .lock()
+            .map_err(|_| "index.db lock poisoned".to_string())?;
+
+        let seeds = illuminate_index::storage::resolve_qn_to_symbols(&conn, &symbol)
+            .map_err(|e| e.to_string())?;
+        if seeds.is_empty() {
+            return Ok(json!({
+                "symbol": symbol,
+                "dir": dir.as_str(),
+                "seeds": [],
+                "steps": [],
+                "truncated": false,
+            }));
+        }
+        let result =
+            illuminate_index::storage::trace_flow(&conn, &seeds, dir, &kinds, max_depth, max_steps)
+                .map_err(|e| e.to_string())?;
+        Ok(json!({
+            "symbol": symbol,
+            "dir": dir.as_str(),
+            "seeds": result.seeds,
+            "steps": result.steps.iter().map(|s| json!({
+                "from": s.from,
+                "to": s.to,
+                "kind": s.kind.as_str(),
+                "depth": s.depth,
+            })).collect::<Vec<_>>(),
+            "truncated": result.truncated,
+        }))
+    }
+
     /// Tool: illuminate_impact
     /// Given a decision ID, show every file and symbol anchored to that decision.
     pub async fn illuminate_impact(&self, args: Value) -> Result<Value, String> {
@@ -1853,6 +1932,21 @@ pub fn tools_list() -> Value {
                     "properties": {
                         "limit": {"type": "integer", "description": "Max entries (default 20)"}
                     }
+                }
+            },
+            {
+                "name": "illuminate_trace",
+                "description": "Directional process-flow trace over the code graph (index.db). Resolves a symbol to qualified-name seeds, then walks calls/imports/inherits/references edges in the requested direction. Answers: what does this symbol call (downstream), or what calls it (upstream)? Read-only; returns the traversed edges as {from,to,kind,depth} steps.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Symbol name or qualified name to trace from"},
+                        "dir": {"type": "string", "enum": ["downstream", "upstream", "both"], "description": "downstream = callees, upstream = callers, both (default downstream)"},
+                        "kinds": {"type": "array", "items": {"type": "string", "enum": ["calls", "imports", "inherits", "references"]}, "description": "Edge kinds to follow (default [\"calls\"])"},
+                        "max_depth": {"type": "integer", "description": "BFS max depth, 1-6 (default 3)"},
+                        "max_steps": {"type": "integer", "description": "Max traversed edges, 1-2000 (default 200)"}
+                    },
+                    "required": ["symbol"]
                 }
             }
         ]

@@ -4,6 +4,17 @@ All notable changes to Illuminate are tracked here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.30.0] — 2026-06-16
+
+### Added — `illuminate trace`: directional process-flow over the code graph
+
+Phase 3 of the consolidation roadmap, first feature (the *trace* half of the GitNexus-style query surface). illuminate already computes a bidirectional blast-radius (`illuminate impact`); this adds **directional** flow tracing — "what does this symbol call?" (downstream) vs "what calls it?" (upstream) — over the existing `index.db`, with **no schema change**.
+
+- **`illuminate-index`: `trace_flow` + `resolve_qn_to_symbols`.** `trace_flow` walks `calls`/`imports`/`inherits`/`references` edges from resolved seeds in a chosen `FlowDir` (`Downstream`/`Upstream`/`Both`), emitting each traversed edge as a `FlowStep{from,to,kind,depth}`. Unlike `impact_radius` (unconditionally bidirectional, node-set only), it uses its own **per-direction recursive CTE** — it only borrows the temp-seed-table + probe-limit+1 truncation idiom. A test pins the invariant that `dir=Both` reaches exactly the same node set as `impact_radius`. `resolve_qn_to_symbols` maps a user symbol to qualified-name seeds best-effort (exact endpoint match, else last-segment match) — honest about the substrate (edge endpoints are free text; a real symbol-resolution pass is a Phase-4 epic). Deterministic, capped, kind-filtered. 10 new tests.
+- **`illuminate trace <symbol>` CLI** + **`illuminate_trace` MCP tool.** `--dir`, `--kinds` (all four edge kinds, default `calls`), `--depth`, `--max-steps`, `--json`. The MCP tool reuses the resident read-only index connection (its temp seed table is distinct from the audit path and it sets no sticky PRAGMA, so the shared handle is safe — unlike the upcoming `cypher` tool, which will open a fresh per-call connection). The MCP server now advertises **fifteen** `illuminate_*` tools (was fourteen).
+- **Provenance.** New workspace-root `NOTICE` consolidating attributions: code-review-graph (MIT, the recursive-CTE traversal shape + the upcoming risk model), reflect (MIT, the upcoming `illuminate-eval`), codebase-memory-mcp (MIT, layout/graph-ui), homn (Apache-2.0→MIT, policy). GitNexus is not vendored or derived — `illuminate-query` (later in Phase 3) re-implements a bounded openCypher subset from the public grammar + observable MCP surface only.
+- **Workspace version bump** `0.29.0` → `0.30.0`.
+
 ## [0.29.0] — 2026-06-15
 
 ### Added — policy gate, agent-facing: `query_policy` + `recent_decisions` MCP tools
