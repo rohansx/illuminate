@@ -56,10 +56,11 @@ fn home_page_renders_stats() {
     write_decision(tmp.path(), "dec-2", "second", "active");
     write_pattern(tmp.path(), "pat-1", "first pattern");
 
-    let resp = route(&ctx_for(tmp.path()), "GET", "/", "");
+    // "/" now serves the Vite dashboard; the static wiki listing is at "/wiki".
+    let resp = route(&ctx_for(tmp.path()), "GET", "/wiki", "");
     assert_eq!(resp.status, 200);
     assert!(resp.content_type.starts_with("text/html"));
-    // Stat counts are inlined into the dashboard cards.
+    // Stat counts are inlined into the static wiki home cards.
     assert!(resp.body.contains("2"), "expected '2' in {}", resp.body);
     assert!(resp.body.contains("decisions"));
     assert!(resp.body.contains("patterns"));
@@ -363,7 +364,8 @@ fn new_post_writes_failure_and_module_pages() {
 #[test]
 fn topnav_includes_new_link() {
     let tmp = tempfile::tempdir().unwrap();
-    let resp = route(&ctx_for(tmp.path()), "GET", "/", "");
+    // "/" now serves the Vite dashboard; the static wiki with the "+ new" nav is at "/wiki".
+    let resp = route(&ctx_for(tmp.path()), "GET", "/wiki", "");
     assert!(
         resp.body.contains("href=\"/new\""),
         "expected '+ new' link in topnav"

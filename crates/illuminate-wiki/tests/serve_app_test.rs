@@ -1,4 +1,4 @@
-//! The embedded `illuminate-web` front-end (landing + dashboard) is served by
+//! The embedded `illuminate-web` front-end (unified dashboard) is served by
 //! `wiki serve`, so the single binary hosts the live dashboard from any
 //! directory. Pure `route()` tests — no TCP listener, no mocks.
 
@@ -39,49 +39,34 @@ fn serves_dashboard_app_at_app() {
 }
 
 #[test]
-fn serves_front_end_assets() {
+fn old_asset_routes_are_gone() {
     let tmp = tempfile::tempdir().unwrap();
     let ctx = ctx_for(tmp.path());
 
-    let css = route(&ctx, "GET", "/illuminate-v4.css", "");
-    assert_eq!(css.status, 200);
-    assert!(
-        css.content_type.starts_with("text/css"),
-        "ct={}",
-        css.content_type
-    );
-    assert!(!css.body.trim().is_empty());
-
-    let dcss = route(&ctx, "GET", "/illuminate-dashboard.css", "");
-    assert_eq!(dcss.status, 200);
-    assert!(dcss.content_type.starts_with("text/css"));
-
-    let js = route(&ctx, "GET", "/illuminate-v4.js", "");
-    assert_eq!(js.status, 200);
-    assert!(
-        js.content_type.contains("javascript"),
-        "ct={}",
-        js.content_type
-    );
-    // the dashboard hydrates from the absolute /api/dashboard the same server serves
-    assert!(js.body.contains("/api/dashboard"));
+    // Pre-Vite standalone assets are no longer served — the Vite build inlines them.
+    for path in &["/illuminate-v4.css", "/illuminate-dashboard.css", "/illuminate-v4.js"] {
+        let r = route(&ctx, "GET", path, "");
+        assert_ne!(r.status, 200, "{path} should not be served anymore");
+    }
 }
 
 #[test]
-fn serves_landing_and_leaves_wiki_routes_intact() {
+fn root_and_aliases_serve_dashboard() {
     let tmp = tempfile::tempdir().unwrap();
     let ctx = ctx_for(tmp.path());
 
-    let landing = route(&ctx, "GET", "/index.html", "");
-    assert_eq!(landing.status, 200);
-    assert!(landing.content_type.starts_with("text/html"));
+    // / and all legacy aliases must serve the unified Vite dashboard.
+    for path in &["/", "/index.html", "/landing", "/app", "/dashboard"] {
+        let r = route(&ctx, "GET", path, "");
+        assert_eq!(r.status, 200, "{path} must be 200");
+        assert!(r.content_type.starts_with("text/html"), "{path} must be HTML");
+        assert!(
+            r.body.contains("/api/dashboard"),
+            "{path} dashboard must fetch live endpoint"
+        );
+    }
 
-    // the built-in wiki home is unchanged (still served at "/")
-    let home = route(&ctx, "GET", "/", "");
-    assert_eq!(home.status, 200);
-    assert!(home.content_type.starts_with("text/html"));
-
-    // a non-asset, non-wiki path is not hijacked by the app
+    // Unknown paths are not hijacked.
     let other = route(&ctx, "GET", "/illuminate-nope.css", "");
     assert_ne!(other.status, 200);
 }
