@@ -19,7 +19,8 @@ import "./dashboard-app.css";
 
 import type { Dashboard } from "./types.ts";
 import { div, el, text } from "./dom.ts";
-import { fetchDashboard } from "./api.ts";
+import { fetchDashboard, fetchEpisodes } from "./api.ts";
+import { num } from "./format.ts";
 import { openDetail, openEpisode } from "./detail.ts";
 import { createNav, type ViewId } from "./nav.ts";
 import { createSearch } from "./search.ts";
@@ -130,6 +131,37 @@ function tokensView(d: Dashboard): HTMLElement {
   ]);
 }
 
+/** Prompt trail: all graph episodes newest-first, clickable to detail. */
+function mountTrail(host: HTMLElement, onOpen: (id: string) => void): void {
+  host.replaceChildren(renderLoading());
+  void (async () => {
+    try {
+      const { episodes, total } = await fetchEpisodes(undefined, 100);
+      const head = el("div", { class: "ph" }, []);
+      head.append(text("span", "label", "trail"));
+      head.append(text("span", "title", "all sessions"));
+      head.append(
+        text("span", "sub", `${num(total)} episode${total === 1 ? "" : "s"}`),
+      );
+      const rows = episodes.map((ep) => {
+        const row = el("button", { class: "card-row clickable ep-row", type: "button" });
+        row.append(div("body", [text("div", "name", ep.id)]));
+        row.addEventListener("click", () => onOpen(ep.id));
+        return row;
+      });
+      const body = div("pb tight", [
+        episodes.length === 0
+          ? text("p", "empty", "no trail episodes recorded yet")
+          : div("card-list", rows),
+      ]);
+      host.replaceChildren(div("stack", [head, div("panel amber", [head, body])]));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      host.replaceChildren(renderError(message));
+    }
+  })();
+}
+
 // ---- view switching --------------------------------------------------------
 function selectView(id: ViewId, opts: { keepSource?: boolean } = {}): void {
   currentView = id;
@@ -137,8 +169,24 @@ function selectView(id: ViewId, opts: { keepSource?: boolean } = {}): void {
   if (!opts.keepSource) selectedSource = null;
 
   if (id === "knowledge") {
-    // Knowledge fetches its own data (lazy) every time it is opened.
     mountKnowledge(view, openDetail);
+    return;
+  }
+
+  if (id === "graph") {
+    view.classList.add("view--graph");
+    const frame = el("iframe", {
+      src: "/graph",
+      class: "graph-frame",
+      title: "Code and decision graph",
+    });
+    view.replaceChildren(frame);
+    return;
+  }
+  view.classList.remove("view--graph");
+
+  if (id === "trail") {
+    mountTrail(view, openEpisode);
     return;
   }
 

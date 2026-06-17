@@ -146,7 +146,14 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         ("POST", "/api/audit") => handle_api_audit_post(ctx, body),
         ("POST", "/new") => handle_new_post(ctx, body),
         ("GET", "/new") => handle_new_form(ctx, &params),
-        ("GET", "/") | ("GET", "") | ("GET", "/index") => handle_home(ctx),
+        // Root now serves the full-featured dashboard app — one URL, everything
+        // connected. The old static wiki home is still reachable at /wiki.
+        ("GET", "/") | ("GET", "") => {
+            let (ct, body) = crate::webapp::asset("/app")
+                .expect("dashboard HTML always embedded in binary");
+            RouteResp { status: 200, content_type: ct, body: body.to_string() }
+        }
+        ("GET", "/wiki") | ("GET", "/index") => handle_home(ctx),
         ("GET", "/decisions") => handle_list(ctx, PageType::Decision, &params),
         ("GET", "/patterns") => handle_list(ctx, PageType::Pattern, &params),
         ("GET", "/failures") => handle_list(ctx, PageType::Failure, &params),

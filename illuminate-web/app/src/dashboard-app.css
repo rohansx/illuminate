@@ -419,6 +419,16 @@
 
 body.detail-open { overflow: hidden; }
 
+/* ---- graph view: iframe fills the available viewport --------------------- */
+.view.view--graph { padding: 0; }
+.graph-frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 56px); /* subtract topbar */
+  border: none;
+  border-top: var(--line) solid var(--border);
+}
+
 @media (max-width: 720px) {
   .detail-sheet { width: 100%; }
   .search-input { width: 100%; }
