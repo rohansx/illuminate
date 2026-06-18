@@ -15,6 +15,7 @@ fn ctx_for(root: &Path) -> RouteCtx<'_> {
         episodes: None,
         episode: None,
         layout: None,
+        docs_dir: None,
     }
 }
 
@@ -44,7 +45,11 @@ fn old_asset_routes_are_gone() {
     let ctx = ctx_for(tmp.path());
 
     // Pre-Vite standalone assets are no longer served — the Vite build inlines them.
-    for path in &["/illuminate-v4.css", "/illuminate-dashboard.css", "/illuminate-v4.js"] {
+    for path in &[
+        "/illuminate-v4.css",
+        "/illuminate-dashboard.css",
+        "/illuminate-v4.js",
+    ] {
         let r = route(&ctx, "GET", path, "");
         assert_ne!(r.status, 200, "{path} should not be served anymore");
     }
@@ -59,7 +64,10 @@ fn root_and_aliases_serve_dashboard() {
     for path in &["/", "/index.html", "/landing", "/app", "/dashboard"] {
         let r = route(&ctx, "GET", path, "");
         assert_eq!(r.status, 200, "{path} must be 200");
-        assert!(r.content_type.starts_with("text/html"), "{path} must be HTML");
+        assert!(
+            r.content_type.starts_with("text/html"),
+            "{path} must be HTML"
+        );
         assert!(
             r.body.contains("/api/dashboard"),
             "{path} dashboard must fetch live endpoint"

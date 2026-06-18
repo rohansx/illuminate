@@ -110,3 +110,23 @@ export interface Episode {
   content: string;
   created?: string;
 }
+
+// GET /api/docs -> { docs: [{ path, title, group }] }. `path` is relative to
+// the repo `docs/` dir and is the key for GET /api/doc/<path>; `group` is the
+// top-level subdirectory ("" for files directly under docs/).
+export interface DocItem {
+  path: string;
+  title: string;
+  group: string;
+}
+
+export interface DocList {
+  docs: DocItem[];
+}
+
+// GET /api/doc/<path> -> one doc with the raw markdown `body`.
+export interface Doc {
+  path: string;
+  title: string;
+  body: string;
+}

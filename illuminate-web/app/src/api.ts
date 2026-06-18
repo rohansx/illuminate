@@ -5,6 +5,8 @@
 
 import type {
   Dashboard,
+  Doc,
+  DocList,
   Episode,
   EpisodeList,
   Page,
@@ -70,6 +72,34 @@ export async function fetchEpisodes(source?: string, limit = 50): Promise<Episod
   const data = await getJson<EpisodeList>(`/api/episodes?${qs.toString()}`);
   if (!data || typeof data !== "object" || !Array.isArray(data.episodes)) {
     throw new Error("unexpected response shape from /api/episodes");
+  }
+  return data;
+}
+
+/** GET /api/docs — the repo's docs/ markdown files (metadata only). */
+export async function fetchDocs(): Promise<DocList> {
+  const data = await getJson<DocList>("/api/docs");
+  if (!data || typeof data !== "object" || !Array.isArray(data.docs)) {
+    throw new Error("unexpected response shape from /api/docs");
+  }
+  return data;
+}
+
+/** GET /api/doc/<path> — one doc with the FULL raw markdown `body`. */
+export async function fetchDoc(path: string): Promise<Doc> {
+  // The path is relative (e.g. "old/PRD.md"); encode each segment but keep the
+  // slashes so the server's /api/doc/<relpath> route sees the nested path.
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const resp = await fetch(`/api/doc/${encoded}`, { headers: JSON_HEADERS });
+  if (resp.status === 404) {
+    throw new Error("doc not found");
+  }
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+  }
+  const data = (await resp.json()) as Doc;
+  if (!data || typeof data !== "object" || typeof data.body !== "string") {
+    throw new Error("unexpected response shape from /api/doc");
   }
   return data;
 }

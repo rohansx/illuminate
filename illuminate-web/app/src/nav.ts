@@ -6,7 +6,14 @@
 
 import { el, text } from "./dom.ts";
 
-export type ViewId = "overview" | "knowledge" | "sources" | "tokens" | "graph" | "trail";
+export type ViewId =
+  | "overview"
+  | "knowledge"
+  | "docs"
+  | "sources"
+  | "tokens"
+  | "graph"
+  | "trail";
 
 interface NavItem {
   id: ViewId;
@@ -16,6 +23,7 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { id: "overview", short: "over" },
   { id: "knowledge", short: "know" },
+  { id: "docs", short: "docs" },
   { id: "sources", short: "src" },
   { id: "tokens", short: "tok" },
   { id: "graph", short: "gph" },

@@ -27,8 +27,6 @@ const CLOUD_HTML: &str = include_str!("../../../illuminate-web/cloud/dist/index.
 const GRAPH_HTML: &str = include_str!("../../../illuminate-web/graph/dist/index.html");
 
 const HTML: &str = "text/html; charset=utf-8";
-const CSS: &str = "text/css; charset=utf-8";
-const JS: &str = "application/javascript; charset=utf-8";
 
 /// Resolve a request path to an embedded web asset as `(content_type, body)`.
 ///
@@ -58,10 +56,19 @@ mod tests {
     #[test]
     fn dashboard_resolves_on_all_aliases() {
         // All legacy and new aliases must serve the same Vite dashboard.
-        for path in &["/app", "/dashboard", "/dashboard.html", "/index.html", "/landing"] {
+        for path in &[
+            "/app",
+            "/dashboard",
+            "/dashboard.html",
+            "/index.html",
+            "/landing",
+        ] {
             let (ct, body) = asset(path).unwrap_or_else(|| panic!("{path} must resolve"));
             assert_eq!(ct, HTML_CT, "{path} must be HTML");
-            assert!(body.contains("/api/dashboard"), "{path} must fetch live endpoint");
+            assert!(
+                body.contains("/api/dashboard"),
+                "{path} must fetch live endpoint"
+            );
             assert!(body.contains("illuminate"), "{path} must carry branding");
         }
     }

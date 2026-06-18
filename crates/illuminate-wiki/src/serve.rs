@@ -109,6 +109,11 @@ pub struct RouteCtx<'a> {
     /// Optional graph-layout source for `/api/layout` (the `/graph` viz).
     /// `None` yields an empty graph.
     pub layout: Option<&'a LayoutFn>,
+    /// Optional repo `docs/` directory for the dashboard's docs viewer
+    /// (`/api/docs` + `/api/doc/<relpath>`). Pure filesystem — markdown is read
+    /// and returned raw for client-side rendering, so the wiki crate keeps zero
+    /// typed dependency on anything. `None` yields an empty docs list.
+    pub docs_dir: Option<&'a Path>,
 }
 
 /// Response produced by [`route`] — passed to `tiny_http::Response::from_string`.
@@ -149,9 +154,13 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         // Root now serves the full-featured dashboard app — one URL, everything
         // connected. The old static wiki home is still reachable at /wiki.
         ("GET", "/") | ("GET", "") => {
-            let (ct, body) = crate::webapp::asset("/app")
-                .expect("dashboard HTML always embedded in binary");
-            RouteResp { status: 200, content_type: ct, body: body.to_string() }
+            let (ct, body) =
+                crate::webapp::asset("/app").expect("dashboard HTML always embedded in binary");
+            RouteResp {
+                status: 200,
+                content_type: ct,
+                body: body.to_string(),
+            }
         }
         ("GET", "/wiki") | ("GET", "/index") => handle_home(ctx),
         ("GET", "/decisions") => handle_list(ctx, PageType::Decision, &params),
@@ -165,6 +174,7 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         ("GET", "/api/pages") => handle_api_pages(ctx, &params),
         ("GET", "/api/episodes") => handle_api_episodes(ctx, &params),
         ("GET", "/api/layout") => handle_api_layout(ctx, &params),
+        ("GET", "/api/docs") => handle_api_docs(ctx),
         // Embedded illuminate-web front-end (landing + dashboard) — served so
         // the single binary hosts the live dashboard from any directory.
         ("GET", p) if crate::webapp::asset(p).is_some() => {
@@ -180,6 +190,9 @@ pub fn route(ctx: &RouteCtx, method: &str, url: &str, body: &str) -> RouteResp {
         }
         ("GET", p) if p.starts_with("/api/episode/") => {
             handle_api_episode(ctx, p.trim_start_matches("/api/episode/"))
+        }
+        ("GET", p) if p.starts_with("/api/doc/") => {
+            handle_api_doc(ctx, p.trim_start_matches("/api/doc/"))
         }
         ("GET", "/api/search") => handle_api_search(ctx, &params),
         ("GET", p) if p.starts_with("/page/") => handle_page(ctx, p.trim_start_matches("/page/")),
@@ -372,6 +385,24 @@ fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
         .map(|p| row(p))
         .collect();
 
+    // The live decision graph is the source of truth for entity/edge counts
+    // when it's wired in (the CLI's GraphStatsFn opens graph.db). The
+    // page-derived counts (one entity per page, edges = front-matter refs) are
+    // only a fallback for a wiki served without a graph — otherwise the
+    // dashboard would show two contradictory numbers (e.g. 14 pages vs 23 graph
+    // entities). Prefer the graph counts whenever they're non-zero.
+    let graph = dashboard_graph(ctx);
+    let graph_entities = graph.get("entities").and_then(|v| v.as_u64());
+    let graph_edges = graph.get("edges").and_then(|v| v.as_u64());
+    let entities = match graph_entities {
+        Some(n) if n > 0 => n as usize,
+        _ => pages.len(),
+    };
+    let edge_count = match graph_edges {
+        Some(n) if n > 0 => n as usize,
+        _ => edges,
+    };
+
     let body = serde_json::json!({
         "project": ctx.project_name.unwrap_or("illuminate"),
         "generated_at": now.to_rfc3339(),
@@ -381,15 +412,15 @@ fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
             "failures": stats.failures,
             "modules": stats.modules,
             "total": pages.len(),
-            "entities": pages.len(),
-            "edges": edges,
+            "entities": entities,
+            "edges": edge_count,
         },
         "recent_sessions": recent_sessions,
         "recent_decisions": recent_decisions,
         "recent_failures": recent_failures,
         "audit_rows": audit_rows,
         "tokens": dashboard_tokens(ctx),
-        "graph": dashboard_graph(ctx),
+        "graph": graph,
     });
     RouteResp::json(200, body.to_string())
 }
@@ -561,6 +592,150 @@ fn handle_api_episode(ctx: &RouteCtx, id: &str) -> RouteResp {
     let v = (episode)(id);
     let status = if v.get("error").is_some() { 404 } else { 200 };
     RouteResp::json(status, v.to_string())
+}
+
+/// `GET /api/docs` — list every markdown file under the repo's `docs/`
+/// directory as `{ docs: [{ path, title, group }, …] }`, sorted by group then
+/// title. `path` is relative to `docs/` (the key for `/api/doc/<path>`),
+/// `title` is the first `# heading` or the humanized filename, and `group` is
+/// the top-level subdirectory (`""` for files directly under `docs/`). With no
+/// `docs_dir` wired in the list is empty — an honest empty state.
+fn handle_api_docs(ctx: &RouteCtx) -> RouteResp {
+    let Some(dir) = ctx.docs_dir else {
+        return RouteResp::json(200, r#"{"docs":[]}"#.to_string());
+    };
+    let mut docs: Vec<serde_json::Value> = Vec::new();
+    let mut rels: Vec<String> = Vec::new();
+    collect_docs(dir, dir, &mut rels);
+    rels.sort();
+    let mut rows: Vec<(String, String, String)> = rels
+        .into_iter()
+        .map(|rel| {
+            let abs = dir.join(&rel);
+            let title = doc_title(&abs, &rel);
+            let group = rel
+                .rsplit_once('/')
+                .map(|(g, _)| g.to_string())
+                .unwrap_or_default();
+            (group, title, rel)
+        })
+        .collect();
+    // root docs first (empty group), then grouped; alpha within each by title.
+    rows.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.to_lowercase().cmp(&b.1.to_lowercase()))
+    });
+    for (group, title, path) in rows {
+        docs.push(serde_json::json!({ "path": path, "title": title, "group": group }));
+    }
+    RouteResp::json(200, serde_json::json!({ "docs": docs }).to_string())
+}
+
+/// `GET /api/doc/<relpath>` — one markdown doc as `{ path, title, body }` with
+/// the raw markdown `body` for client-side rendering (same `marked` path as
+/// wiki pages). Guards against path traversal: the resolved file must stay
+/// within `docs/` and end in `.md`. Missing/invalid paths map to 404.
+fn handle_api_doc(ctx: &RouteCtx, rel: &str) -> RouteResp {
+    let Some(dir) = ctx.docs_dir else {
+        return RouteResp::json(
+            503,
+            r#"{"error":"no docs directory configured"}"#.to_string(),
+        );
+    };
+    let rel = rel.trim_end_matches('/');
+    // Reject traversal + absolute components before touching the filesystem.
+    let safe = !rel.is_empty()
+        && rel.ends_with(".md")
+        && !rel.starts_with('/')
+        && std::path::Path::new(rel)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    if !safe {
+        return RouteResp::json(400, r#"{"error":"invalid doc path"}"#.to_string());
+    }
+    let abs = dir.join(rel);
+    // Defense in depth: canonicalize and confirm containment under docs/.
+    match (std::fs::canonicalize(&abs), std::fs::canonicalize(dir)) {
+        (Ok(file), Ok(base)) if file.starts_with(&base) => match std::fs::read_to_string(&file) {
+            Ok(body) => {
+                let title = doc_title(&abs, rel);
+                RouteResp::json(
+                    200,
+                    serde_json::json!({ "path": rel, "title": title, "body": body }).to_string(),
+                )
+            }
+            Err(e) => RouteResp::json(
+                404,
+                format!(r#"{{"error":"{}"}}"#, html_escape(&e.to_string())),
+            ),
+        },
+        _ => RouteResp::json(
+            404,
+            format!(r#"{{"error":"doc not found: {}"}}"#, html_escape(rel)),
+        ),
+    }
+}
+
+/// Recursively collect relative paths of every `*.md` under `base`, skipping
+/// hidden entries. `dir` is the current directory being walked; `base` is the
+/// docs root used to compute the returned relative paths.
+fn collect_docs(base: &Path, dir: &Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            collect_docs(base, &path, out);
+        } else if ft.is_file()
+            && path.extension().and_then(|e| e.to_str()) == Some("md")
+            && let Ok(rel) = path.strip_prefix(base)
+        {
+            out.push(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
+}
+
+/// Derive a human title for a doc: the first `# heading` line if present,
+/// otherwise the humanized filename stem (`GETTING_STARTED.md` → "Getting
+/// Started").
+fn doc_title(abs: &Path, rel: &str) -> String {
+    if let Ok(text) = std::fs::read_to_string(abs) {
+        for line in text.lines().take(40) {
+            let t = line.trim();
+            if let Some(h) = t.strip_prefix("# ") {
+                let h = h.trim();
+                if !h.is_empty() {
+                    return h.to_string();
+                }
+            }
+        }
+    }
+    let stem = rel
+        .rsplit('/')
+        .next()
+        .unwrap_or(rel)
+        .trim_end_matches(".md");
+    stem.replace(['_', '-'], " ")
+        .split_whitespace()
+        .map(|w| {
+            // Lowercase the whole word, then capitalize the first char, so a
+            // screaming filename (GETTING_STARTED) becomes "Getting Started".
+            let lower = w.to_lowercase();
+            let mut c = lower.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn handle_api_search(
@@ -789,6 +964,7 @@ pub fn serve_with(
     episodes: Option<Arc<EpisodesFn>>,
     episode: Option<Arc<EpisodeFn>>,
     layout: Option<Arc<LayoutFn>>,
+    docs_dir: Option<std::path::PathBuf>,
 ) -> std::io::Result<()> {
     let addr = format!("127.0.0.1:{port}");
     let server = tiny_http::Server::http(&addr)
@@ -817,6 +993,7 @@ pub fn serve_with(
         let episodes_ref = episodes.as_deref();
         let episode_ref = episode.as_deref();
         let layout_ref = layout.as_deref();
+        let docs_ref = docs_dir.as_deref();
         let resp = {
             let ctx = RouteCtx {
                 root: &root,
@@ -827,6 +1004,7 @@ pub fn serve_with(
                 episodes: episodes_ref,
                 episode: episode_ref,
                 layout: layout_ref,
+                docs_dir: docs_ref,
             };
             let mut r = route(&ctx, &method, &url, &body);
             // Inject graph hits into search responses if a graph closure is wired in.
@@ -859,7 +1037,7 @@ pub fn serve_with(
 /// dashboard, browse, search and a 503 audit playground.
 pub fn serve(wiki_root: &Path, port: u16) -> std::io::Result<()> {
     serve_with(
-        wiki_root, port, None, None, None, None, None, None, None, None,
+        wiki_root, port, None, None, None, None, None, None, None, None, None,
     )
 }
 

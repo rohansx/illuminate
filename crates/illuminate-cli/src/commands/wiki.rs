@@ -375,6 +375,14 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         })
     };
 
+    // Repo `docs/` directory for the dashboard's docs viewer (/api/docs +
+    // /api/doc/<path>). Resolved once from the repo root; only wired in when it
+    // actually exists so a repo without docs degrades to an empty docs list.
+    let docs_dir = repo_root()
+        .ok()
+        .map(|r| r.join("docs"))
+        .filter(|d| d.is_dir());
+
     illuminate_wiki::serve::serve_with(
         &dir,
         port,
@@ -386,6 +394,7 @@ fn cmd_serve(port: u16) -> std::io::Result<()> {
         Some(episodes),
         Some(episode),
         Some(layout),
+        docs_dir,
     )
 }
 

@@ -21,10 +21,11 @@ import type { Dashboard } from "./types.ts";
 import { div, el, text } from "./dom.ts";
 import { fetchDashboard, fetchEpisodes } from "./api.ts";
 import { num } from "./format.ts";
-import { openDetail, openEpisode } from "./detail.ts";
+import { openDetail, openDoc, openEpisode } from "./detail.ts";
 import { createNav, type ViewId } from "./nav.ts";
 import { createSearch } from "./search.ts";
 import { mountKnowledge } from "./knowledge.ts";
+import { mountDocs } from "./docs.ts";
 import { mountEpisodes } from "./episodes.ts";
 import {
   renderError,
@@ -170,6 +171,12 @@ function selectView(id: ViewId, opts: { keepSource?: boolean } = {}): void {
 
   if (id === "knowledge") {
     mountKnowledge(view, openDetail);
+    return;
+  }
+
+  if (id === "docs") {
+    view.classList.remove("view--graph");
+    mountDocs(view, openDoc);
     return;
   }
 

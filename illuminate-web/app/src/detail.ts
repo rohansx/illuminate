@@ -15,9 +15,9 @@
 
 import { marked } from "marked";
 
-import type { Episode, Page } from "./types.ts";
+import type { Doc, Episode, Page } from "./types.ts";
 import { div, el, text } from "./dom.ts";
-import { fetchEpisode, fetchPage } from "./api.ts";
+import { fetchDoc, fetchEpisode, fetchPage } from "./api.ts";
 import { relativeTime } from "./format.ts";
 
 // Render markdown -> HTML synchronously. `marked.parse` can be async when async
@@ -203,6 +203,25 @@ function renderEpisode(ep: Episode): void {
   bodyHost.replaceChildren(header, article);
 }
 
+function renderDoc(doc: Doc): void {
+  if (!bodyHost) return;
+
+  const chips = div("detail-chips", []);
+  chips.append(text("span", "chip lilac", "doc"));
+
+  const header = div("detail-head", [chips, text("h2", "detail-title", doc.title || doc.path)]);
+  const meta = div("detail-meta", []);
+  meta.append(text("span", "", `docs/${doc.path}`));
+  header.append(meta);
+
+  // Doc bodies are raw markdown — rendered via the same intentional marked
+  // pipeline as wiki pages and episodes.
+  const article = el("article", { class: "detail-md md" });
+  article.innerHTML = markdownToHtml(doc.body);
+
+  bodyHost.replaceChildren(header, article);
+}
+
 export function closeDetail(): void {
   if (!overlay) return;
   requestSeq += 1; // invalidate any in-flight fetch
@@ -245,6 +264,25 @@ export function openDetail(id: string): void {
         showState("page not found", `no page with id “${id}”`, "rust");
       } else {
         showState("couldn’t load page", message, "rust");
+      }
+    }
+  });
+}
+
+/** Open the slide-over for a docs/ markdown file (the Docs view). */
+export function openDoc(path: string): void {
+  open("doc", async (seq) => {
+    try {
+      const doc = await fetchDoc(path);
+      if (seq !== requestSeq) return; // superseded by a newer open/close
+      renderDoc(doc);
+    } catch (err) {
+      if (seq !== requestSeq) return;
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === "doc not found") {
+        showState("doc not found", `no doc at “docs/${path}”`, "rust");
+      } else {
+        showState("couldn’t load doc", message, "rust");
       }
     }
   });
