@@ -6,13 +6,17 @@ Crate-by-crate breakdown: responsibility, public API surface, dependencies, and 
 
 ## Workspace layout
 
-The workspace ships **19 crates** today (all directories under `crates/`).
+The workspace ships **20 crates** today (all directories under `crates/`).
 `illuminate-layout` is a pure deterministic 3D force-directed graph layout (a
 Rust port of codebase-memory-mcp's `layout3d.c`, MIT) that powers the `/graph`
 visualization via `GET /api/layout`. `illuminate-policy` is a Rhai-based
 deny→ask→allow gatekeeper (ported from the author's `homn-policy`, relicensed
 MIT) that turns illuminate from an advisor into an enforcer at tool-call time
-via the `illuminate policy` CLI + PreToolUse hook.
+via the `illuminate policy` CLI + PreToolUse hook. `illuminate-compress` is a
+pure-Rust reimplementation of headroom's SmartCrusher (Apache-2.0) — it compacts
+large homogeneous JSON arrays (tool output, logs, query rows) while keeping the
+signal (errors, numeric anomalies, rare categorical values, structural
+outliers), exposed via the `illuminate compress` CLI.
 
 **Core (shipped through v0.18):**
 

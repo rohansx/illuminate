@@ -262,7 +262,7 @@ See [docs/SCHEMA.md](docs/SCHEMA.md) for the wiki page schema.
 
 ## Architecture
 
-Nineteen crates, one binary:
+Twenty crates, one binary:
 
 | Crate | Responsibility | Status |
 |-------|---------------|--------|

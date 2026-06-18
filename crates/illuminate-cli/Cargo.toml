@@ -38,6 +38,7 @@ illuminate-trail = { version = "0.31.0", path = "../illuminate-trail" }
 illuminate-wiki = { version = "0.31.0", path = "../illuminate-wiki" }
 illuminate-layout = { version = "0.31.0", path = "../illuminate-layout" }
 illuminate-policy = { version = "0.31.0", path = "../illuminate-policy" }
+illuminate-compress = { version = "0.31.0", path = "../illuminate-compress" }
 illuminate-bootstrap = { version = "0.31.0", path = "../illuminate-bootstrap" }
 clap = { workspace = true }
 rusqlite = { workspace = true }

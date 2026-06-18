@@ -188,8 +188,8 @@ fn crates_md_count_matches_disk() {
         .filter(|e| e.path().is_dir())
         .count();
     assert_eq!(
-        on_disk, 19,
-        "expected 19 crate dirs on disk, found {on_disk}"
+        on_disk, 20,
+        "expected 20 crate dirs on disk, found {on_disk}"
     );
 
     let doc = read_doc("docs/CRATES.md");

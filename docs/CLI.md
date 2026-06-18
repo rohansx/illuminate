@@ -69,6 +69,18 @@ For the chosen agent it composes, idempotently and project-local:
 
 Prints a summary of exactly what it wired. Reuses the same logic as `policy install` / `policy template` / `init`, so the pieces stay consistent.
 
+### `illuminate compress`
+
+Compact a large JSON payload — tool output, logs, query rows — before it's fed to an agent, using illuminate's pure-Rust reimplementation of headroom's SmartCrusher (the `illuminate-compress` crate).
+
+```
+illuminate compress [FILE] [--max-items N] [--no-marker] [--stats]
+```
+
+Reads JSON from `FILE` or stdin, walks it recursively, and for each large homogeneous array keeps the signal — head/tail anchors, error rows, numeric anomalies, rare categorical values, structural outliers — and drops the redundant bulk, leaving a `{"_ccr_dropped": "<<ccr:HASH N_rows_offloaded>>"}` sentinel (suppress with `--no-marker`). The compacted JSON goes to **stdout**; the token-savings band (`orig → crushed tokens, % saved, rows dropped`) goes to **stderr**, so it composes in a pipe. `--max-items` overrides the per-array keep budget (default 15); `--stats` emits a JSON savings summary on stderr instead of the human line.
+
+This is the lossy compressor only — the reversible retrieve-by-hash (CCR) cache is intentionally not part of illuminate. Attribution for the algorithm is in the repo `NOTICE`.
+
 ### `illuminate models download`
 
 ```

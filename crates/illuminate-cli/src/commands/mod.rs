@@ -7,6 +7,7 @@ pub mod audit_pr;
 pub mod bootstrap;
 pub mod browse;
 pub mod cloud;
+pub mod compress;
 pub mod decisions;
 pub mod diagram;
 pub mod doc_decay;

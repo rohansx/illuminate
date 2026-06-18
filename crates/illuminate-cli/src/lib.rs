@@ -53,6 +53,24 @@ enum Commands {
         dir: Option<std::path::PathBuf>,
     },
 
+    /// Compact a large JSON payload (tool output, logs, rows) before an agent reads it
+    Compress {
+        /// JSON file to compress (reads stdin when omitted)
+        file: Option<std::path::PathBuf>,
+
+        /// Max items kept per array (default 15)
+        #[arg(long)]
+        max_items: Option<usize>,
+
+        /// Don't append the `_ccr_dropped` sentinel
+        #[arg(long)]
+        no_marker: bool,
+
+        /// Emit a JSON savings summary on stderr instead of a human line
+        #[arg(long)]
+        stats: bool,
+    },
+
     /// Log a decision or event
     Log {
         /// The text to log
@@ -787,6 +805,13 @@ pub fn run() {
         } => {
             commands::install::run(&agent, minimalist, dir).map_err(illuminate::IlluminateError::Io)
         }
+        Commands::Compress {
+            file,
+            max_items,
+            no_marker,
+            stats,
+        } => commands::compress::run(file, max_items, no_marker, stats)
+            .map_err(illuminate::IlluminateError::Io),
         Commands::Log { text, source, tags } => commands::log::run(text, source, tags),
         Commands::Query {
             text,

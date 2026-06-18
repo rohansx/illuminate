@@ -1561,6 +1561,7 @@ dependencies = [
  "illuminate",
  "illuminate-audit",
  "illuminate-bootstrap",
+ "illuminate-compress",
  "illuminate-embed",
  "illuminate-enrich",
  "illuminate-extract",
@@ -1582,6 +1583,13 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
+]
+
+[[package]]
+name = "illuminate-compress"
+version = "0.31.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

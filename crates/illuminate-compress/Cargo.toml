@@ -1,0 +1,13 @@
+[package]
+name = "illuminate-compress"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Statistical JSON compaction for illuminate — a pure-Rust SmartCrusher reimplementation (shrinks large homogeneous arrays while keeping outliers/errors)"
+
+[dependencies]
+serde_json = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

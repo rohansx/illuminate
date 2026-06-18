@@ -35,6 +35,15 @@ homn — https://github.com/rohansx/homn
   from homn-policy and relicensed MIT with the author's permission.
 
 ------------------------------------------------------------------------------
+headroom — https://github.com/chopratejas/headroom
+  License: Apache-2.0 (Copyright 2025 Headroom Contributors)
+  Used by: illuminate-compress (the SmartCrusher statistical JSON-compaction
+  heuristics — gate, head/tail anchors, error/anomaly/rare-status/structural
+  keep-sets, dedup, and the dropped-rows marker). Re-implemented in Rust from
+  the algorithm; no upstream source is vendored. The CCR cache/retrieve layer
+  is NOT ported — illuminate-compress is the lossy compressor only.
+
+------------------------------------------------------------------------------
 GitNexus
   Not vendored or derived. illuminate-query re-implements a bounded
   openCypher-subset query surface from the public openCypher grammar and from
