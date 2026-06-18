@@ -3,12 +3,16 @@
 //! Grammar (one rule per non-empty, non-comment line):
 //!
 //! ```text
-//! <verb> if <expression>;
+//! <verb> if <expression> [=> "message"];
 //! ```
 //!
 //! `<verb>` ∈ {`allow`, `deny`, `ask`}. `<expression>` is a Rhai boolean
-//! expression compiled once and reused. Comments start with `//`. Lines that are
-//! blank or comment-only are skipped.
+//! expression compiled once and reused. An optional `=> "message"` suffix
+//! attaches a human-readable reason that surfaces to the agent when the rule
+//! fires (e.g. the policy hook's `permissionDecisionReason`); `=>` is chosen as
+//! the delimiter because it can't appear in a valid Rhai boolean expression
+//! outside a string literal. Comments start with `//`. Blank / comment-only
+//! lines are skipped.
 //!
 //! Ported from `homn-policy` (the author's own project), relicensed MIT.
 
@@ -59,6 +63,7 @@ pub struct CompiledRule {
     file_name: String,
     line: u32,
     source_text: String,
+    message: Option<String>,
     ast: AST,
 }
 
@@ -75,9 +80,15 @@ impl CompiledRule {
     pub fn line(&self) -> u32 {
         self.line
     }
-    /// The full source text of the rule (verb + expr), for audit-log snapshots.
+    /// The full source text of the rule (verb + expr + any message), for
+    /// audit-log snapshots.
     pub fn source_text(&self) -> &str {
         &self.source_text
+    }
+    /// The human-readable message from an `=> "…"` suffix, if any. Surfaced to
+    /// the agent as the reason a rule fired.
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_deref()
     }
 }
 
@@ -222,6 +233,10 @@ fn parse_rule(
             line: line_no,
             message: "expected `if` after verb".to_owned(),
         })?;
+    // Peel off an optional `=> "message"` suffix before compiling the boolean
+    // expression. `=>` is unambiguous: it can't appear in a valid Rhai boolean
+    // expression except inside a string literal, which `split_message` skips.
+    let (expr, message) = split_message(expr.trim());
     let expr = expr.trim();
     if expr.is_empty() {
         return Err(ParseError::Malformed {
@@ -245,8 +260,46 @@ fn parse_rule(
         file_name: file_name.to_owned(),
         line: line_no,
         source_text: line.to_owned(),
+        message,
         ast,
     })
+}
+
+/// Split a rule body into `(boolean_expr, message)` at the first top-level `=>`
+/// (one that is NOT inside a double-quoted string). The message is the text
+/// after `=>`; surrounding double quotes are stripped and `\"`/`\\` unescaped.
+/// With no `=>`, the whole input is the expression and the message is `None`.
+fn split_message(body: &str) -> (&str, Option<String>) {
+    let bytes = body.as_bytes();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        let c = bytes[i];
+        if escape {
+            escape = false;
+        } else if in_string && c == b'\\' {
+            escape = true;
+        } else if c == b'"' {
+            in_string = !in_string;
+        } else if !in_string && c == b'=' && bytes[i + 1] == b'>' {
+            let expr = &body[..i];
+            let msg = unquote(body[i + 2..].trim());
+            return (expr, Some(msg));
+        }
+        i += 1;
+    }
+    (body, None)
+}
+
+/// Strip surrounding double quotes from a message literal and unescape `\"` /
+/// `\\`. A bare (unquoted) message is returned trimmed and verbatim.
+fn unquote(s: &str) -> String {
+    let inner = s
+        .strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(s);
+    inner.replace("\\\"", "\"").replace("\\\\", "\\")
 }
 
 #[cfg(test)]
@@ -303,6 +356,33 @@ mod tests {
             r#"ask if tool == "WebFetch" && url.regex("^https?://prod\\.");  // trailing comment"#;
         let rs = RuleSet::parse(&eng, src, "t").expect("rule with // inside string must parse");
         assert_eq!(rs.ask_rules().count(), 1);
+    }
+
+    #[test]
+    fn rule_without_message_has_none() {
+        let eng = Engine::new();
+        let rs = RuleSet::parse(&eng, r#"ask if tool == "Bash";"#, "t").unwrap();
+        let rule = rs.ask_rules().next().unwrap();
+        assert_eq!(rule.message(), None);
+    }
+
+    #[test]
+    fn rule_with_message_captures_it_and_still_compiles_expr() {
+        let eng = Engine::new();
+        let src = r#"ask if tool == "Bash" && cmd.regex("cargo\\s+add") => "new dependency — stdlib first?";"#;
+        let rs = RuleSet::parse(&eng, src, "t").unwrap();
+        let rule = rs.ask_rules().next().unwrap();
+        assert_eq!(rule.message(), Some("new dependency — stdlib first?"));
+    }
+
+    #[test]
+    fn arrow_inside_a_string_is_not_a_message_delimiter() {
+        // A literal `=>` inside the regex must NOT be treated as the suffix.
+        let eng = Engine::new();
+        let src = r#"deny if tool == "Bash" && cmd.regex("a=>b") => "blocked";"#;
+        let rs = RuleSet::parse(&eng, src, "t").unwrap();
+        let rule = rs.deny_rules().next().unwrap();
+        assert_eq!(rule.message(), Some("blocked"));
     }
 
     #[test]

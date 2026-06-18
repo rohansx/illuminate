@@ -62,6 +62,18 @@ pub enum PolicyCmd {
         #[arg(long)]
         dir: Option<PathBuf>,
     },
+    /// Scaffold `.illuminate/policy.rhai` from a named template
+    Template {
+        /// Template: `minimalist` (default rules + "write less" dependency
+        /// restraint) or `default` (the conservative baseline)
+        name: String,
+        /// Repo root (default: current directory)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Overwrite an existing policy.rhai
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 pub fn run(cmd: PolicyCmd) -> std::io::Result<()> {
@@ -82,7 +94,56 @@ pub fn run(cmd: PolicyCmd) -> std::io::Result<()> {
         PolicyCmd::Hook => cmd_hook(),
         PolicyCmd::Recent { limit, json } => cmd_recent(limit, json),
         PolicyCmd::Install { agent, dir } => cmd_install(&agent, dir),
+        PolicyCmd::Template { name, dir, force } => cmd_template(&name, dir, force),
     }
+}
+
+/// Scaffold `.illuminate/policy.rhai` from a bundled template. `minimalist`
+/// stacks the "write less" dependency-restraint layer on the conservative
+/// default; `default` writes just the baseline. Refuses to clobber an existing
+/// policy without `--force`, and validates that what it wrote parses.
+fn cmd_template(name: &str, dir: Option<PathBuf>, force: bool) -> std::io::Result<()> {
+    let source = match name.trim().to_lowercase().as_str() {
+        "minimalist" | "minimal" => illuminate_policy::minimalist_policy_source(),
+        "default" => illuminate_policy::DEFAULT_POLICY.to_string(),
+        other => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("unknown template '{other}': expected `minimalist` or `default`"),
+            ));
+        }
+    };
+
+    let root = dir.unwrap_or(std::env::current_dir()?);
+    let target = root.join(".illuminate").join("policy.rhai");
+    if target.exists() && !force {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!(
+                "{} already exists — re-run with --force to overwrite",
+                target.display()
+            ),
+        ));
+    }
+
+    // Validate before writing so a template can never leave a broken policy.
+    let rules = RuleSet::parse(&Engine::new(), &source, "policy.rhai")
+        .map_err(|e| std::io::Error::other(format!("template failed to parse: {e}")))?;
+
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&target, &source)?;
+    println!(
+        "wrote {name} policy ({} rules) → {}",
+        rules.len(),
+        target.display()
+    );
+    if name.trim().eq_ignore_ascii_case("minimalist") {
+        println!("the gate now asks before an agent adds a new dependency.");
+    }
+    println!("wire it into your agent with: illuminate policy install --agent claude");
+    Ok(())
 }
 
 /// The command the installed hook runs (the PreToolUse entry point).
@@ -320,6 +381,7 @@ fn cmd_check(
             "decision": out.decision.as_str(),
             "rule": out.rule.map(|r| json!({ "file": r.file.display().to_string(), "line": r.line })),
             "rule_text": out.rule_text,
+            "message": out.message,
         });
         println!("{v}");
     } else {
@@ -333,9 +395,12 @@ fn cmd_check(
                 "{badge}  ({}:{})  {}",
                 r.file.display(),
                 r.line,
-                out.rule_text.unwrap_or_default()
+                out.rule_text.as_deref().unwrap_or_default()
             ),
             None => println!("{badge}  (no rule matched → default)"),
+        }
+        if let Some(m) = &out.message {
+            println!("       → {m}");
         }
     }
     Ok(())
@@ -408,10 +473,17 @@ fn cmd_hook() -> std::io::Result<()> {
         out.rule_text.as_deref(),
     );
 
-    let reason = match (&out.decision, &out.rule_text) {
-        (Decision::Allow, _) => "illuminate policy: allowed".to_string(),
-        (_, Some(t)) => format!("illuminate policy: {t}"),
-        (_, None) => "illuminate policy: default".to_string(),
+    // Prefer the rule's human `=> "message"` when present (e.g. the minimalist
+    // ladder), falling back to the raw rule source, then a generic default.
+    let reason = match (
+        &out.decision,
+        out.message.as_deref(),
+        out.rule_text.as_deref(),
+    ) {
+        (Decision::Allow, _, _) => "illuminate policy: allowed".to_string(),
+        (_, Some(m), _) => format!("illuminate policy: {m}"),
+        (_, None, Some(t)) => format!("illuminate policy: {t}"),
+        (_, None, None) => "illuminate policy: default".to_string(),
     };
     let verdict = json!({
         "hookSpecificOutput": {
@@ -526,6 +598,50 @@ mod tests {
         assert!(pre.iter().any(|e| e["command"] == "prettier"));
         let policy_entries = pre.iter().filter(|e| entry_runs_policy_hook(e)).count();
         assert_eq!(policy_entries, 1, "idempotent: exactly one policy hook");
+    }
+
+    #[test]
+    fn template_minimalist_writes_a_parsing_policy() {
+        let tmp = tempfile::tempdir().unwrap();
+        cmd_template("minimalist", Some(tmp.path().to_path_buf()), false).unwrap();
+        let path = tmp.path().join(".illuminate").join("policy.rhai");
+        let src = std::fs::read_to_string(&path).unwrap();
+        // It carries both the conservative baseline and the minimalism layer.
+        assert!(
+            src.contains("rm -rf"),
+            "should include the default baseline"
+        );
+        assert!(src.contains("new dependency") || src.contains("new crate"));
+        // And the written file actually parses + gates a `cargo add`.
+        let eng = Engine::new();
+        let rs = RuleSet::load(&eng, &path).unwrap();
+        let req = EvalRequest {
+            tool: "Bash".into(),
+            cmd: "cargo add serde".into(),
+            ..Default::default()
+        };
+        assert_eq!(eng.eval(&rs, &req).decision, Decision::Ask);
+    }
+
+    #[test]
+    fn template_refuses_to_clobber_without_force() {
+        let tmp = tempfile::tempdir().unwrap();
+        cmd_template("default", Some(tmp.path().to_path_buf()), false).unwrap();
+        // Second run without --force must error rather than overwrite.
+        let err = cmd_template("minimalist", Some(tmp.path().to_path_buf()), false).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        // With --force it succeeds and swaps the content.
+        cmd_template("minimalist", Some(tmp.path().to_path_buf()), true).unwrap();
+        let src =
+            std::fs::read_to_string(tmp.path().join(".illuminate").join("policy.rhai")).unwrap();
+        assert!(src.contains("new dependency") || src.contains("new crate"));
+    }
+
+    #[test]
+    fn template_rejects_unknown_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = cmd_template("kitchen-sink", Some(tmp.path().to_path_buf()), false).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
     #[test]

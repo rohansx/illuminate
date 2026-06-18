@@ -65,6 +65,10 @@ pub struct Outcome {
     pub rule: Option<RuleSourceLocation>,
     /// Snapshot of the rule's text (for retro-readability in the audit ledger).
     pub rule_text: Option<String>,
+    /// Human-readable reason from the rule's `=> "…"` suffix, if any. Surfaced
+    /// to the agent (e.g. the hook's `permissionDecisionReason`) so a decision
+    /// explains itself rather than echoing raw rule source.
+    pub message: Option<String>,
 }
 
 impl Outcome {
@@ -74,6 +78,7 @@ impl Outcome {
             decision: Decision::Ask,
             rule: None,
             rule_text: None,
+            message: None,
         }
     }
 }
@@ -284,6 +289,7 @@ impl Engine {
                 line: rule.line(),
             }),
             rule_text: Some(rule.source_text().to_owned()),
+            message: rule.message().map(str::to_owned),
         }
     }
 }
@@ -302,6 +308,20 @@ pub const DEFAULT_POLICY: &str = include_str!("default.rhai");
 pub fn default_ruleset(engine: &Engine) -> RuleSet {
     RuleSet::parse(engine, DEFAULT_POLICY, "default.rhai")
         .expect("bundled default.rhai must always parse")
+}
+
+/// The minimalism layer — `ask` rules that pause before an agent reaches for a
+/// new dependency, embodying ponytail's "the best code is the code you never
+/// write" ladder. Stacks *on top of* [`DEFAULT_POLICY`] (see
+/// [`minimalist_policy_source`]); since rules group by verb, these `ask`s beat
+/// the default's broad `allow` on package managers.
+pub const MINIMALIST_POLICY: &str = include_str!("minimalist.rhai");
+
+/// A complete, ready-to-use minimalist policy: the conservative
+/// [`DEFAULT_POLICY`] plus the [`MINIMALIST_POLICY`] dependency-restraint layer.
+/// Written verbatim by `illuminate policy template minimalist`.
+pub fn minimalist_policy_source() -> String {
+    format!("{DEFAULT_POLICY}\n{MINIMALIST_POLICY}")
 }
 
 /// Register the custom helpers: `matches` (glob) and `regex` (RE2-flavoured).
@@ -476,5 +496,64 @@ mod tests {
     #[test]
     fn decision_serializes_lowercase() {
         assert_eq!(serde_json::to_string(&Decision::Deny).unwrap(), "\"deny\"");
+    }
+
+    #[test]
+    fn outcome_carries_rule_message() {
+        let eng = Engine::new();
+        let rs = ruleset(
+            &eng,
+            r#"ask if tool == "Bash" && cmd.contains("danger") => "explain yourself";"#,
+        );
+        let out = eng.eval(&rs, &req("Bash", "do danger now"));
+        assert_eq!(out.decision, Decision::Ask);
+        assert_eq!(out.message.as_deref(), Some("explain yourself"));
+    }
+
+    #[test]
+    fn minimalist_policy_parses_and_gates_dependency_growth() {
+        let eng = Engine::new();
+        let rs = RuleSet::parse(&eng, &minimalist_policy_source(), "minimalist.rhai")
+            .expect("composed minimalist policy must parse");
+
+        // Adding a new dependency → ask, with the ladder message.
+        for (cmd, what) in [
+            ("npm install left-pad", "npm add"),
+            ("npm i react", "npm i add"),
+            ("yarn add lodash", "yarn add"),
+            ("pnpm add zod", "pnpm add"),
+            ("cargo add serde", "cargo add"),
+            ("pip install requests", "pip add"),
+            ("go get github.com/x/y", "go get"),
+            ("npx create-react-app foo", "scaffolder"),
+        ] {
+            let out = eng.eval(&rs, &req("Bash", cmd));
+            assert_eq!(out.decision, Decision::Ask, "{what}: `{cmd}` should ask");
+            assert!(out.message.is_some(), "{what}: ask should carry a message");
+        }
+
+        // Syncing from an existing manifest adds nothing → still allowed.
+        // (npm/cargo/yarn are in the default allow-list, so they stay allow.)
+        for cmd in ["npm install", "npm ci", "cargo build --release", "yarn"] {
+            assert_eq!(
+                eng.eval(&rs, &req("Bash", cmd)).decision,
+                Decision::Allow,
+                "`{cmd}` syncs an existing manifest — must stay allowed"
+            );
+        }
+
+        // The `[^-\s]` discrimination: a flag-led manifest sync must NOT trip
+        // the "new dependency" ask. (pip isn't in the default allow-list, so it
+        // is a default ask either way — the proof is the ABSENCE of a message.)
+        let sync = eng.eval(&rs, &req("Bash", "pip install -r requirements.txt"));
+        assert!(
+            sync.message.is_none(),
+            "pip -r manifest sync must not carry the new-dependency message"
+        );
+
+        // The conservative default still holds underneath.
+        let mut danger = req("Bash", "rm -rf /etc");
+        danger.cwd = "/home/rsx/dev/x".into();
+        assert_eq!(eng.eval(&rs, &danger).decision, Decision::Deny);
     }
 }
