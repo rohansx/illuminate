@@ -48,6 +48,8 @@ export interface RecentItem {
 export interface Dashboard {
   project: string;
   generated_at: string;
+  /** Count of repo docs/ markdown files (0 when no docs/ is served). */
+  docs_count?: number;
   stats: Stats;
   graph: Graph;
   tokens: Tokens;

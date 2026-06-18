@@ -4,6 +4,7 @@
 // of those fields exist in the contract.
 
 import type { Dashboard, GraphSource, RecentItem } from "./types.ts";
+import type { ViewId } from "./nav.ts";
 import { num, pct, relativeTime } from "./format.ts";
 import { div, el, text } from "./dom.ts";
 
@@ -57,6 +58,53 @@ export function renderStats(d: Dashboard): HTMLElement {
     "kpis kpis-7",
     cards.map(kpiCard),
   );
+}
+
+// ---- explore hub: one front door into every capability -------------------
+// The Overview is the platform's single surface — this grid links into each
+// view (and the audit playground) so nothing feels siloed. Each card carries a
+// live count so the hub doubles as an at-a-glance status. `onSelect` switches
+// in-app views; the audit card is a real link to the server-rendered playground.
+interface ExploreCard {
+  k: string;
+  v: string;
+  desc: string;
+  tone: string;
+  view?: ViewId;
+  href?: string;
+}
+
+export function renderExplore(d: Dashboard, onSelect: (id: ViewId) => void): HTMLElement {
+  const cards: ExploreCard[] = [
+    { k: "knowledge", v: `${num(d.stats.total)}`, desc: "decisions · patterns · failures", tone: "teal", view: "knowledge" },
+    { k: "docs", v: `${num(d.docs_count ?? 0)}`, desc: "project documentation", tone: "lilac", view: "docs" },
+    { k: "graph", v: `${num(d.graph.episodes)}`, desc: "3D code + decision galaxy", tone: "amber", view: "graph" },
+    { k: "prompt trail", v: `${num(d.tokens.sessions)}`, desc: "captured agent sessions", tone: "teal", view: "trail" },
+    { k: "token savings", v: pct(d.tokens.cache_saved_pct), desc: "cache-served input", tone: "sage", view: "tokens" },
+    { k: "audit a plan", v: "→", desc: "check a plan against your decisions", tone: "rust", href: "/audit" },
+  ];
+
+  const head = el("div", { class: "ph" }, []);
+  head.append(text("span", "label", "explore"));
+  head.append(text("span", "title", "Everything, connected"));
+
+  const grid = div("explore-grid", []);
+  for (const c of cards) {
+    const inner = [
+      div("ex-top", [text("span", "ex-k", c.k), text("span", "ex-v", c.v)]),
+      text("p", "ex-desc", c.desc),
+    ];
+    if (c.href) {
+      const a = el("a", { class: `explore-card ${c.tone}`, href: c.href }, inner);
+      grid.append(a);
+    } else {
+      const btn = el("button", { class: `explore-card ${c.tone}`, type: "button" }, inner);
+      if (c.view) btn.addEventListener("click", () => onSelect(c.view as ViewId));
+      grid.append(btn);
+    }
+  }
+
+  return div("panel teal", [head, div("pb", [grid])]);
 }
 
 // ---- knowledge sources (the real centerpiece) ----------------------------

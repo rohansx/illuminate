@@ -29,6 +29,7 @@ import { mountDocs } from "./docs.ts";
 import { mountEpisodes } from "./episodes.ts";
 import {
   renderError,
+  renderExplore,
   renderHeader,
   renderLoading,
   renderRecent,
@@ -111,6 +112,8 @@ function overviewView(d: Dashboard): HTMLElement {
     header,
     text("p", "section-h", "overview"),
     stats,
+    text("p", "section-h", "explore"),
+    renderExplore(d, (id) => selectView(id)),
     text("p", "section-h", "knowledge graph · token savings"),
     topGrid,
     text("p", "section-h", "recent activity"),

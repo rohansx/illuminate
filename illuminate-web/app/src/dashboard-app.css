@@ -82,6 +82,53 @@
 }
 @media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
 
+/* ---- explore hub: clickable capability cards on the Overview ------------- */
+.explore-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 900px) { .explore-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .explore-grid { grid-template-columns: 1fr; } }
+
+.explore-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  padding: 16px 16px 14px;
+  background: var(--bg);
+  border: var(--line) solid var(--border);
+  border-left: 3px solid var(--border-2);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s;
+}
+.explore-card:hover { background: var(--panel-2); transform: translateY(-2px); }
+.explore-card:focus-visible { outline: var(--line) solid var(--amber); outline-offset: 2px; }
+.explore-card.teal { border-left-color: var(--teal); }
+.explore-card.sage { border-left-color: var(--sage); }
+.explore-card.amber { border-left-color: var(--amber); }
+.explore-card.rust { border-left-color: var(--rust); }
+.explore-card.lilac { border-left-color: var(--lilac); }
+.ex-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ex-k {
+  font-family: var(--mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted);
+}
+.ex-v {
+  font-family: var(--sans); font-weight: 400;
+  font-size: 26px; line-height: 1; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.explore-card.teal .ex-v { color: var(--teal); }
+.explore-card.sage .ex-v { color: var(--sage); }
+.explore-card.amber .ex-v { color: var(--amber); }
+.explore-card.rust .ex-v { color: var(--rust); }
+.explore-card.lilac .ex-v { color: var(--lilac); }
+.ex-desc { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+
 /* ---- knowledge-sources bar chart ----------------------------------------- */
 .src-list { display: flex; flex-direction: column; }
 .src-row {

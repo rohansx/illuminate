@@ -403,9 +403,21 @@ fn handle_api_dashboard(ctx: &RouteCtx) -> RouteResp {
         _ => edges,
     };
 
+    // Count of repo docs/ markdown files — lets the Overview's "explore" hub
+    // surface the docs view without a second fetch. Zero when no docs/ is wired.
+    let docs_count = ctx
+        .docs_dir
+        .map(|d| {
+            let mut v = Vec::new();
+            collect_docs(d, d, &mut v);
+            v.len()
+        })
+        .unwrap_or(0);
+
     let body = serde_json::json!({
         "project": ctx.project_name.unwrap_or("illuminate"),
         "generated_at": now.to_rfc3339(),
+        "docs_count": docs_count,
         "stats": {
             "decisions": stats.decisions,
             "patterns": stats.patterns,
