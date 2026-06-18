@@ -19,6 +19,18 @@ Illuminate clearly owns the first. The question is how much of the second Illumi
 
 This document answers: **Illuminate builds a narrow code graph internally for its own audit and enrichment needs. It does not try to be a full code intelligence engine. It composes with GitNexus and similar tools rather than replacing them.**
 
+### The decision, restated (v0.31): one code-graph backend
+
+There are three things that could play the "code structure" role for illuminate. The decision is to pick **exactly one** as illuminate's own, and treat the others as optional external companions — never a second in-repo backend:
+
+| Candidate | Role | Verdict |
+|---|---|---|
+| **`illuminate-index`** (in-repo, tree-sitter, SQLite) | illuminate's narrow internal code graph | **THE backend.** First-class, shipped, what audit/enrich/`/graph` read. |
+| **GitNexus** (external MCP server) | deep code intelligence (call graphs, blast radius, rename) | **Compose, don't bundle.** Optional companion via MCP (Pattern 1 below). No build-time dependency. |
+| **codebase-memory-mcp** (external C binary) | fast 158-language code graph | **Not adopted.** Same lane as GitNexus + `illuminate-index`; adding it would be a *third* backend = duplication. Mine ideas only (already done: its `layout3d.c` → `illuminate-layout`). See its subsection below. |
+
+Why one and not several: every additional code-graph backend is a second source of truth for "what's in the code," each with its own label/edge taxonomy to reconcile, its own staleness, and its own install burden. `illuminate-index` is the one illuminate owns and keeps narrow; anything deeper is a compose-over-MCP choice the *user* makes, not a dependency illuminate takes.
+
 ---
 
 ## Two Graphs, One Product
@@ -168,6 +180,16 @@ The ecosystem already has good answers for the structural layer. Illuminate's jo
 **Activity:** Still maintained, smaller community than GitNexus.
 
 **Relationship to Illuminate:** Same as GitNexus. Pick one or both. Illuminate's existing `illuminate-index` edge model and `impact_radius` recursive-CTE query were directly informed by code-review-graph's design — see the Related Projects section of [`ARCHITECTURE.md`](ARCHITECTURE.md) for the lineage.
+
+### codebase-memory-mcp
+
+**What it does:** A pure-C, single-static-binary MCP server that tree-sitter-parses a codebase (158 languages, plus a hand-written in-C "Hybrid LSP" type-resolution layer) into a persistent SQLite code graph. Headline metric is token economics (claimed ~99% reduction on structural queries vs file reads); indexes the Linux kernel in ~3 min, sub-1ms Cypher. Despite the name, its only *human-memory* primitive is `manage_adr` — a single ≤8000-char markdown blob per project.
+
+**Activity:** Actively maintained; multi-registry distribution (npm/PyPI/brew/scoop/AUR).
+
+**Relationship to Illuminate:** It is a *code-graph* engine, not a *memory* engine in illuminate's sense — the same lane as `illuminate-index` and GitNexus. Adopting it would mean a third code-graph backend to reconcile against the two illuminate already has a story for, for marginal gain. Its decision/episode/wiki/policy story is effectively absent (one capped markdown blob), which is precisely illuminate's differentiator.
+
+**Recommendation:** **Not adopted as a backend; mined for ideas.** Already taken: its 3D force-layout (`layout3d.c`) was ported to `illuminate-layout`. Worth borrowing later (as enrichment signals on `illuminate-index`, not a new backend): hot-path node properties (`transitive_loop_depth`, `linear_scan_in_loop`), Louvain/Leiden community clusters, MinHash near-clone edges, and the committable zstd graph-artifact pattern for team sync. Its single-binary + multi-registry + one-command multi-agent install is also a distribution model worth copying (cf. `illuminate install`).
 
 ### Sourcegraph
 
