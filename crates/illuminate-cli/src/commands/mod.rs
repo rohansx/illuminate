@@ -23,6 +23,7 @@ pub mod impact;
 pub mod index;
 pub mod ingest;
 pub mod init;
+pub mod install;
 pub mod log;
 pub mod mcp;
 pub mod models;

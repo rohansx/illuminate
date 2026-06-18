@@ -52,6 +52,23 @@ Effects:
 
 Idempotent. Re-running `illuminate init` updates the config without re-bootstrapping (run `illuminate bootstrap` for that).
 
+### `illuminate install`
+
+Wire illuminate into a coding agent in one step — the turnkey "connect" command for an already-initialized repo (`init` *creates* the project; `install` *connects an agent* to it).
+
+```
+illuminate install [--agent claude|cursor|windsurf|codex] [--minimalist] [--dir PATH]
+```
+
+For the chosen agent it composes, idempotently and project-local:
+
+1. **MCP server** — registers `illuminate serve` so the context tools (`illuminate_audit`, `_search`, `_enrich`, …) are available. Claude → `.mcp.json`, Cursor → `.cursor/mcp.json`, Windsurf → `.windsurf/mcp.json` (merged, preserving other servers). Codex's MCP config is global TOML, so `install` prints the `~/.codex/config.toml` snippet instead of editing a global file.
+2. **Policy gatekeeper hook** — wires `illuminate policy hook` into PreToolUse (Claude / Codex only; the deny → ask → allow gate). Cursor / Windsurf get MCP only — they have no PreToolUse permission protocol.
+3. **CLAUDE.md directive** (Claude) — appends the pre-write audit directive.
+4. **`--minimalist`** — scaffolds the "write-less" policy template (see `illuminate policy template`), but never clobbers an existing `policy.rhai`.
+
+Prints a summary of exactly what it wired. Reuses the same logic as `policy install` / `policy template` / `init`, so the pieces stay consistent.
+
 ### `illuminate models download`
 
 ```

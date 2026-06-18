@@ -103,6 +103,14 @@ pub fn run(cmd: PolicyCmd) -> std::io::Result<()> {
 /// default; `default` writes just the baseline. Refuses to clobber an existing
 /// policy without `--force`, and validates that what it wrote parses.
 fn cmd_template(name: &str, dir: Option<PathBuf>, force: bool) -> std::io::Result<()> {
+    let root = dir.unwrap_or(std::env::current_dir()?);
+    write_template(name, &root, force)
+}
+
+/// Write a named policy template to `<root>/.illuminate/policy.rhai`. Shared by
+/// `policy template` and `illuminate install --minimalist`. Validates the
+/// source parses before writing; refuses to clobber without `force`.
+pub(crate) fn write_template(name: &str, root: &Path, force: bool) -> std::io::Result<()> {
     let source = match name.trim().to_lowercase().as_str() {
         "minimalist" | "minimal" => illuminate_policy::minimalist_policy_source(),
         "default" => illuminate_policy::DEFAULT_POLICY.to_string(),
@@ -114,7 +122,6 @@ fn cmd_template(name: &str, dir: Option<PathBuf>, force: bool) -> std::io::Resul
         }
     };
 
-    let root = dir.unwrap_or(std::env::current_dir()?);
     let target = root.join(".illuminate").join("policy.rhai");
     if target.exists() && !force {
         return Err(std::io::Error::new(
@@ -156,6 +163,12 @@ const POLICY_MATCHER: &str = "Bash|Read|Edit|Write|MultiEdit|WebFetch";
 /// Codex nests `{matcher, hooks: [{type, command}]}`.
 fn cmd_install(agent: &str, dir: Option<PathBuf>) -> std::io::Result<()> {
     let root = dir.unwrap_or(std::env::current_dir()?);
+    wire_policy_hook(agent, &root)
+}
+
+/// Wire `illuminate policy hook` into a host agent's PreToolUse hooks under
+/// `root`. Shared by `policy install` and `illuminate install`. Idempotent.
+pub(crate) fn wire_policy_hook(agent: &str, root: &Path) -> std::io::Result<()> {
     let (path, nested) = match agent.trim().to_lowercase().as_str() {
         "claude" => (root.join(".claude").join("settings.json"), false),
         "codex" => (root.join(".codex").join("hooks.json"), true),

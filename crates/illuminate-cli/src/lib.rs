@@ -38,6 +38,21 @@ enum Commands {
         hooks: bool,
     },
 
+    /// Wire illuminate into a coding agent in one step (MCP + policy gate + directive)
+    Install {
+        /// Target agent: claude | cursor | windsurf | codex
+        #[arg(long, default_value = "claude")]
+        agent: String,
+
+        /// Also scaffold the minimalist "write-less" policy template
+        #[arg(long)]
+        minimalist: bool,
+
+        /// Repo root (default: current directory)
+        #[arg(long)]
+        dir: Option<std::path::PathBuf>,
+    },
+
     /// Log a decision or event
     Log {
         /// The text to log
@@ -765,6 +780,13 @@ pub fn run() {
             windsurf,
             hooks,
         } => commands::init::run(name, claude, cursor, windsurf, hooks),
+        Commands::Install {
+            agent,
+            minimalist,
+            dir,
+        } => {
+            commands::install::run(&agent, minimalist, dir).map_err(illuminate::IlluminateError::Io)
+        }
         Commands::Log { text, source, tags } => commands::log::run(text, source, tags),
         Commands::Query {
             text,

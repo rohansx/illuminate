@@ -316,7 +316,7 @@ If `status` is `block`, do not proceed without explicit user approval.
 If `status` is `warn`, surface the warnings to the user before writing.
 "#;
 
-fn write_claude_directive(path: &std::path::Path) -> illuminate::Result<()> {
+pub(crate) fn write_claude_directive(path: &std::path::Path) -> illuminate::Result<()> {
     let mut existing = fs::read_to_string(path).unwrap_or_default();
     if existing.contains(CLAUDE_DIRECTIVE_MARKER) {
         return Ok(());
