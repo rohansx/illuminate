@@ -262,9 +262,13 @@ enum Commands {
 
     /// Export the decision graph
     Export {
-        /// Output format: json or csv
+        /// Output format: json, csv, or okf (an Open Knowledge Format v0.2 bundle)
         #[arg(long, default_value = "json")]
         format: String,
+
+        /// Directory to write the OKF bundle into. Required for --format okf.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 
     /// Show a summary of the project's decision history
@@ -909,7 +913,7 @@ pub fn run() {
             limit,
         } => commands::symbols::run(name, symbol_type, limit),
         Commands::Diagram { format, out, roots } => commands::diagram::run(format, out, roots),
-        Commands::Export { format } => commands::export::run(&format),
+        Commands::Export { format, out } => commands::export::run(&format, out),
         Commands::Summary { limit } => commands::summary::run(limit),
         Commands::Onboard { json } => commands::onboard::run(json),
         Commands::Oncall { service, json } => commands::oncall::run(service, json),

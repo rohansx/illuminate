@@ -8,6 +8,7 @@
 pub mod dashboard;
 pub mod episode;
 pub mod lint;
+pub mod okf_export;
 pub mod page;
 pub mod render;
 pub mod scaffold;

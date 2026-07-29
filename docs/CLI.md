@@ -251,17 +251,23 @@ illuminate enrich "fix the race condition" --files src/payments/txn.rs --files s
 
 ### `illuminate ingest`
 
-Pull external knowledge sources into the graph. Shipped in v0.22 as the foundation of the v3.2 docs-as-first-class phase (see [`knowledge-layer.md`](knowledge-layer.md)). v0.22 ships the `LocalMarkdownAdapter` only — Confluence / Notion / GitHub-wiki / Google-Docs / spec-kit adapters land in v0.23+.
+Pull external knowledge sources into the graph. Shipped in v0.22 as the foundation of the v3.2 docs-as-first-class phase (see [`knowledge-layer.md`](knowledge-layer.md)). Two adapters ship today: `LocalMarkdownAdapter` (default) and `OkfBundleAdapter` (`--okf`) — Confluence / Notion / GitHub-wiki / Google-Docs / Slack adapters land later.
 
 ```
 illuminate ingest [--roots PATH ...]
+                  [--okf PATH]
                   [--json]
 ```
 
 | Flag | Default | Effect |
 |------|---------|--------|
 | `--roots PATH ...` | `docs/`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`, `README.md` (those that exist) | Roots to walk for `*.md`. Each root may be a file or a directory. |
+| `--okf PATH` | off | Read an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.2 bundle rooted at `PATH`. Mutually exclusive with `--roots`. |
 | `--json` | off | Emit the `IngestReport` as JSON instead of a human summary. |
+
+**OKF bundles.** `--okf` ingests any conformant OKF v0.2 bundle — one produced by illuminate, by Google's reference agent, or hand-written. Reserved filenames (`index.md`, `log.md`) are skipped; documents without a non-empty `type` are skipped. Per OKF §9 the adapter tolerates unknown `type` values, unknown frontmatter keys, and broken cross-links rather than rejecting the bundle. `generated.at` drives the change-detection watermark, falling back to file mtime.
+
+**Idempotence.** Documents dedupe on `(adapter, external_id)`. Re-running an ingest over an unchanged source writes nothing and reports the skips; a document whose `updated_at` moved is re-ingested.
 
 **Skip rules.** The walker skips `node_modules`, `target`, `dist`, `build`, `vendor`, `__pycache__`, `.venv`, `venv`, `.pytest_cache`, `.idea`, `.vscode`, and any dotfile / dotdir except `.github` / `.gitignore`. The root of the walk is always allowed (so a hidden root like `~/.illuminate/` works).
 
@@ -278,6 +284,39 @@ illuminate ingest --roots docs --roots ARCHITECTURE.md --roots CLAUDE.md
 
 # Machine-readable summary:
 illuminate ingest --json | jq '{adapter, fetched, written}'
+
+# Read someone else's OKF bundle into the graph:
+illuminate ingest --okf ../partner-team-bundle
+```
+
+### `illuminate export`
+
+Export the decision graph, or the wiki as a portable OKF bundle.
+
+```
+illuminate export [--format json|csv|okf]
+                  [--out DIR]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--format` | `json` | `json` / `csv` dump the decision graph. `okf` renders the wiki as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.2 bundle. |
+| `--out DIR` | — | Destination directory. **Required** for `--format okf`. |
+
+**OKF export.** Reads `.illuminate/wiki/` (the markdown source-of-truth), not the graph — so it works in a repo whose graph has never been built. Pages land at `<category>/<id>.md` with a reserved bundle-root `index.md` carrying `okf_version: "0.2"`.
+
+The mapping is documented in [`COMPANY_BRAIN.md`](COMPANY_BRAIN.md) §6. Fields OKF has no slot for (`id`, `confidence`, `modules`, `authors`, the original `status`) are emitted as extension keys, which OKF §9 requires consumers to preserve — so `export → ingest` is a round trip, not a one-way door. Relationships (`related` / `supersedes` / `superseded_by`) become bundle-relative markdown links under a `## Related` heading.
+
+Output is byte-stable for a given wiki, so re-exporting an unchanged repo produces no diff. Unparseable pages are reported on stderr and skipped rather than aborting the export.
+
+**Examples.**
+
+```bash
+# Publish the team wiki as a portable bundle:
+illuminate export --format okf --out ../team-knowledge-bundle
+
+# Round-trip it back:
+illuminate ingest --okf ../team-knowledge-bundle
 ```
 
 ### `illuminate ask`
