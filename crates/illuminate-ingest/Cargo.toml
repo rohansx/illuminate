@@ -10,6 +10,7 @@ description = "Read-only adapters for external knowledge sources (local markdown
 illuminate = { version = "0.31.0", path = "../illuminate-core" , default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 walkdir = "2"

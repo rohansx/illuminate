@@ -431,12 +431,17 @@ enum Commands {
         json: bool,
     },
 
-    /// Ingest external knowledge sources (local markdown for now) into the graph
+    /// Ingest external knowledge sources (local markdown, OKF bundles) into the graph
     Ingest {
         /// Roots to walk for *.md files; defaults to docs/, ARCHITECTURE.md,
         /// AGENTS.md, CLAUDE.md, README.md if those exist in cwd
         #[arg(long, num_args = 0..)]
         roots: Vec<PathBuf>,
+
+        /// Read an Open Knowledge Format (OKF) v0.2 bundle rooted at PATH.
+        /// Mutually exclusive with --roots.
+        #[arg(long, conflicts_with = "roots")]
+        okf: Option<PathBuf>,
 
         /// Emit the IngestReport as JSON
         #[arg(long)]
@@ -956,7 +961,7 @@ pub fn run() {
             max_steps,
             json,
         } => commands::trace::run(symbol, index_db, dir, kinds, depth, max_steps, json),
-        Commands::Ingest { roots, json } => commands::ingest::run(roots, json),
+        Commands::Ingest { roots, okf, json } => commands::ingest::run(roots, okf, json),
         Commands::DocDecay { roots, json } => commands::doc_decay::run(roots, json),
         Commands::AuditDocs { file, json } => commands::audit_docs::run(file, json),
         Commands::Ask {
