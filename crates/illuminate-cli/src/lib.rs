@@ -260,6 +260,20 @@ enum Commands {
         roots: Vec<PathBuf>,
     },
 
+    /// Record a sign-off on a wiki page (promotes it to human-reviewed)
+    Verify {
+        /// The wiki page id, e.g. dec-2026-07-no-redis
+        id: String,
+
+        /// Actor id (OKF convention). Defaults to `human:$USER`.
+        #[arg(long)]
+        r#as: Option<String>,
+
+        /// Emit the result as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Exchange published knowledge with the team's git remote
     Sync {
         /// Plan the sync and print it without running anything
@@ -928,6 +942,7 @@ pub fn run() {
             limit,
         } => commands::symbols::run(name, symbol_type, limit),
         Commands::Diagram { format, out, roots } => commands::diagram::run(format, out, roots),
+        Commands::Verify { id, r#as, json } => commands::verify::run(id, r#as, json),
         Commands::Sync {
             dry_run,
             no_push,

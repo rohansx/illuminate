@@ -15,6 +15,7 @@ pub mod scaffold;
 pub mod serve;
 pub mod serve_cloud;
 pub mod trust;
+pub mod verify;
 pub mod walk;
 pub mod webapp;
 

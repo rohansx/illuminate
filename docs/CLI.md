@@ -289,6 +289,38 @@ illuminate ingest --json | jq '{adapter, fetched, written}'
 illuminate ingest --okf ../partner-team-bundle
 ```
 
+### `illuminate verify`
+
+Record a human sign-off on a wiki page, promoting it to the `human-reviewed` trust tier.
+
+```
+illuminate verify <ID> [--as ACTOR] [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `<ID>` | — | Wiki page id (the front-matter `id`, not the filename). |
+| `--as ACTOR` | `human:$USER` | Actor id following the OKF convention: `human:<id>`, `process:<id>`, or `<producer>/<version>`. Anything else is rejected. |
+| `--json` | off | Emit the result as JSON. |
+
+**Trust tiers** (from [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog), derived from the `verified` list):
+
+| Tier | Meaning |
+|------|---------|
+| `unverified` | No `verified` entries — nobody has vouched for this page. |
+| `machine-confirmed` | Verified only by tools or automated processes. |
+| `human-reviewed` | Verified by at least one `human:` actor. A single human outranks any number of machines. |
+
+**Surgical edits.** The sign-off is appended to the existing front-matter block; every other byte of the page is untouched. Re-serializing YAML would reorder keys and renormalize timestamps, turning a one-line sign-off into a whole-file diff and destroying `git blame` on the team's most consequential pages.
+
+Repeat sign-offs are recorded as separate events rather than deduped — a second verification by the same person is what says "still true after the last edit". [`illuminate wiki lint`](#illuminate-wiki-lint) flags a verification that predates the page's `updated` timestamp.
+
+**Example.**
+
+```bash
+illuminate verify dec-2026-07-no-redis --as human:priya
+```
+
 ### `illuminate sync`
 
 Exchange published knowledge with the team's git remote: fetch → fast-forward → push, then re-index the team repo's wiki into the local graph so `illuminate enrich` and `illuminate audit` immediately see what teammates published.

@@ -49,6 +49,7 @@ pub mod trace;
 pub mod trail;
 pub mod trail_tokens;
 pub mod trust_check;
+pub mod verify;
 pub mod watch;
 pub mod wiki;
 pub mod workspace;

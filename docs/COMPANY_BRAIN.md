@@ -181,10 +181,10 @@ no Neo4j, no sidecar. Local-first by default.
 
 | Gap | Detail |
 |---|---|
-| **Team sync** | `TeamRepoTarget::GitRemote` is modeled in `illuminate-publish` but deliberately gated and unimplemented. There is no `sync`, `pull`, or `federate` verb. "Team" currently means "a shared folder on local disk." **This is the largest gap between what illuminate claims and what it does.** |
-| **Connectors** | One ingest adapter exists. Competitors ship Slack, Notion, Gmail, Drive, Linear. Slack is where engineering decisions actually get made, and illuminate is blind to it. |
-| **Trust / abstention** | No `verified` field, no staleness expiry, no ability to say "I am unsure." The `confidence` field exists but does not drive behaviour. |
-| **Offline build** | `illuminate` core defaults `extract` on → `fastembed` → `ort-sys` downloads an ONNX binary from a third-party CDN at build time. Only 5 of 20 crates build without network. Contradicts the local-first promise. |
+| ~~**Team sync**~~ | **Closed.** `TeamRepoTarget::GitRemote` and `illuminate sync` ship — fetch → fast-forward → push, then re-index the team repo into the local graph. |
+| **Connectors** | Two ingest adapters exist (local markdown, OKF bundles). Competitors ship Slack, Notion, Gmail, Drive, Linear. Slack is where engineering decisions actually get made, and illuminate is blind to it. |
+| **Trust / abstention** | *Partly closed.* `verified` / `stale_after` / trust tiers, `illuminate verify`, and three lint rules ship. Still missing: trust-weighted ranking in `enrich`/`audit` (C4) and abstention below a confidence floor (C5). |
+| ~~**Offline build**~~ | **Closed.** The ONNX stack is behind a default-on `onnx` feature; `--no-default-features` builds and tests with no network, guarded by a CI job. |
 | **Benchmarks** | Supermemory publishes MemoryBench numbers. Illuminate has none. |
 | **Phase 3 remainder** | `illuminate-query` (openCypher subset) and `illuminate-eval` are designed but neither crate exists. |
 | **Doc drift** | `ROADMAP.md` claims v0.24 and `PRODUCT_OVERVIEW.md` claims v0.18/v0.21 against an actual v0.31.0. |
@@ -199,12 +199,13 @@ credible.
 ### Phase A — Cross the team gap
 
 *Without this there is no team product. Every competitor gets team scale for free by being
-cloud-native; illuminate's local-first choice makes it the hard part, and the hard part is
-unbuilt.*
+cloud-native; illuminate's local-first choice makes it the hard part.*
 
-- **A1.** Implement `TeamRepoTarget::GitRemote` in `illuminate-publish` (already modeled and gated).
-- **A2.** Ship `illuminate sync` — pull the team repo, re-index into `graph.db`, push local
-  publishes. The missing verb that turns N laptops into a team.
+- **A1. ✅ Shipped.** `TeamRepoTarget::GitRemote` in `illuminate-publish`. Consent-gated;
+  writes to a local clone so `publish` still performs **zero** network I/O.
+- **A2. ✅ Shipped.** `illuminate sync` — fetch → fast-forward → push, then re-index the
+  team repo's wiki into `graph.db`. Pure plan + injectable `GitOps`, so the orchestration
+  is tested without a network. The verb that turns N laptops into a team.
 - **A3.** Point `illuminate cloud serve` at synced remotes rather than a local disk scan.
 - **A4.** Cross-machine identity and attribution for published knowledge.
 
@@ -213,9 +214,11 @@ unbuilt.*
 *Do this immediately after A2; it currently blocks clean verification in any restricted
 environment.*
 
-- **D1.** Thread the existing `extract` cargo feature up through the workspace so a
-  `--no-default-features` build works fully offline.
-- **D2.** Add a no-default-features job to CI (`ci.yml` currently only runs `cargo test --workspace`).
+- **D1. ✅ Shipped.** The ONNX stack sits behind a default-on `onnx` feature threaded
+  through all 20 crates. `--no-default-features` builds and tests with no network;
+  `illuminate-embed` degrades to a stub engine with an identical API surface.
+- **D2. ✅ Shipped.** An `offline` CI job runs clippy + tests with `--no-default-features`
+  and asserts `ort-sys`/`fastembed` are absent from the slim dependency graph.
 - **D3.** Regenerate `ROADMAP.md` and `PRODUCT_OVERVIEW.md` against v0.31 — using
   `illuminate doc-decay` on our own docs, which is also the best available demo.
 
@@ -225,20 +228,29 @@ environment.*
 brain should be able to say it is unsure instead of turning stale facts into confident
 answers." OKF supplies the schema for free.*
 
-- **C1.** Add `verified: [{by, at}]` and `stale_after` to `FrontMatter`; derive OKF's three
-  trust tiers (unverified / machine-confirmed / human-reviewed).
-- **C2.** `illuminate verify` — a human signs off on a decision.
-- **C3.** Extend `illuminate-wiki`'s lint set (currently 6 codes, none about trust) with
-  unverified/stale rules.
+- **C1. ✅ Shipped.** `verified: [{by, at}]` and `stale_after` on `FrontMatter`, additive
+  and skip-serialized so existing pages round-trip byte-identically. Tier derivation
+  follows OKF's actor convention; a bare-mapping verifier is accepted per the spec.
+- **C2. ✅ Shipped.** `illuminate verify <id> --as human:priya`. The edit is **surgical** —
+  appended to the existing front-matter block, every other byte untouched, so a sign-off
+  is a 3-line diff instead of a whole-file rewrite that would destroy `git blame`.
+- **C3. ✅ Shipped.** Three new lint codes: `StalePage`, `MalformedVerifier`, and
+  `VerificationPredatesUpdate` (the page changed after it was vouched for). Staleness lives
+  in `lint_page_on(page, today)` — the day is a parameter, never a clock read, so the audit
+  path stays deterministic.
 - **C4.** Weight `enrich` and `audit` by trust tier — a human-reviewed decision outranks a
   machine-extracted guess. **No tool in the category does this.**
 - **C5.** Abstain rather than assert below a confidence floor.
 
 ### Phase B — Portability as a weapon
 
-- **B1.** `OkfBundleAdapter` in `illuminate-ingest` — the `IngestAdapter` trait
-  (`fetch_all` / `fetch_since`) fits an OKF bundle directly.
-- **B2.** `illuminate export okf` — third arm alongside the existing json/csv export.
+- **B1. ✅ Shipped.** `OkfBundleAdapter` + `illuminate ingest --okf PATH`. Reads any
+  conformant v0.2 bundle; tolerates unknown types, unknown keys, and broken links per §9
+  rather than rejecting.
+- **B2. ✅ Shipped.** `illuminate export --format okf --out DIR`. Byte-stable, lossless
+  (illuminate-only fields ride along as extension keys), relationships become
+  bundle-relative markdown links. Verified round-trip: this repo's 15 wiki pages export
+  and re-ingest cleanly.
 - **B3.** Publish a standalone `okf` crate (spec-complete v0.2 parse/validate/emit) as a
   byproduct, for ecosystem presence.
 
