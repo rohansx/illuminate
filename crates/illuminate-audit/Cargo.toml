@@ -7,11 +7,11 @@ repository.workspace = true
 description = "Contextual linter for illuminate — cross-reference agent plans against the decision graph"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
-illuminate-config = { version = "0.31.0", path = "../illuminate-config" }
-illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" }
-illuminate-index = { version = "0.31.0", path = "../illuminate-index" }
-illuminate-reflect = { version = "0.31.0", path = "../illuminate-reflect" }
+illuminate = { version = "0.31.0", path = "../illuminate-core" , default-features = false }
+illuminate-config = { version = "0.31.0", path = "../illuminate-config", default-features = false }
+illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" , default-features = false }
+illuminate-index = { version = "0.31.0", path = "../illuminate-index", default-features = false }
+illuminate-reflect = { version = "0.31.0", path = "../illuminate-reflect", default-features = false }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -21,6 +21,13 @@ toml = { workspace = true }
 regex = "1"
 tracing = { workspace = true }
 uuid = { workspace = true }
+
+[features]
+# Forwards the local-ONNX stack (embeddings + GLiNER extraction). On by
+# default; `--no-default-features` yields a build that needs no network at
+# build time. See `illuminate-embed`'s crate docs.
+default = ["onnx"]
+onnx = ["illuminate-embed/onnx", "illuminate-index/onnx", "illuminate-reflect/onnx", "illuminate/extract"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -148,6 +148,7 @@ enum Commands {
     Stats,
 
     /// Manage ONNX models
+    #[cfg(feature = "onnx")]
     Models {
         #[command(subcommand)]
         action: ModelsAction,
@@ -716,6 +717,9 @@ enum McpAction {
     },
 }
 
+/// Only meaningful when the ONNX stack is compiled in — without it there are
+/// no models to manage, so the whole `models` verb is compiled out.
+#[cfg(feature = "onnx")]
 #[derive(Subcommand)]
 enum ModelsAction {
     /// Download ONNX models required for extraction
@@ -844,6 +848,7 @@ pub fn run() {
             DecisionsAction::For { path, json } => commands::decisions::for_path(path, json),
         },
         Commands::Stats => commands::stats::run(),
+        #[cfg(feature = "onnx")]
         Commands::Models { action } => match action {
             ModelsAction::Download => commands::models::download(),
         },

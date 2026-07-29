@@ -22,19 +22,19 @@ name = "ilm"
 path = "src/bin/ilm.rs"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
-illuminate-extract = { version = "0.31.0", path = "../illuminate-extract" }
-illuminate-mcp = { version = "0.31.0", path = "../illuminate-mcp" }
-illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" }
-illuminate-watch = { version = "0.31.0", path = "../illuminate-watch" }
-illuminate-index = { version = "0.31.0", path = "../illuminate-index" }
-illuminate-audit = { version = "0.31.0", path = "../illuminate-audit" }
-illuminate-reflect = { version = "0.31.0", path = "../illuminate-reflect" }
-illuminate-route = { version = "0.31.0", path = "../illuminate-route" }
-illuminate-enrich = { version = "0.31.0", path = "../illuminate-enrich" }
-illuminate-publish = { version = "0.31.0", path = "../illuminate-publish" }
-illuminate-ingest = { version = "0.31.0", path = "../illuminate-ingest" }
-illuminate-trail = { version = "0.31.0", path = "../illuminate-trail" }
+illuminate = { version = "0.31.0", path = "../illuminate-core", default-features = false }
+illuminate-extract = { version = "0.31.0", path = "../illuminate-extract", optional = true }
+illuminate-mcp = { version = "0.31.0", path = "../illuminate-mcp", default-features = false }
+illuminate-embed = { version = "0.31.0", path = "../illuminate-embed", default-features = false }
+illuminate-watch = { version = "0.31.0", path = "../illuminate-watch", default-features = false }
+illuminate-index = { version = "0.31.0", path = "../illuminate-index", default-features = false }
+illuminate-audit = { version = "0.31.0", path = "../illuminate-audit", default-features = false }
+illuminate-reflect = { version = "0.31.0", path = "../illuminate-reflect", default-features = false }
+illuminate-route = { version = "0.31.0", path = "../illuminate-route", default-features = false }
+illuminate-enrich = { version = "0.31.0", path = "../illuminate-enrich", default-features = false }
+illuminate-publish = { version = "0.31.0", path = "../illuminate-publish", default-features = false }
+illuminate-ingest = { version = "0.31.0", path = "../illuminate-ingest", default-features = false }
+illuminate-trail = { version = "0.31.0", path = "../illuminate-trail", default-features = false }
 illuminate-wiki = { version = "0.31.0", path = "../illuminate-wiki" }
 illuminate-layout = { version = "0.31.0", path = "../illuminate-layout" }
 illuminate-policy = { version = "0.31.0", path = "../illuminate-policy" }
@@ -52,8 +52,33 @@ toml = { workspace = true }
 regex = { workspace = true }
 tempfile = "3"
 
+[features]
+# The full local-ONNX stack: sentence embeddings (`illuminate-embed`) and
+# GLiNER entity extraction (`illuminate-extract`). **On by default** — the
+# released binary is unchanged.
+#
+# `--no-default-features` builds a slim CLI that needs no network at build
+# time. `illuminate models` is compiled out and semantic ranking degrades to
+# the deterministic lexical path; every other verb behaves identically.
+default = ["onnx"]
+onnx = [
+    "dep:illuminate-extract",
+    "illuminate/extract",
+    "illuminate-embed/onnx",
+    "illuminate-mcp/onnx",
+    "illuminate-watch/onnx",
+    "illuminate-index/onnx",
+    "illuminate-audit/onnx",
+    "illuminate-reflect/onnx",
+    "illuminate-route/onnx",
+    "illuminate-enrich/onnx",
+    "illuminate-publish/onnx",
+    "illuminate-ingest/onnx",
+    "illuminate-trail/onnx",
+]
+
 [dev-dependencies]
 tempfile = "3"
-illuminate-trail = { version = "0.31.0", path = "../illuminate-trail" }
+illuminate-trail = { version = "0.31.0", path = "../illuminate-trail", default-features = false }
 chrono = { workspace = true }
 serde_json = { workspace = true }

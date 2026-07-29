@@ -15,15 +15,15 @@ name = "illuminate-mcp"
 path = "src/main.rs"
 
 [dependencies]
-illuminate = { path = "../illuminate-core", version = "0.31.0" }
-illuminate-embed = { path = "../illuminate-embed", version = "0.31.0" }
-illuminate-audit = { path = "../illuminate-audit", version = "0.31.0" }
-illuminate-policy = { path = "../illuminate-policy", version = "0.31.0" }
-illuminate-index = { path = "../illuminate-index", version = "0.31.0" }
-illuminate-reflect = { path = "../illuminate-reflect", version = "0.31.0" }
-illuminate-route = { path = "../illuminate-route", version = "0.31.0" }
-illuminate-enrich = { path = "../illuminate-enrich", version = "0.31.0" }
-illuminate-wiki = { path = "../illuminate-wiki", version = "0.31.0" }
+illuminate = { path = "../illuminate-core", version = "0.31.0" , default-features = false }
+illuminate-embed = { path = "../illuminate-embed", version = "0.31.0" , default-features = false }
+illuminate-audit = { path = "../illuminate-audit", version = "0.31.0", default-features = false }
+illuminate-policy = { path = "../illuminate-policy", version = "0.31.0", default-features = false }
+illuminate-index = { path = "../illuminate-index", version = "0.31.0", default-features = false }
+illuminate-reflect = { path = "../illuminate-reflect", version = "0.31.0", default-features = false }
+illuminate-route = { path = "../illuminate-route", version = "0.31.0", default-features = false }
+illuminate-enrich = { path = "../illuminate-enrich", version = "0.31.0", default-features = false }
+illuminate-wiki = { path = "../illuminate-wiki", version = "0.31.0", default-features = false }
 rusqlite = { workspace = true }
 tracing = { workspace = true }
 toml = { workspace = true }
@@ -35,6 +35,13 @@ chrono = { workspace = true }
 dotenvy = "0.15"
 uuid = { workspace = true }
 axum = "0.8"
+
+[features]
+# Forwards the local-ONNX stack (embeddings + GLiNER extraction). On by
+# default; `--no-default-features` yields a build that needs no network at
+# build time. See `illuminate-embed`'s crate docs.
+default = ["onnx"]
+onnx = ["illuminate-audit/onnx", "illuminate-embed/onnx", "illuminate-enrich/onnx", "illuminate-index/onnx", "illuminate-reflect/onnx", "illuminate-route/onnx", "illuminate/extract"]
 
 [dev-dependencies]
 tempfile = "3"

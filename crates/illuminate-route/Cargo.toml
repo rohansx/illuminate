@@ -7,13 +7,20 @@ repository.workspace = true
 description = "Subject-to-file routing for illuminate — tri-modal search and reading plans"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
-illuminate-index = { version = "0.31.0", path = "../illuminate-index" }
-illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" }
+illuminate = { version = "0.31.0", path = "../illuminate-core" , default-features = false }
+illuminate-index = { version = "0.31.0", path = "../illuminate-index", default-features = false }
+illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" , default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
+
+[features]
+# Forwards the local-ONNX stack (embeddings + GLiNER extraction). On by
+# default; `--no-default-features` yields a build that needs no network at
+# build time. See `illuminate-embed`'s crate docs.
+default = ["onnx"]
+onnx = ["illuminate-embed/onnx", "illuminate-index/onnx", "illuminate/extract"]
 
 [dev-dependencies]
 tempfile = "3"

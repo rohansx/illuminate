@@ -18,7 +18,8 @@ fn resolve_db_path(db: Option<String>) -> PathBuf {
     PathBuf::from(".illuminate/graph.db")
 }
 
-/// Locate models directory.
+/// Locate models directory. Only reachable from the ONNX path.
+#[cfg(feature = "onnx")]
 fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
     if let Ok(val) = env::var("ILLUMINATE_MODELS_DIR") {
         let p = PathBuf::from(val);
@@ -106,6 +107,9 @@ fn init_graph_and_embed(db: Option<String>) -> (Graph, Option<EmbedEngine>) {
     let db_path = resolve_db_path(db);
     eprintln!("illuminate mcp: using database at {}", db_path.display());
 
+    // `mut` only matters on the ONNX path, where the extraction pipeline is
+    // loaded into the graph below.
+    #[cfg_attr(not(feature = "onnx"), allow(unused_mut))]
     let mut graph = match Graph::open_or_create(&db_path) {
         Ok(g) => g,
         Err(e) => {
@@ -114,7 +118,10 @@ fn init_graph_and_embed(db: Option<String>) -> (Graph, Option<EmbedEngine>) {
         }
     };
 
-    // Load extraction pipeline if models are available
+    // Load extraction pipeline if models are available. Built without the
+    // `onnx` feature there is no pipeline to load, so the server starts with
+    // raw episode storage — the same degrade as "models not installed".
+    #[cfg(feature = "onnx")]
     if let Some(models_dir) = find_models_dir(&db_path) {
         match graph.load_extraction_pipeline(&models_dir) {
             Ok(()) => eprintln!("illuminate mcp: extraction pipeline ready"),

@@ -27,6 +27,7 @@ pub mod init;
 pub mod install;
 pub mod log;
 pub mod mcp;
+#[cfg(feature = "onnx")]
 pub mod models;
 pub mod onboard;
 pub mod oncall;
@@ -111,6 +112,14 @@ pub fn open_graph() -> illuminate::Result<Graph> {
 /// Used by `open_graph` and by ingest paths (e.g. `trail register`,
 /// `failures register`) that need extraction wired up so the audit can match
 /// against extracted entities.
+///
+/// Built without the `onnx` feature there is no extraction pipeline to attach,
+/// so this is a no-op. That is the same degrade the "models not installed"
+/// path already takes — callers store raw episodes either way.
+#[cfg(not(feature = "onnx"))]
+pub(crate) fn try_attach_extraction(_graph: &mut Graph, _db_path: &std::path::Path) {}
+
+#[cfg(feature = "onnx")]
 pub(crate) fn try_attach_extraction(graph: &mut Graph, db_path: &std::path::Path) {
     // Models simply not installed is a normal first-install state — fall back
     // silently to raw episode storage. A user can enable extraction with
@@ -158,6 +167,10 @@ pub(crate) fn try_attach_extraction(graph: &mut Graph, db_path: &std::path::Path
 /// 1. `ILLUMINATE_MODELS_DIR` env var
 /// 2. `~/.cache/illuminate/models`
 /// 3. `.illuminate/models` next to the database
+///
+/// Only reachable from the ONNX paths — a build without the `onnx` feature has
+/// no models to locate.
+#[cfg(feature = "onnx")]
 pub(crate) fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
     // 1. Env var override
     if let Ok(val) = env::var("ILLUMINATE_MODELS_DIR") {
@@ -192,6 +205,9 @@ pub(crate) fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
 /// — the pipeline itself produces a longer error chain when ONNX files are
 /// missing, which is noisy for the common "user hasn't run `illuminate models
 /// download` yet" case.
+///
+/// Compiled out without the `onnx` feature — nothing looks for model files.
+#[cfg(feature = "onnx")]
 fn has_onnx_model(dir: &std::path::Path) -> bool {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return false;

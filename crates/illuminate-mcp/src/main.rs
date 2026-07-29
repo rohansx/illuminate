@@ -33,6 +33,8 @@ fn resolve_db_path() -> PathBuf {
 /// 1. `ILLUMINATE_MODELS_DIR` env var
 /// 2. `~/.cache/illuminate/models`
 /// 3. `.illuminate/models` next to the database
+/// Only reachable from the ONNX path — a slim build has no models to locate.
+#[cfg(feature = "onnx")]
 fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
     if let Ok(val) = env::var("ILLUMINATE_MODELS_DIR") {
         let p = PathBuf::from(val);
@@ -68,7 +70,9 @@ async fn main() {
     let db_path = resolve_db_path();
     eprintln!("illuminate-mcp: using database at {}", db_path.display());
 
-    // Open or create graph at the given path
+    // Open or create graph at the given path.
+    // `mut` only matters on the ONNX path, which loads the pipeline below.
+    #[cfg_attr(not(feature = "onnx"), allow(unused_mut))]
     let mut graph = match Graph::open_or_create(&db_path) {
         Ok(g) => g,
         Err(e) => {
@@ -77,7 +81,10 @@ async fn main() {
         }
     };
 
-    // Load extraction pipeline if models are available
+    // Load extraction pipeline if models are available. Compiled out without
+    // the `onnx` feature — the server then runs with raw episode storage,
+    // the same degrade as "models not installed".
+    #[cfg(feature = "onnx")]
     if let Some(models_dir) = find_models_dir(&db_path) {
         eprintln!(
             "illuminate-mcp: loading extraction pipeline from {}",

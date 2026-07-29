@@ -24,7 +24,6 @@ orp = "0.9"
 composable = "0.9"
 ndarray = { workspace = true }
 tokenizers = "0.22"
-fastembed = { workspace = true }
 half = { workspace = true }
 cloakpipe-core = { version = "0.8", optional = true }
 anyhow = { version = "1", optional = true }

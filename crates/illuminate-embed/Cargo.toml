@@ -7,5 +7,12 @@ repository.workspace = true
 description = "Sentence embedding engine for illuminate using all-MiniLM-L6-v2"
 
 [dependencies]
-fastembed = { workspace = true }
+fastembed = { workspace = true, optional = true }
 thiserror = { workspace = true }
+
+[features]
+# On by default: the shipped binary keeps the real ONNX encoder.
+# `--no-default-features` drops `fastembed`/`ort-sys` (and its build-time CDN
+# download), leaving the stub engine — see the crate docs.
+default = ["onnx"]
+onnx = ["dep:fastembed"]

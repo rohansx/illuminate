@@ -7,9 +7,8 @@ repository.workspace = true
 description = "Daemon harness for illuminate — hosts the trail watcher, extraction workers, and ingestion sources (git, GitHub PRs, webhooks)"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
-illuminate-extract = { version = "0.31.0", path = "../illuminate-extract" }
-illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" }
+illuminate = { version = "0.31.0", path = "../illuminate-core", default-features = false }
+illuminate-embed = { version = "0.31.0", path = "../illuminate-embed", default-features = false }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -18,6 +17,13 @@ tokio = { workspace = true, features = ["full"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 uuid = { workspace = true }
+
+[features]
+# Forwards the local-ONNX stack (embeddings + GLiNER extraction). On by
+# default; `--no-default-features` yields a build with no network access at
+# build time. See `illuminate-embed`'s crate docs.
+default = ["onnx"]
+onnx = ["illuminate-embed/onnx", "illuminate/extract"]
 
 [dev-dependencies]
 tempfile = "3"
