@@ -260,6 +260,21 @@ enum Commands {
         roots: Vec<PathBuf>,
     },
 
+    /// Exchange published knowledge with the team's git remote
+    Sync {
+        /// Plan the sync and print it without running anything
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Fetch and merge the team's knowledge, but never push local commits
+        #[arg(long)]
+        no_push: bool,
+
+        /// Emit the sync report as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Export the decision graph
     Export {
         /// Output format: json, csv, or okf (an Open Knowledge Format v0.2 bundle)
@@ -913,6 +928,11 @@ pub fn run() {
             limit,
         } => commands::symbols::run(name, symbol_type, limit),
         Commands::Diagram { format, out, roots } => commands::diagram::run(format, out, roots),
+        Commands::Sync {
+            dry_run,
+            no_push,
+            json,
+        } => commands::sync::run(dry_run, no_push, json),
         Commands::Export { format, out } => commands::export::run(&format, out),
         Commands::Summary { limit } => commands::summary::run(limit),
         Commands::Onboard { json } => commands::onboard::run(json),

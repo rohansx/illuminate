@@ -289,6 +289,54 @@ illuminate ingest --json | jq '{adapter, fetched, written}'
 illuminate ingest --okf ../partner-team-bundle
 ```
 
+### `illuminate sync`
+
+Exchange published knowledge with the team's git remote: fetch → fast-forward → push, then re-index the team repo's wiki into the local graph so `illuminate enrich` and `illuminate audit` immediately see what teammates published.
+
+```
+illuminate sync [--dry-run]
+                [--no-push]
+                [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--dry-run` | off | Print the plan and run nothing. The plan is computed by the same pure function the real run uses, so it is an exact preview. |
+| `--no-push` | off | Fetch and merge the team's knowledge without uploading local commits. Consume-only. |
+| `--json` | off | Emit the sync report as JSON. |
+
+**Configuration** (`illuminate.toml`):
+
+```toml
+[sync]
+url = "git@github.com:acme/team-illuminate.git"
+branch = "main"
+local_clone = "../team-illuminate"   # relative paths resolve against the repo root
+consent = true                        # required
+```
+
+**Trust model.** Sync is the only write path in illuminate that reaches the network, so the gate is explicit:
+
+- `consent = false` (or absent) refuses **before any step runs** — the same rule [`illuminate trust check`](#illuminate-trust-check) enforces on the config.
+- Pull is **fast-forward only**. Sync never fabricates a merge commit in a repository it does not own.
+- A failed fetch or fast-forward **aborts before the push**, so local commits are never uploaded on top of a stale view of the team's history.
+- `publish` itself still performs no network I/O even with a `GitRemote` target — it writes into the local clone, and `sync` is the separate, explicit gesture that uploads.
+
+**Exit behaviour.** A push with nothing local to send is reported as `nothing_to_push` rather than counted as executed.
+
+**Examples.**
+
+```bash
+# Preview:
+illuminate sync --dry-run
+
+# Pull the team's knowledge without publishing yours:
+illuminate sync --no-push
+
+# Full exchange:
+illuminate sync --json | jq '{executed, pages_reindexed}'
+```
+
 ### `illuminate export`
 
 Export the decision graph, or the wiki as a portable OKF bundle.

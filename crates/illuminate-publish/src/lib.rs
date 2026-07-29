@@ -12,9 +12,13 @@
 //!   No other crate in this workspace has a network-or-foreign-FS write path,
 //!   and even this crate refuses to write anywhere the caller has not
 //!   explicitly named in `req.team_repo`.
-//! - **No network calls.** v3.0 ships [`TeamRepoTarget::LocalPath`] only. The
-//!   planned [`TeamRepoTarget::GitRemote`] variant is deliberately gated for
-//!   v3.1 with a paired `illuminate trust check` config-linter pass.
+//! - **No network calls on the publish path — still literally true.**
+//!   [`TeamRepoTarget::GitRemote`] does *not* change this: it writes into a
+//!   local working clone and records where those commits are eventually bound.
+//!   Uploading is [`sync`]'s job, behind its own explicit gesture. A publish
+//!   can therefore never surprise a developer by sending something off-host.
+//!   Off-host targets additionally require `consent = true`, mirroring what
+//!   `illuminate trust check` enforces on `illuminate.toml`.
 //! - **`Discard` writes nothing.** A request with `redaction: Discard` returns
 //!   an empty `PublishResponse` and never touches the filesystem or graph.
 //!
@@ -31,7 +35,11 @@ use illuminate::{Episode, Graph};
 use illuminate_trail::TrailRecord;
 
 pub mod as_doc;
+pub mod sync;
 pub use as_doc::{draft_design_doc, write_design_doc};
+pub use sync::{
+    GitOps, SyncConfig, SyncOptions, SyncPlan, SyncReport, SyncStep, plan_sync, run_sync,
+};
 
 /// How much of the captured session to share with the team.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -181,8 +189,8 @@ pub enum PublishError {
     /// An off-host target was named without a paired explicit opt-in. Matches
     /// what `illuminate trust check` reports for the same config.
     #[error(
-        "publishing to off-host target {0} requires explicit consent — \
-         set `consent = true` on the [publish] target in illuminate.toml"
+        "off-host target {0} requires explicit consent — \
+         set `consent = true` on that target in illuminate.toml"
     )]
     ConsentRequired(String),
     #[error("invalid team-repo target: {0}")]

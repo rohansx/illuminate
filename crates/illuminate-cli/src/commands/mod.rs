@@ -44,6 +44,7 @@ pub mod stats;
 pub mod status;
 pub mod summary;
 pub mod symbols;
+pub mod sync;
 pub mod trace;
 pub mod trail;
 pub mod trail_tokens;
