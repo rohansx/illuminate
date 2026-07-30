@@ -164,6 +164,13 @@ fn every_cli_md_heading_maps_to_a_real_command() {
         if top.contains(&heading) || top.contains(&head_verb) {
             continue;
         }
+        // `models` manages the local ONNX model files, so it is compiled out of
+        // a `--no-default-features` build. The docs still describe it (the
+        // released binary has it), so skip it when it is not compiled in.
+        #[cfg(not(feature = "onnx"))]
+        if head_verb == "models" {
+            continue;
+        }
         // Nested verb whose parent is a real top-level command.
         if let Some((_, parent)) = nested_parents.iter().find(|(h, _)| *h == heading) {
             assert!(

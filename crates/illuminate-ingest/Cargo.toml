@@ -7,12 +7,19 @@ repository.workspace = true
 description = "Read-only adapters for external knowledge sources (local markdown, confluence, notion, github-wiki, …) — feeds into the illuminate graph"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
+illuminate = { version = "0.31.0", path = "../illuminate-core" , default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 walkdir = "2"
+
+[features]
+# Forwards the local-ONNX extraction stack. On by default;
+# `--no-default-features` yields a build that needs no network at build time.
+default = ["onnx"]
+onnx = ["illuminate/extract"]
 
 [dev-dependencies]
 tempfile = "3"

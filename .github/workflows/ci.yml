@@ -31,3 +31,40 @@ jobs:
 
       - name: build
         run: cargo build --release
+
+  # Guards the offline build path. The default feature set pulls `fastembed` →
+  # `ort-sys`, whose build script DOWNLOADS an ONNX Runtime binary from a
+  # third-party CDN — so a default build fails on any machine without egress to
+  # it (air-gapped, proxied, or corporate-firewalled). That contradicts
+  # illuminate's local-first, single-binary promise.
+  #
+  # `--no-default-features` must therefore stay buildable and green with no
+  # network at build time. If this job breaks, someone has reintroduced an
+  # unconditional dependency on the ONNX stack.
+  #
+  # `illuminate-extract` is excluded on purpose: it IS the ONNX crate (`ort` +
+  # `gline-rs` are unconditional there, since a GLiNER extractor without a
+  # runtime is nothing). The guarantee this job encodes is "every crate except
+  # the ONNX extractor builds and tests with no network."
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: clippy (no default features)
+        run: cargo clippy --workspace --exclude illuminate-extract --all-targets --no-default-features -- -D warnings
+
+      - name: test (no default features)
+        run: cargo test --workspace --exclude illuminate-extract --no-default-features
+
+      - name: assert no onnx in the slim dependency graph
+        run: |
+          if cargo tree -p illuminate-cli --no-default-features -e normal | grep -qE '\bort-sys\b|\bfastembed\b'; then
+            echo "::error::ort-sys/fastembed reachable with --no-default-features — the offline build is broken"
+            exit 1
+          fi
+          echo "slim graph is clean: no ort-sys, no fastembed"

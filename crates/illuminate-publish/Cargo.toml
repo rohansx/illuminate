@@ -7,13 +7,19 @@ repository.workspace = true
 description = "Explicit publish gesture for illuminate — curate trail sessions into a team repo with per-session redaction"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
-illuminate-trail = { version = "0.31.0", path = "../illuminate-trail" }
+illuminate = { version = "0.31.0", path = "../illuminate-core" , default-features = false }
+illuminate-trail = { version = "0.31.0", path = "../illuminate-trail", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+
+[features]
+# Forwards the local-ONNX extraction stack. On by default;
+# `--no-default-features` yields a build that needs no network at build time.
+default = ["onnx"]
+onnx = ["illuminate-trail/onnx", "illuminate/extract"]
 
 [dev-dependencies]
 tempfile = "3"

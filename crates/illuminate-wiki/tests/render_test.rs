@@ -21,6 +21,8 @@ fn page(id: &str, title: &str, kind: PageType) -> WikiPage {
             sources: vec![],
             severity: None,
             paths: None,
+            verified: vec![],
+            stale_after: None,
         },
         body: "## Decision\nx".into(),
     }

@@ -22,6 +22,9 @@
 //! See [`code-graph-strategy.md`](../../docs/code-graph-strategy.md) and
 //! [`knowledge-layer.md`](../../docs/knowledge-layer.md) for the design.
 
+pub mod okf;
+
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -178,6 +181,50 @@ pub fn ingest_since(
     register_docs(graph, adapter.name(), docs)
 }
 
+/// Test-only shim so the dedup suite can register docs under an arbitrary
+/// adapter name without defining a second adapter type.
+#[doc(hidden)]
+pub fn register_docs_for_test(
+    graph: &mut Graph,
+    adapter_name: &str,
+    docs: Vec<IngestedDoc>,
+) -> Result<IngestReport> {
+    register_docs(graph, adapter_name, docs)
+}
+
+/// Index of documents already in the graph for one adapter, keyed by
+/// `external_id` and carrying the `updated_at` we recorded last time.
+///
+/// Built by scanning episodes with `source = ingested:<adapter>`. That is a
+/// linear scan, which is fine at the scale ingestion runs at (thousands of
+/// docs, once per sync) and avoids adding a schema migration for an index.
+fn existing_docs(graph: &Graph, adapter_name: &str) -> Result<HashMap<String, String>> {
+    let source = format!("ingested:{adapter_name}");
+    let mut seen = HashMap::new();
+    // `list_episodes` is paged; ingestion corpora are small enough that one
+    // large page is simpler than looping, but keep the cap explicit.
+    for ep in graph.list_episodes(100_000, 0)? {
+        if ep.source.as_deref() != Some(source.as_str()) {
+            continue;
+        }
+        let Some(meta) = ep.metadata.as_ref() else {
+            continue;
+        };
+        let Some(external_id) = meta.get("external_id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let updated_at = meta
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        // Later episodes win: if a doc was re-ingested after an edit, the most
+        // recent record is the one to compare against.
+        seen.insert(external_id.to_string(), updated_at);
+    }
+    Ok(seen)
+}
+
 fn register_docs(
     graph: &mut Graph,
     adapter_name: &str,
@@ -185,7 +232,26 @@ fn register_docs(
 ) -> Result<IngestReport> {
     let fetched = docs.len();
     let mut written = 0;
+    let mut skipped_duplicates = 0;
+
+    // Dedup on `(adapter, external_id)` — the adapter is already implied by the
+    // episode source, so the map only needs to key on external_id.
+    //
+    // A doc is skipped only when we have seen that external_id AND its
+    // `updated_at` is unchanged. Keying on the id alone would make the corpus
+    // immutable: an edited page would never reach the graph.
+    let mut known = existing_docs(graph, adapter_name)?;
+
     for d in docs {
+        let stamp = d.updated_at.to_rfc3339();
+        if known.get(&d.external_id).is_some_and(|prev| *prev == stamp) {
+            skipped_duplicates += 1;
+            continue;
+        }
+        // Record it immediately so a bundle containing the same external_id
+        // twice does not write it twice within a single run.
+        known.insert(d.external_id.clone(), stamp);
+
         let source = format!("ingested:{adapter_name}");
         let content = render_episode_content(&d);
         let mut builder = Episode::builder(&content).source(&source);
@@ -217,7 +283,7 @@ fn register_docs(
         adapter: adapter_name.to_string(),
         fetched,
         written,
-        skipped_duplicates: 0,
+        skipped_duplicates,
     })
 }
 

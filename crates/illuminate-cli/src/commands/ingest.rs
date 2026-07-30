@@ -1,17 +1,37 @@
 //! `illuminate ingest` — pull external knowledge sources into the graph.
 //!
-//! v0.22 ships [`LocalMarkdownAdapter`] only. Confluence / Notion / GitHub-wiki
-//! / Google-Docs / spec-kit adapters land in v0.23+. The crate is structured
-//! so adding adapters is mechanical — see `crates/illuminate-ingest/src/lib.rs`.
+//! Two adapters ship today: [`LocalMarkdownAdapter`] (the default) and
+//! [`OkfBundleAdapter`] via `--okf PATH`, which reads an Open Knowledge Format
+//! v0.2 bundle — anyone's bundle, not just one illuminate produced.
+//! Confluence / Notion / GitHub-wiki / Google-Docs / Slack adapters follow. The
+//! crate is structured so adding adapters is mechanical — see
+//! `crates/illuminate-ingest/src/lib.rs`.
 
 use std::path::PathBuf;
 
+use illuminate_ingest::okf::OkfBundleAdapter;
 use illuminate_ingest::{IngestReport, LocalMarkdownAdapter, ingest_all};
 
 use super::open_graph;
 
 /// Run the `ingest` subcommand.
-pub fn run(roots: Vec<PathBuf>, json_output: bool) -> illuminate::Result<()> {
+///
+/// `okf` selects the OKF bundle adapter over the default local-markdown one.
+/// The two are mutually exclusive: a bundle is a self-describing directory, so
+/// mixing it with free-form doc roots would give the same file two different
+/// `external_id`s and defeat dedup.
+pub fn run(roots: Vec<PathBuf>, okf: Option<PathBuf>, json_output: bool) -> illuminate::Result<()> {
+    if let Some(bundle) = okf {
+        if !roots.is_empty() {
+            return Err(illuminate::IlluminateError::InvalidInput(
+                "--okf and --roots are mutually exclusive: an OKF bundle is ingested as a \
+                 bundle, not as a set of doc roots"
+                    .to_string(),
+            ));
+        }
+        return run_okf(bundle, json_output);
+    }
+
     // Resolve roots: explicit --roots wins; otherwise fall back to sensible
     // defaults that match the bootstrap pipeline's view of "where docs live".
     let effective_roots = if roots.is_empty() {
@@ -35,6 +55,27 @@ pub fn run(roots: Vec<PathBuf>, json_output: bool) -> illuminate::Result<()> {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     } else {
         print_human(&report, &effective_roots);
+    }
+    Ok(())
+}
+
+/// Ingest an OKF bundle rooted at `bundle`.
+fn run_okf(bundle: PathBuf, json_output: bool) -> illuminate::Result<()> {
+    if !bundle.is_dir() {
+        return Err(illuminate::IlluminateError::InvalidInput(format!(
+            "OKF bundle root {} is not a directory",
+            bundle.display()
+        )));
+    }
+
+    let adapter = OkfBundleAdapter::new(bundle.clone());
+    let mut graph = open_graph()?;
+    let report = ingest_all(&mut graph, &adapter).map_err(map_ingest_err)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        print_human(&report, std::slice::from_ref(&bundle));
     }
     Ok(())
 }

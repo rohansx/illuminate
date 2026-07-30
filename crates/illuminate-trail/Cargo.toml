@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Session capture for illuminate — Claude Code, Cursor, and Codex prompt-trail ingestion"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
+illuminate = { version = "0.31.0", path = "../illuminate-core" , default-features = false }
 chrono = { workspace = true }
 rusqlite = { workspace = true }
 serde = { workspace = true }
@@ -20,8 +20,12 @@ notify = "7"
 glob = "0.3"
 
 [features]
+# Forwards the local-ONNX extraction stack. On by default;
+# `--no-default-features` yields a build that needs no network at build time.
+default = ["onnx"]
+onnx = ["illuminate/extract"]
 test-helpers = []
 
 [dev-dependencies]
-illuminate-trail = { path = ".", features = ["test-helpers"] }
+illuminate-trail = { path = ".", features = ["test-helpers"], default-features = false }
 tempfile = "3"

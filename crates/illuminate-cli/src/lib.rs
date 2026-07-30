@@ -148,6 +148,7 @@ enum Commands {
     Stats,
 
     /// Manage ONNX models
+    #[cfg(feature = "onnx")]
     Models {
         #[command(subcommand)]
         action: ModelsAction,
@@ -259,11 +260,44 @@ enum Commands {
         roots: Vec<PathBuf>,
     },
 
+    /// Record a sign-off on a wiki page (promotes it to human-reviewed)
+    Verify {
+        /// The wiki page id, e.g. dec-2026-07-no-redis
+        id: String,
+
+        /// Actor id (OKF convention). Defaults to `human:$USER`.
+        #[arg(long)]
+        r#as: Option<String>,
+
+        /// Emit the result as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Exchange published knowledge with the team's git remote
+    Sync {
+        /// Plan the sync and print it without running anything
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Fetch and merge the team's knowledge, but never push local commits
+        #[arg(long)]
+        no_push: bool,
+
+        /// Emit the sync report as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Export the decision graph
     Export {
-        /// Output format: json or csv
+        /// Output format: json, csv, or okf (an Open Knowledge Format v0.2 bundle)
         #[arg(long, default_value = "json")]
         format: String,
+
+        /// Directory to write the OKF bundle into. Required for --format okf.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 
     /// Show a summary of the project's decision history
@@ -430,12 +464,17 @@ enum Commands {
         json: bool,
     },
 
-    /// Ingest external knowledge sources (local markdown for now) into the graph
+    /// Ingest external knowledge sources (local markdown, OKF bundles) into the graph
     Ingest {
         /// Roots to walk for *.md files; defaults to docs/, ARCHITECTURE.md,
         /// AGENTS.md, CLAUDE.md, README.md if those exist in cwd
         #[arg(long, num_args = 0..)]
         roots: Vec<PathBuf>,
+
+        /// Read an Open Knowledge Format (OKF) v0.2 bundle rooted at PATH.
+        /// Mutually exclusive with --roots.
+        #[arg(long, conflicts_with = "roots")]
+        okf: Option<PathBuf>,
 
         /// Emit the IngestReport as JSON
         #[arg(long)]
@@ -716,6 +755,9 @@ enum McpAction {
     },
 }
 
+/// Only meaningful when the ONNX stack is compiled in — without it there are
+/// no models to manage, so the whole `models` verb is compiled out.
+#[cfg(feature = "onnx")]
 #[derive(Subcommand)]
 enum ModelsAction {
     /// Download ONNX models required for extraction
@@ -844,6 +886,7 @@ pub fn run() {
             DecisionsAction::For { path, json } => commands::decisions::for_path(path, json),
         },
         Commands::Stats => commands::stats::run(),
+        #[cfg(feature = "onnx")]
         Commands::Models { action } => match action {
             ModelsAction::Download => commands::models::download(),
         },
@@ -899,7 +942,13 @@ pub fn run() {
             limit,
         } => commands::symbols::run(name, symbol_type, limit),
         Commands::Diagram { format, out, roots } => commands::diagram::run(format, out, roots),
-        Commands::Export { format } => commands::export::run(&format),
+        Commands::Verify { id, r#as, json } => commands::verify::run(id, r#as, json),
+        Commands::Sync {
+            dry_run,
+            no_push,
+            json,
+        } => commands::sync::run(dry_run, no_push, json),
+        Commands::Export { format, out } => commands::export::run(&format, out),
         Commands::Summary { limit } => commands::summary::run(limit),
         Commands::Onboard { json } => commands::onboard::run(json),
         Commands::Oncall { service, json } => commands::oncall::run(service, json),
@@ -951,7 +1000,7 @@ pub fn run() {
             max_steps,
             json,
         } => commands::trace::run(symbol, index_db, dir, kinds, depth, max_steps, json),
-        Commands::Ingest { roots, json } => commands::ingest::run(roots, json),
+        Commands::Ingest { roots, okf, json } => commands::ingest::run(roots, okf, json),
         Commands::DocDecay { roots, json } => commands::doc_decay::run(roots, json),
         Commands::AuditDocs { file, json } => commands::audit_docs::run(file, json),
         Commands::Ask {

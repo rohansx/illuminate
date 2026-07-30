@@ -7,15 +7,22 @@ repository.workspace = true
 description = "Pre-LLM prompt enrichment for illuminate — deterministic prompt rewriting with team context"
 
 [dependencies]
-illuminate = { version = "0.31.0", path = "../illuminate-core" }
-illuminate-route = { version = "0.31.0", path = "../illuminate-route" }
-illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" }
-illuminate-index = { version = "0.31.0", path = "../illuminate-index" }
+illuminate = { version = "0.31.0", path = "../illuminate-core" , default-features = false }
+illuminate-route = { version = "0.31.0", path = "../illuminate-route", default-features = false }
+illuminate-embed = { version = "0.31.0", path = "../illuminate-embed" , default-features = false }
+illuminate-index = { version = "0.31.0", path = "../illuminate-index", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
 regex = { workspace = true }
+
+[features]
+# Forwards the local-ONNX stack (embeddings + GLiNER extraction). On by
+# default; `--no-default-features` yields a build that needs no network at
+# build time. See `illuminate-embed`'s crate docs.
+default = ["onnx"]
+onnx = ["illuminate-embed/onnx", "illuminate-index/onnx", "illuminate-route/onnx", "illuminate/extract"]
 
 [dev-dependencies]
 tempfile = "3"

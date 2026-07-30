@@ -251,17 +251,23 @@ illuminate enrich "fix the race condition" --files src/payments/txn.rs --files s
 
 ### `illuminate ingest`
 
-Pull external knowledge sources into the graph. Shipped in v0.22 as the foundation of the v3.2 docs-as-first-class phase (see [`knowledge-layer.md`](knowledge-layer.md)). v0.22 ships the `LocalMarkdownAdapter` only — Confluence / Notion / GitHub-wiki / Google-Docs / spec-kit adapters land in v0.23+.
+Pull external knowledge sources into the graph. Shipped in v0.22 as the foundation of the v3.2 docs-as-first-class phase (see [`knowledge-layer.md`](knowledge-layer.md)). Two adapters ship today: `LocalMarkdownAdapter` (default) and `OkfBundleAdapter` (`--okf`) — Confluence / Notion / GitHub-wiki / Google-Docs / Slack adapters land later.
 
 ```
 illuminate ingest [--roots PATH ...]
+                  [--okf PATH]
                   [--json]
 ```
 
 | Flag | Default | Effect |
 |------|---------|--------|
 | `--roots PATH ...` | `docs/`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`, `README.md` (those that exist) | Roots to walk for `*.md`. Each root may be a file or a directory. |
+| `--okf PATH` | off | Read an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.2 bundle rooted at `PATH`. Mutually exclusive with `--roots`. |
 | `--json` | off | Emit the `IngestReport` as JSON instead of a human summary. |
+
+**OKF bundles.** `--okf` ingests any conformant OKF v0.2 bundle — one produced by illuminate, by Google's reference agent, or hand-written. Reserved filenames (`index.md`, `log.md`) are skipped; documents without a non-empty `type` are skipped. Per OKF §9 the adapter tolerates unknown `type` values, unknown frontmatter keys, and broken cross-links rather than rejecting the bundle. `generated.at` drives the change-detection watermark, falling back to file mtime.
+
+**Idempotence.** Documents dedupe on `(adapter, external_id)`. Re-running an ingest over an unchanged source writes nothing and reports the skips; a document whose `updated_at` moved is re-ingested.
 
 **Skip rules.** The walker skips `node_modules`, `target`, `dist`, `build`, `vendor`, `__pycache__`, `.venv`, `venv`, `.pytest_cache`, `.idea`, `.vscode`, and any dotfile / dotdir except `.github` / `.gitignore`. The root of the walk is always allowed (so a hidden root like `~/.illuminate/` works).
 
@@ -278,6 +284,119 @@ illuminate ingest --roots docs --roots ARCHITECTURE.md --roots CLAUDE.md
 
 # Machine-readable summary:
 illuminate ingest --json | jq '{adapter, fetched, written}'
+
+# Read someone else's OKF bundle into the graph:
+illuminate ingest --okf ../partner-team-bundle
+```
+
+### `illuminate verify`
+
+Record a human sign-off on a wiki page, promoting it to the `human-reviewed` trust tier.
+
+```
+illuminate verify <ID> [--as ACTOR] [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `<ID>` | — | Wiki page id (the front-matter `id`, not the filename). |
+| `--as ACTOR` | `human:$USER` | Actor id following the OKF convention: `human:<id>`, `process:<id>`, or `<producer>/<version>`. Anything else is rejected. |
+| `--json` | off | Emit the result as JSON. |
+
+**Trust tiers** (from [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog), derived from the `verified` list):
+
+| Tier | Meaning |
+|------|---------|
+| `unverified` | No `verified` entries — nobody has vouched for this page. |
+| `machine-confirmed` | Verified only by tools or automated processes. |
+| `human-reviewed` | Verified by at least one `human:` actor. A single human outranks any number of machines. |
+
+**Surgical edits.** The sign-off is appended to the existing front-matter block; every other byte of the page is untouched. Re-serializing YAML would reorder keys and renormalize timestamps, turning a one-line sign-off into a whole-file diff and destroying `git blame` on the team's most consequential pages.
+
+Repeat sign-offs are recorded as separate events rather than deduped — a second verification by the same person is what says "still true after the last edit". [`illuminate wiki lint`](#illuminate-wiki-lint) flags a verification that predates the page's `updated` timestamp.
+
+**Example.**
+
+```bash
+illuminate verify dec-2026-07-no-redis --as human:priya
+```
+
+### `illuminate sync`
+
+Exchange published knowledge with the team's git remote: fetch → fast-forward → push, then re-index the team repo's wiki into the local graph so `illuminate enrich` and `illuminate audit` immediately see what teammates published.
+
+```
+illuminate sync [--dry-run]
+                [--no-push]
+                [--json]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--dry-run` | off | Print the plan and run nothing. The plan is computed by the same pure function the real run uses, so it is an exact preview. |
+| `--no-push` | off | Fetch and merge the team's knowledge without uploading local commits. Consume-only. |
+| `--json` | off | Emit the sync report as JSON. |
+
+**Configuration** (`illuminate.toml`):
+
+```toml
+[sync]
+url = "git@github.com:acme/team-illuminate.git"
+branch = "main"
+local_clone = "../team-illuminate"   # relative paths resolve against the repo root
+consent = true                        # required
+```
+
+**Trust model.** Sync is the only write path in illuminate that reaches the network, so the gate is explicit:
+
+- `consent = false` (or absent) refuses **before any step runs** — the same rule [`illuminate trust check`](#illuminate-trust-check) enforces on the config.
+- Pull is **fast-forward only**. Sync never fabricates a merge commit in a repository it does not own.
+- A failed fetch or fast-forward **aborts before the push**, so local commits are never uploaded on top of a stale view of the team's history.
+- `publish` itself still performs no network I/O even with a `GitRemote` target — it writes into the local clone, and `sync` is the separate, explicit gesture that uploads.
+
+**Exit behaviour.** A push with nothing local to send is reported as `nothing_to_push` rather than counted as executed.
+
+**Examples.**
+
+```bash
+# Preview:
+illuminate sync --dry-run
+
+# Pull the team's knowledge without publishing yours:
+illuminate sync --no-push
+
+# Full exchange:
+illuminate sync --json | jq '{executed, pages_reindexed}'
+```
+
+### `illuminate export`
+
+Export the decision graph, or the wiki as a portable OKF bundle.
+
+```
+illuminate export [--format json|csv|okf]
+                  [--out DIR]
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--format` | `json` | `json` / `csv` dump the decision graph. `okf` renders the wiki as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.2 bundle. |
+| `--out DIR` | — | Destination directory. **Required** for `--format okf`. |
+
+**OKF export.** Reads `.illuminate/wiki/` (the markdown source-of-truth), not the graph — so it works in a repo whose graph has never been built. Pages land at `<category>/<id>.md` with a reserved bundle-root `index.md` carrying `okf_version: "0.2"`.
+
+The mapping is documented in [`COMPANY_BRAIN.md`](COMPANY_BRAIN.md) §6. Fields OKF has no slot for (`id`, `confidence`, `modules`, `authors`, the original `status`) are emitted as extension keys, which OKF §9 requires consumers to preserve — so `export → ingest` is a round trip, not a one-way door. Relationships (`related` / `supersedes` / `superseded_by`) become bundle-relative markdown links under a `## Related` heading.
+
+Output is byte-stable for a given wiki, so re-exporting an unchanged repo produces no diff. Unparseable pages are reported on stderr and skipped rather than aborting the export.
+
+**Examples.**
+
+```bash
+# Publish the team wiki as a portable bundle:
+illuminate export --format okf --out ../team-knowledge-bundle
+
+# Round-trip it back:
+illuminate ingest --okf ../team-knowledge-bundle
 ```
 
 ### `illuminate ask`

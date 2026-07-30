@@ -1,7 +1,8 @@
 //! Wiki page representation: YAML front-matter + markdown body.
 
+use crate::trust::{TrustTier, Verification};
 use crate::{Result, WikiError};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +57,39 @@ pub struct FrontMatter {
     pub severity: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paths: Option<Vec<String>>,
+
+    // --- trust signals (OKF v0.2 aligned; see `crate::trust`) --------------
+    //
+    // Both are additive and skipped when empty, so every page written before
+    // these existed parses AND re-serializes byte-identically. That matters:
+    // `illuminate rebuild` round-trips the whole wiki, and gaining `verified:
+    // []` on every page would be a diff across the entire team repo.
+    /// Who has vouched for this page, and when.
+    #[serde(
+        default,
+        deserialize_with = "crate::trust::de_verified",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub verified: Vec<Verification>,
+    /// Date after which this page should no longer be trusted without a
+    /// re-check. Absent means "no expiry".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_after: Option<NaiveDate>,
+}
+
+impl FrontMatter {
+    /// This page's trust tier, derived from [`FrontMatter::verified`].
+    pub fn trust_tier(&self) -> TrustTier {
+        crate::trust::trust_tier(&self.verified)
+    }
+
+    /// Whether this page is stale as of `today`.
+    ///
+    /// Takes the day as a parameter rather than reading the clock so callers
+    /// in the audit path stay deterministic.
+    pub fn is_stale_on(&self, today: NaiveDate) -> bool {
+        crate::trust::is_stale_on(self.stale_after, today)
+    }
 }
 
 #[derive(Debug, Clone)]

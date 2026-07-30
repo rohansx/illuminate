@@ -137,11 +137,17 @@ fn find_repo_root() -> illuminate::Result<PathBuf> {
 }
 
 fn map_publish_err(e: illuminate_publish::PublishError) -> illuminate::IlluminateError {
+    use illuminate_publish::PublishError;
     match e {
-        illuminate_publish::PublishError::Io(io) => illuminate::IlluminateError::Io(io),
-        illuminate_publish::PublishError::Graph(g) => g,
-        illuminate_publish::PublishError::Parse(s) => {
+        PublishError::Io(io) => illuminate::IlluminateError::Io(io),
+        PublishError::Graph(g) => g,
+        PublishError::Parse(s) => {
             illuminate::IlluminateError::InvalidInput(format!("trail parse: {s}"))
+        }
+        // Both are configuration faults, not runtime failures — surface the
+        // message verbatim so the dev sees which target to fix and how.
+        PublishError::ConsentRequired(_) | PublishError::InvalidTarget(_) => {
+            illuminate::IlluminateError::InvalidInput(e.to_string())
         }
     }
 }

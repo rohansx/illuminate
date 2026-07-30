@@ -8,11 +8,14 @@
 pub mod dashboard;
 pub mod episode;
 pub mod lint;
+pub mod okf_export;
 pub mod page;
 pub mod render;
 pub mod scaffold;
 pub mod serve;
 pub mod serve_cloud;
+pub mod trust;
+pub mod verify;
 pub mod walk;
 pub mod webapp;
 

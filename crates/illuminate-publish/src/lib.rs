@@ -12,9 +12,13 @@
 //!   No other crate in this workspace has a network-or-foreign-FS write path,
 //!   and even this crate refuses to write anywhere the caller has not
 //!   explicitly named in `req.team_repo`.
-//! - **No network calls.** v3.0 ships [`TeamRepoTarget::LocalPath`] only. The
-//!   planned [`TeamRepoTarget::GitRemote`] variant is deliberately gated for
-//!   v3.1 with a paired `illuminate trust check` config-linter pass.
+//! - **No network calls on the publish path — still literally true.**
+//!   [`TeamRepoTarget::GitRemote`] does *not* change this: it writes into a
+//!   local working clone and records where those commits are eventually bound.
+//!   Uploading is [`sync`]'s job, behind its own explicit gesture. A publish
+//!   can therefore never surprise a developer by sending something off-host.
+//!   Off-host targets additionally require `consent = true`, mirroring what
+//!   `illuminate trust check` enforces on `illuminate.toml`.
 //! - **`Discard` writes nothing.** A request with `redaction: Discard` returns
 //!   an empty `PublishResponse` and never touches the filesystem or graph.
 //!
@@ -31,7 +35,11 @@ use illuminate::{Episode, Graph};
 use illuminate_trail::TrailRecord;
 
 pub mod as_doc;
+pub mod sync;
 pub use as_doc::{draft_design_doc, write_design_doc};
+pub use sync::{
+    GitOps, SyncConfig, SyncOptions, SyncPlan, SyncReport, SyncStep, plan_sync, run_sync,
+};
 
 /// How much of the captured session to share with the team.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,15 +84,74 @@ impl RedactionLevel {
     }
 }
 
-/// Where the published session lands. v3.0 supports a local-path target only.
+/// Where the published session lands.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum TeamRepoTarget {
     /// A directory on the local filesystem. The crate writes
     /// `<path>/sessions/<filename>.md` — directories are created as needed.
     LocalPath(PathBuf),
-    // GitRemote { url, branch } — planned for v3.1 once `illuminate trust check`
-    // is in place to gate network writes via explicit config + first-use prompt.
+
+    /// A git-remote-backed team repo.
+    ///
+    /// **Publishing to this target still performs no network I/O.** The page is
+    /// written into `local_clone`, a working clone the developer already has;
+    /// getting those commits to `url` is `illuminate sync`'s job, behind its own
+    /// explicit gesture. Keeping the network out of `publish` preserves this
+    /// crate's "no network calls" invariant literally rather than approximately
+    /// — a publish can never surprise a developer by uploading something.
+    ///
+    /// `consent` must be `true`, mirroring what `illuminate trust check`
+    /// enforces on `illuminate.toml`: naming an off-host target without a paired
+    /// explicit opt-in is a configuration error, not a prompt.
+    GitRemote {
+        /// Push URL, recorded for `illuminate sync`. Never dialled here.
+        url: String,
+        /// Branch `illuminate sync` will push to.
+        branch: String,
+        /// Local working clone. All writes land here.
+        local_clone: PathBuf,
+        /// Explicit opt-in for an off-host write target.
+        consent: bool,
+    },
+}
+
+impl TeamRepoTarget {
+    /// The local directory this target writes into, after validation.
+    ///
+    /// This is the single place that decides "where do bytes go", so no caller
+    /// can accidentally construct a path the trust model has not approved.
+    pub fn write_root(&self) -> Result<&Path> {
+        match self {
+            TeamRepoTarget::LocalPath(p) => Ok(p),
+            TeamRepoTarget::GitRemote {
+                url,
+                branch,
+                local_clone,
+                consent,
+            } => {
+                if url.trim().is_empty() {
+                    return Err(PublishError::InvalidTarget(
+                        "GitRemote target has an empty url".to_string(),
+                    ));
+                }
+                if branch.trim().is_empty() {
+                    return Err(PublishError::InvalidTarget(
+                        "GitRemote target has an empty branch".to_string(),
+                    ));
+                }
+                if local_clone.as_os_str().is_empty() {
+                    return Err(PublishError::InvalidTarget(
+                        "GitRemote target has an empty local_clone path".to_string(),
+                    ));
+                }
+                if !consent {
+                    return Err(PublishError::ConsentRequired(url.clone()));
+                }
+                Ok(local_clone)
+            }
+        }
+    }
 }
 
 /// A request to publish one captured session.
@@ -119,6 +186,15 @@ pub enum PublishError {
     Parse(String),
     #[error("graph error: {0}")]
     Graph(#[from] illuminate::IlluminateError),
+    /// An off-host target was named without a paired explicit opt-in. Matches
+    /// what `illuminate trust check` reports for the same config.
+    #[error(
+        "off-host target {0} requires explicit consent — \
+         set `consent = true` on that target in illuminate.toml"
+    )]
+    ConsentRequired(String),
+    #[error("invalid team-repo target: {0}")]
+    InvalidTarget(String),
 }
 
 pub type Result<T, E = PublishError> = std::result::Result<T, E>;
@@ -152,9 +228,9 @@ pub fn publish(graph: &mut Graph, req: &PublishRequest) -> Result<PublishRespons
     let body = render_body(&trail, req.redaction);
     let front_matter = render_front_matter(&trail, req, &filename);
 
-    let target_path = match &req.team_repo {
-        TeamRepoTarget::LocalPath(root) => root.join("sessions").join(&filename),
-    };
+    // Resolve (and validate) the write root before touching the trail, so a
+    // target the trust model rejects never causes a partial write.
+    let target_path = req.team_repo.write_root()?.join("sessions").join(&filename);
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -479,6 +555,127 @@ mod tests {
         assert_eq!(slugify("Add Redis caching!"), "add-redis-caching");
         assert_eq!(slugify("/path/to/file.rs"), "path-to-file-rs");
         assert_eq!(slugify(""), "session");
+    }
+
+    // ------------------------------------------------------ GitRemote ---
+
+    /// A GitRemote target pointing at `clone`, opted in or not.
+    fn git_remote(clone: &Path, consent: bool) -> TeamRepoTarget {
+        TeamRepoTarget::GitRemote {
+            // Deliberately unreachable: if publishing ever dialled the network
+            // these tests would hang or fail, which is the point.
+            url: "https://git.invalid/acme/team-illuminate.git".to_string(),
+            branch: "main".to_string(),
+            local_clone: clone.to_path_buf(),
+            consent,
+        }
+    }
+
+    #[test]
+    fn git_remote_with_consent_writes_into_the_local_clone() {
+        let dir = tempfile::tempdir().unwrap();
+        let clone = dir.path().join("team-clone");
+        let trail_path = write_sample_trail(dir.path());
+        let mut graph = open_temp_graph(dir.path());
+
+        let req = PublishRequest {
+            trail_path,
+            redaction: RedactionLevel::Summary,
+            commit_sha: None,
+            team_repo: git_remote(&clone, true),
+        };
+        let resp = publish(&mut graph, &req).expect("publish to a consented remote target");
+
+        assert_eq!(resp.written_paths.len(), 1);
+        let written = &resp.written_paths[0];
+        assert!(
+            written.starts_with(&clone),
+            "publish must write inside the local clone, got {}",
+            written.display()
+        );
+        assert!(written.exists());
+    }
+
+    #[test]
+    fn git_remote_without_consent_refuses_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let clone = dir.path().join("team-clone");
+        let trail_path = write_sample_trail(dir.path());
+        let mut graph = open_temp_graph(dir.path());
+
+        let req = PublishRequest {
+            trail_path,
+            redaction: RedactionLevel::Summary,
+            commit_sha: None,
+            team_repo: git_remote(&clone, false),
+        };
+        let err = publish(&mut graph, &req).expect_err("must refuse without consent");
+        assert!(
+            matches!(err, PublishError::ConsentRequired(_)),
+            "expected ConsentRequired, got {err:?}"
+        );
+        assert!(
+            !clone.exists(),
+            "a refused publish must not create the clone directory"
+        );
+    }
+
+    #[test]
+    fn a_git_remote_missing_url_or_branch_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        for (url, branch) in [("", "main"), ("https://git.invalid/x.git", "")] {
+            let target = TeamRepoTarget::GitRemote {
+                url: url.to_string(),
+                branch: branch.to_string(),
+                local_clone: dir.path().join("c"),
+                consent: true,
+            };
+            assert!(
+                matches!(target.write_root(), Err(PublishError::InvalidTarget(_))),
+                "url={url:?} branch={branch:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn consent_is_checked_before_the_paths_are_validated_only_for_valid_targets() {
+        // A well-formed but unconsented target reports ConsentRequired (not
+        // InvalidTarget), so the error tells the dev what to actually fix.
+        let dir = tempfile::tempdir().unwrap();
+        let target = git_remote(&dir.path().join("c"), false);
+        assert!(matches!(
+            target.write_root(),
+            Err(PublishError::ConsentRequired(_))
+        ));
+    }
+
+    #[test]
+    fn discard_on_a_git_remote_is_a_no_op_even_without_consent() {
+        // Discard returns before any target resolution — refusing to *not
+        // publish* would be absurd.
+        let dir = tempfile::tempdir().unwrap();
+        let clone = dir.path().join("team-clone");
+        let trail_path = write_sample_trail(dir.path());
+        let mut graph = open_temp_graph(dir.path());
+
+        let req = PublishRequest {
+            trail_path,
+            redaction: RedactionLevel::Discard,
+            commit_sha: None,
+            team_repo: git_remote(&clone, false),
+        };
+        let resp = publish(&mut graph, &req).expect("discard never fails");
+        assert!(resp.written_paths.is_empty());
+        assert!(!clone.exists());
+    }
+
+    #[test]
+    fn a_local_path_target_needs_no_consent() {
+        // The trust model only gates *off-host* targets. A directory the dev
+        // named on their own machine is not one.
+        let dir = tempfile::tempdir().unwrap();
+        let target = TeamRepoTarget::LocalPath(dir.path().join("team"));
+        assert!(target.write_root().is_ok());
     }
 
     #[test]
