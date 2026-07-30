@@ -33,6 +33,7 @@ fn resolve_db_path() -> PathBuf {
 /// 1. `ILLUMINATE_MODELS_DIR` env var
 /// 2. `~/.cache/illuminate/models`
 /// 3. `.illuminate/models` next to the database
+///
 /// Only reachable from the ONNX path — a slim build has no models to locate.
 #[cfg(feature = "onnx")]
 fn find_models_dir(db_path: &std::path::Path) -> Option<PathBuf> {
